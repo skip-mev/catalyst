@@ -1,0 +1,23 @@
+# Example load test configuration
+chain_id: "ib-cosmos-0ea659"
+block_gas_limit_target: 0.8  # Target 80% of block gas limit
+runtime: "5m"  # Run for 5 minutes
+num_of_blocks: 100  # Process 100 blocks
+nodes_addresses:
+  - grpc: "100.122.238.40:9090"
+    rpc: "http://100.122.238.40:26657"
+  - grpc: "100.94.146.128:9090"
+    rpc: "http://100.94.146.128:26657"
+mnemonics:
+  # These are example BIP39 mnemonics for deriving secp256k1 private keys
+  # You should replace these with your actual mnemonics
+  - "rotate stumble once topic possible message powder recall turkey legend depart brick"  # Replace with actual BIP39 mnemonic
+  - "boat physical carry remain install glance cloud ethics plunge garment split shaft"
+  - "tackle lesson category enroll reopen romance can flat cable equip between cushion" # Replace with actual BIP39 mnemonic
+gas_denom: "stake"
+bech32_prefix: "cosmos"
+msgs:
+  - type: 0  # MsgSend
+    weight: 0.7  # 70% of transactions
+  - type: 1  # MultiMsgSend
+    weight: 0.3  # 30% of transactions
