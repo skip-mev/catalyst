@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	"time"
 
 	logging "github.com/skip-mev/catalyst/internal/shared"
@@ -92,19 +93,16 @@ func NewClient(ctx context.Context, rpcAddress, grpcAddress, chainID string) (*C
 
 func (c *Chain) SubscribeToBlocks(ctx context.Context, handler types.BlockHandler) error {
 	query := fmt.Sprintf("%s = '%s'", tmtypes.EventTypeKey, tmtypes.EventNewBlock)
-
 	eventCh, err := c.cometClient.Subscribe(ctx, "loadtest", query, 100)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to blocks: %w", err)
 	}
 
-	defer func() {
-		err := c.cometClient.Unsubscribe(ctx, "loadtest", query)
-		if err != nil {
-			c.logger.Error("failed to unsubscribe from comet client", zap.Error(err))
-		}
-	}()
+	defer c.unsubscribeFromBlocks(ctx, query)
+	return c.processBlockEvents(ctx, eventCh, handler)
+}
 
+func (c *Chain) processBlockEvents(ctx context.Context, eventCh <-chan coretypes.ResultEvent, handler types.BlockHandler) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -113,28 +111,41 @@ func (c *Chain) SubscribeToBlocks(ctx context.Context, handler types.BlockHandle
 			if !ok {
 				return fmt.Errorf("event channel closed unexpectedly")
 			}
-
-			newBlockEvent, ok := event.Data.(tmtypes.EventDataNewBlock)
-			if !ok {
-				c.logger.Error("Unexpected event type",
-					zap.Any("Event data received", event.Data))
+			if err := c.handleBlockEvent(ctx, event, handler); err != nil {
+				c.logger.Error("Failed to handle block event", zap.Error(err))
 				continue
 			}
-			c.logger.Debug("received new block event", zap.Int64("height", newBlockEvent.Block.Height))
-
-			params, err := c.cometClient.ConsensusParams(ctx, nil)
-			if err != nil {
-				c.logger.Error("Failed to get consensus params from the block", zap.Error(err))
-				continue
-			}
-
-			block := types.Block{
-				Height:    newBlockEvent.Block.Height,
-				GasLimit:  params.ConsensusParams.Block.MaxGas,
-				Timestamp: newBlockEvent.Block.Time,
-			}
-			handler(block)
 		}
+	}
+}
+
+func (c *Chain) handleBlockEvent(ctx context.Context, event coretypes.ResultEvent, handler types.BlockHandler) error {
+	newBlockEvent, ok := event.Data.(tmtypes.EventDataNewBlock)
+	if !ok {
+		c.logger.Error("Unexpected event type", zap.Any("Event data received", event.Data))
+		return fmt.Errorf("unexpected event type")
+	}
+
+	c.logger.Debug("received new block event", zap.Int64("height", newBlockEvent.Block.Height))
+
+	params, err := c.cometClient.ConsensusParams(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get consensus params: %w", err)
+	}
+
+	block := types.Block{
+		Height:    newBlockEvent.Block.Height,
+		GasLimit:  params.ConsensusParams.Block.MaxGas,
+		Timestamp: newBlockEvent.Block.Time,
+	}
+	handler(block)
+	return nil
+}
+
+func (c *Chain) unsubscribeFromBlocks(ctx context.Context, query string) {
+	err := c.cometClient.Unsubscribe(ctx, "loadtest", query)
+	if err != nil {
+		c.logger.Error("failed to unsubscribe from comet client", zap.Error(err))
 	}
 }
 
