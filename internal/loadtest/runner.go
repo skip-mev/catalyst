@@ -121,7 +121,7 @@ func NewRunner(ctx context.Context, spec inttypes.LoadTestSpec) (*Runner, error)
 func (r *Runner) initGasEstimation(ctx context.Context) error {
 	client := r.clients[0]
 
-	blockGasLimit, err := client.GetGasLimit()
+	blockGasLimit, err := client.GetGasLimit(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get block gas limit: %w", err)
 	}

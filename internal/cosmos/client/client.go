@@ -31,7 +31,6 @@ var _ types.ChainI = (*Chain)(nil)
 
 type Chain struct {
 	cometClient    *rpchttp.HTTP
-	txClient       txtypes.ServiceClient
 	encodingConfig types.EncodingConfig
 	gRPCConn       *grpc.ClientConn
 	logger         *zap.Logger
@@ -64,7 +63,6 @@ func NewClient(ctx context.Context, rpcAddress, grpcAddress, chainID string) (*C
 
 	c := &Chain{
 		cometClient: rpcClient,
-		txClient:    txtypes.NewServiceClient(grpcConn),
 		gRPCConn:    grpcConn,
 		chainID:     chainID,
 		nodeAddress: types.NodeAddress{
@@ -140,8 +138,8 @@ func (c *Chain) SubscribeToBlocks(ctx context.Context, handler types.BlockHandle
 	}
 }
 
-func (c *Chain) GetGasLimit() (int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func (c *Chain) GetGasLimit(ctx context.Context) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	block, err := c.cometClient.Block(ctx, nil)
@@ -172,7 +170,7 @@ func (c *Chain) GetGasLimit() (int, error) {
 }
 
 func (c *Chain) EstimateGasUsed(ctx context.Context, txBz []byte) (uint64, error) {
-	r, err := c.txClient.Simulate(ctx, &txtypes.SimulateRequest{TxBytes: txBz})
+	r, err := c.getTxClient().Simulate(ctx, &txtypes.SimulateRequest{TxBytes: txBz})
 	if err != nil {
 		return 0, fmt.Errorf("failed to simulate transaction: %w", err)
 	}
@@ -181,7 +179,7 @@ func (c *Chain) EstimateGasUsed(ctx context.Context, txBz []byte) (uint64, error
 }
 
 func (c *Chain) BroadcastTx(ctx context.Context, txBytes []byte) (*sdk.TxResponse, error) {
-	resp, err := c.txClient.BroadcastTx(ctx, &txtypes.BroadcastTxRequest{
+	resp, err := c.getTxClient().BroadcastTx(ctx, &txtypes.BroadcastTxRequest{
 		TxBytes: txBytes,
 		Mode:    txtypes.BroadcastMode_BROADCAST_MODE_SYNC,
 	})
@@ -200,10 +198,7 @@ func (c *Chain) BroadcastTx(ctx context.Context, txBytes []byte) (*sdk.TxRespons
 }
 
 func (c *Chain) GetAccount(ctx context.Context, address string) (sdk.AccountI, error) {
-	authClient, err := c.getAuthClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get auth client: %w", err)
-	}
+	authClient := c.getAuthClient()
 
 	res, err := authClient.Account(ctx, &authtypes.QueryAccountRequest{
 		Address: address,
@@ -233,19 +228,19 @@ func (c *Chain) GetChainID() string {
 	return c.chainID
 }
 
-func (c *Chain) getAuthClient(ctx context.Context) (authtypes.QueryClient, error) {
-	return authtypes.NewQueryClient(c.gRPCConn), nil
+func (c *Chain) getAuthClient() authtypes.QueryClient {
+	return authtypes.NewQueryClient(c.gRPCConn)
 }
 
-func (c *Chain) getBankClient(ctx context.Context) (banktypes.QueryClient, error) {
-	return banktypes.NewQueryClient(c.gRPCConn), nil
+func (c *Chain) getBankClient() banktypes.QueryClient {
+	return banktypes.NewQueryClient(c.gRPCConn)
 }
 
-func (c *Chain) GetTxClient(ctx context.Context) txtypes.ServiceClient {
-	return c.txClient
+func (c *Chain) getTxClient() txtypes.ServiceClient {
+	return txtypes.NewServiceClient(c.gRPCConn)
 }
 
-func (c *Chain) GetCometClient(ctx context.Context) *rpchttp.HTTP {
+func (c *Chain) GetCometClient() *rpchttp.HTTP {
 	return c.cometClient
 }
 

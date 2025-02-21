@@ -6,8 +6,6 @@ import (
 	"time"
 
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
-	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
-
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -32,8 +30,7 @@ type ChainI interface {
 	GetChainID() string
 	GetNodeAddress() NodeAddress
 	SubscribeToBlocks(ctx context.Context, handler BlockHandler) error
-	GetTxClient(ctx context.Context) txtypes.ServiceClient
-	GetCometClient(ctx context.Context) *rpchttp.HTTP
+	GetCometClient() *rpchttp.HTTP
 }
 
 type Block struct {
