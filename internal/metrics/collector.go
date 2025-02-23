@@ -3,9 +3,10 @@ package metrics
 import (
 	"context"
 	"fmt"
-	"go.uber.org/zap"
 	"sort"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/skip-mev/catalyst/internal/cosmos/wallet"
 
@@ -89,9 +90,9 @@ func (m *MetricsCollector) calculateGasStats(gasUsage []int64) types.GasStats {
 	}
 }
 
-// ProcessResults returns the final load test results
-func (m *MetricsCollector) ProcessResults(gasLimit int) types.LoadTestResult {
-	result := types.LoadTestResult{
+// initializeLoadTestResult creates and initializes a new LoadTestResult
+func (m *MetricsCollector) initializeLoadTestResult() types.LoadTestResult {
+	return types.LoadTestResult{
 		Overall: types.OverallStats{
 			StartTime:       m.startTime,
 			EndTime:         m.endTime,
@@ -102,11 +103,13 @@ func (m *MetricsCollector) ProcessResults(gasLimit int) types.LoadTestResult {
 		ByNode:    make(map[string]types.NodeStats),
 		ByBlock:   make([]types.BlockStat, 0),
 	}
+}
 
+// processMessageTypeStats processes statistics for each message type and returns overall totals
+func (m *MetricsCollector) processMessageTypeStats(result *types.LoadTestResult) (int, int, int, int64) {
 	var totalTxs, successfulTxs, failedTxs int
 	var totalGasUsed int64
 
-	// Process message type stats
 	for msgType, txs := range m.txsByMsgType {
 		stats := types.MessageStats{
 			Transactions: types.TransactionStats{
@@ -141,15 +144,11 @@ func (m *MetricsCollector) ProcessResults(gasLimit int) types.LoadTestResult {
 		totalGasUsed += stats.Gas.Total
 	}
 
-	// Update overall stats
-	result.Overall.TotalTransactions = totalTxs
-	result.Overall.SuccessfulTransactions = successfulTxs
-	result.Overall.FailedTransactions = failedTxs
-	if successfulTxs > 0 {
-		result.Overall.AvgGasPerTransaction = totalGasUsed / int64(successfulTxs)
-	}
+	return totalTxs, successfulTxs, failedTxs, totalGasUsed
+}
 
-	// Process node stats
+// processNodeStats processes statistics for each node
+func (m *MetricsCollector) processNodeStats(result *types.LoadTestResult) {
 	for nodeAddr, txs := range m.txsByNode {
 		msgCounts := make(map[types.MsgType]int)
 		gasUsage := make([]int64, 0)
@@ -177,8 +176,10 @@ func (m *MetricsCollector) ProcessResults(gasLimit int) types.LoadTestResult {
 		stats.GasStats = m.calculateGasStats(gasUsage)
 		result.ByNode[nodeAddr] = stats
 	}
+}
 
-	// Process block stats
+// processBlockStats processes statistics for each block
+func (m *MetricsCollector) processBlockStats(result *types.LoadTestResult, gasLimit int) {
 	var totalGasUtilization float64
 	for height, txs := range m.txsByBlock {
 		msgStats := make(map[types.MsgType]types.MessageBlockStats)
@@ -229,6 +230,26 @@ func (m *MetricsCollector) ProcessResults(gasLimit int) types.LoadTestResult {
 	sort.Slice(result.ByBlock, func(i, j int) bool {
 		return result.ByBlock[i].BlockHeight < result.ByBlock[j].BlockHeight
 	})
+}
+
+// ProcessResults returns the final load test results
+func (m *MetricsCollector) ProcessResults(gasLimit int) types.LoadTestResult {
+	result := m.initializeLoadTestResult()
+
+	// Process message type stats and get overall totals
+	totalTxs, successfulTxs, failedTxs, totalGasUsed := m.processMessageTypeStats(&result)
+
+	// Update overall stats
+	result.Overall.TotalTransactions = totalTxs
+	result.Overall.SuccessfulTransactions = successfulTxs
+	result.Overall.FailedTransactions = failedTxs
+	if successfulTxs > 0 {
+		result.Overall.AvgGasPerTransaction = totalGasUsed / int64(successfulTxs)
+	}
+
+	// Process node and block stats
+	m.processNodeStats(&result)
+	m.processBlockStats(&result, gasLimit)
 
 	return result
 }
