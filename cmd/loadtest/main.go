@@ -39,7 +39,7 @@ func main() {
 		logger.Fatal("Failed to create test", zap.Error(err))
 	}
 
-	_, err = test.Run(ctx)
+	_, err = test.Run(ctx, logger)
 	if err != nil {
 		logger.Fatal("Failed to run load test", zap.Error(err))
 	}

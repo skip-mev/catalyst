@@ -2,9 +2,15 @@ package loadtest
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/skip-mev/catalyst/internal/loadtest"
 	"github.com/skip-mev/catalyst/internal/types"
+	"go.uber.org/zap"
 )
 
 // LoadTest represents a load test that can be executed
@@ -25,13 +31,50 @@ func New(ctx context.Context, spec types.LoadTestSpec) (*LoadTest, error) {
 }
 
 // Run executes the load test and returns the results
-func (lt *LoadTest) Run(ctx context.Context) (types.LoadTestResult, error) {
+func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (types.LoadTestResult, error) {
 	results, err := lt.runner.Run(ctx)
 	if err != nil {
-		return results, err
+		results.Error = err.Error()
+	}
+
+	if saveErr := saveResults(results, logger); saveErr != nil {
+		return results, fmt.Errorf("failed to save results: %w", saveErr)
 	}
 
 	lt.runner.GetCollector().PrintResults(results)
 
-	return results, nil
+	return results, err
+}
+
+// saveResults saves the load test results to /tmp/catalyst/load_test_{timestamp}.json
+func saveResults(results types.LoadTestResult, logger *zap.Logger) error {
+	dir := "/tmp/catalyst"
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		logger.Error("Failed to create results directory",
+			zap.String("dir", dir),
+			zap.Error(err))
+		return err
+	}
+
+	jsonData, err := json.MarshalIndent(results, "", "  ")
+	if err != nil {
+		logger.Error("Failed to marshal results to JSON",
+			zap.Error(err))
+		return err
+	}
+
+	timestamp := time.Now().Format("2006-01-02T150405")
+	filename := fmt.Sprintf("load_test_%s.json", timestamp)
+	filePath := filepath.Join(dir, filename)
+	if err := os.WriteFile(filePath, jsonData, 0644); err != nil {
+		logger.Error("Failed to write results to file",
+			zap.String("path", filePath),
+			zap.Error(err))
+		return err
+	}
+
+	logger.Debug("Successfully saved load test results",
+		zap.String("path", filePath))
+
+	return nil
 }

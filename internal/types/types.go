@@ -50,6 +50,7 @@ type LoadTestResult struct {
 	ByMessage map[MsgType]MessageStats
 	ByNode    map[string]NodeStats
 	ByBlock   []BlockStat
+	Error     string `json:"error,omitempty"`
 }
 
 // OverallStats represents the overall statistics of the load test
