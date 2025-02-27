@@ -48,7 +48,7 @@ func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (types.LoadTest
 // todo: add timestamp suffix to file
 // saveResults saves the load test results to /catalyst/load_test.json
 func saveResults(results types.LoadTestResult, logger *zap.Logger) error {
-	dir := "/catalyst"
+	dir := "/tmp/catalyst"
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		logger.Error("Failed to create results directory",
 			zap.String("dir", dir),

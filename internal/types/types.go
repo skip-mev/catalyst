@@ -193,20 +193,13 @@ type LoadTestMsg struct {
 	Type   MsgType `yaml:"type"`
 }
 
-type MsgType int
+type MsgType string
 
 const (
-	MsgSend MsgType = iota
-	MultiMsgSend
+	MsgSend      MsgType = "MsgSend"
+	MultiMsgSend MsgType = "MultiMsgSend"
 )
 
 func (m MsgType) String() string {
-	switch m {
-	case MsgSend:
-		return "MsgSend"
-	case MultiMsgSend:
-		return "MultiMsgSend"
-	default:
-		return "Unknown"
-	}
+	return string(m)
 }

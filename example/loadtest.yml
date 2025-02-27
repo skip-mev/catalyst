@@ -17,7 +17,7 @@ mnemonics:
 gas_denom: "stake"
 bech32_prefix: "cosmos"
 msgs:
-  - type: 0  # MsgSend
+  - type: "MsgSend"  # MsgSend
     weight: 0.7  # 70% of transactions
-  - type: 1  # MultiMsgSend
+  - type: "MultiMsgSend"  # MultiMsgSend
     weight: 0.3  # 30% of transactions
