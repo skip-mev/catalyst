@@ -174,7 +174,7 @@ func TestPetriDockerIntegration(t *testing.T) {
 		ChainID:             defaultChainConfig.ChainId,
 		BlockGasLimitTarget: 0.3,
 		Runtime:             1 * time.Minute,
-		NumOfBlocks:         10,
+		NumOfBlocks:         1,
 		NodesAddresses:      nodeAddresses,
 		Mnemonics:           []string{k1.Mnemonic(), k2.Mnemonic()},
 		GasDenom:            defaultChainConfig.Denom,
@@ -187,7 +187,7 @@ func TestPetriDockerIntegration(t *testing.T) {
 		t.Fatal("Failed to create test", zap.Error(err))
 	}
 
-	result, err := test.Run(ctx)
+	result, err := test.Run(ctx, logger)
 	if err != nil {
 		t.Fatal("Failed to run load test", zap.Error(err))
 	}

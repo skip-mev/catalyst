@@ -4,13 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"time"
-
 	"github.com/skip-mev/catalyst/internal/loadtest"
 	"github.com/skip-mev/catalyst/internal/types"
 	"go.uber.org/zap"
+	"os"
+	"path/filepath"
 )
 
 // LoadTest represents a load test that can be executed
@@ -46,7 +44,8 @@ func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (types.LoadTest
 	return results, err
 }
 
-// saveResults saves the load test results to /tmp/catalyst/load_test_{timestamp}.json
+// todo: add timestamp suffix to file
+// saveResults saves the load test results to /tmp/catalyst/load_test.json
 func saveResults(results types.LoadTestResult, logger *zap.Logger) error {
 	dir := "/tmp/catalyst"
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -63,9 +62,7 @@ func saveResults(results types.LoadTestResult, logger *zap.Logger) error {
 		return err
 	}
 
-	timestamp := time.Now().Format("2006-01-02T150405")
-	filename := fmt.Sprintf("load_test_%s.json", timestamp)
-	filePath := filepath.Join(dir, filename)
+	filePath := filepath.Join(dir, "load_test.json")
 	if err := os.WriteFile(filePath, jsonData, 0644); err != nil {
 		logger.Error("Failed to write results to file",
 			zap.String("path", filePath),
