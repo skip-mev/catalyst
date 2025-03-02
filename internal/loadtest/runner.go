@@ -170,7 +170,7 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 		}
 
 		targetGasLimit := float64(blockGasLimit) * r.spec.BlockGasLimitTarget * msgSpec.Weight
-		numTxs := int(math.Ceil(targetGasLimit / float64(gasUsed)))
+		numTxs := int(math.Round(targetGasLimit / float64(gasUsed)))
 
 		r.gasEstimations[msgSpec.Type] = MsgGasEstimation{
 			gasUsed: int64(gasUsed),
