@@ -31,10 +31,12 @@ func New(ctx context.Context, spec types.LoadTestSpec) (*LoadTest, error) {
 
 // Run executes the load test and returns the results
 func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (types.LoadTestResult, error) {
+	logger.Info("Starting new load test run")
 	results, err := lt.runner.Run(ctx)
 	if err != nil {
 		results.Error = err.Error()
 	}
+	logger.Info("Load test run completed, saving results")
 
 	if saveErr := saveResults(results, logger); saveErr != nil {
 		return results, fmt.Errorf("failed to save results: %w", saveErr)
