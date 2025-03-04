@@ -48,16 +48,22 @@ func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.Sen
 
 		if tx.Err == nil {
 			txResponse, err := wallet.GetTxResponse(ctx, client, tx.TxHash)
-			if err != nil {
+			if err != nil || txResponse == nil {
 				m.logger.Error("Error getting tx response. Metrics calculation might be inaccurate as a result", zap.Error(err))
+				continue
 			}
 			tx.TxResponse = txResponse
+
+			if txResponse.Code != 0 {
+				m.logger.Error("transaction failed after submission", zap.String("tx_hash", txResponse.TxHash),
+					zap.Uint32("code", txResponse.Code), zap.String("raw_log", txResponse.RawLog))
+				tx.Err = fmt.Errorf(txResponse.RawLog)
+			}
 
 			m.txsByBlock[tx.TxResponse.Height] = append(m.txsByBlock[tx.TxResponse.Height], *tx)
 			if tx.TxResponse.GasUsed > 0 {
 				m.gasUsageByMsgType[tx.MsgType] = append(m.gasUsageByMsgType[tx.MsgType], tx.TxResponse.GasUsed)
 			}
-
 		}
 		m.txsByNode[tx.NodeAddress] = append(m.txsByNode[tx.NodeAddress], *tx)
 		m.txsByMsgType[tx.MsgType] = append(m.txsByMsgType[tx.MsgType], *tx)

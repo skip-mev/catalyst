@@ -24,8 +24,8 @@ var (
 	defaultChainConfig = petritypes.ChainConfig{
 		Denom:         "stake",
 		Decimals:      6,
-		NumValidators: 1,
-		NumNodes:      2,
+		NumValidators: 10,
+		NumNodes:      0,
 		BinaryName:    "/usr/bin/simd",
 		Image: provider.ImageDefinition{
 			Image: "ghcr.io/skip-mev/simapp:latest",
@@ -92,63 +92,8 @@ func TestPetriDockerIntegration(t *testing.T) {
 	// Add a delay to ensure the node is fully ready
 	time.Sleep(5 * time.Second)
 
-	k1, err := c.CreateWallet(ctx, "key1", defaultChainOptions.WalletConfig)
-	if err != nil {
-		t.Fatal("Failed to create key1", zap.Error(err))
-	}
-	k2, err := c.CreateWallet(ctx, "key2", defaultChainOptions.WalletConfig)
-	if err != nil {
-		t.Fatal("Failed to create key2", zap.Error(err))
-	}
-
-	faucetWallet := c.GetFaucetWallet()
-	logger.Info("Faucet wallet", zap.String("address", faucetWallet.FormattedAddress()))
-
-	node := c.GetNodes()[0]
-	command := []string{
-		defaultChainConfig.BinaryName,
-		"tx", "bank", "send",
-		faucetWallet.FormattedAddress(),
-		k1.FormattedAddress(),
-		"1000000000stake",
-		"--chain-id", defaultChainConfig.ChainId,
-		"--keyring-backend", "test",
-		"--fees", "100stake",
-		"--yes",
-		"--home", defaultChainConfig.HomeDir,
-	}
-	stdout, stderr, exitCode, err := node.RunCommand(ctx, command)
-	if err != nil || exitCode != 0 {
-		t.Fatal("Failed to fund wallet 1", zap.Error(err), zap.String("stderr", stderr))
-	}
-	logger.Debug("Fund wallet 1 response", zap.String("stdout", stdout))
-
-	// Wait for first send to complete to avoid nonce issues
-	time.Sleep(10 * time.Second)
-
-	command = []string{
-		defaultChainConfig.BinaryName,
-		"tx", "bank", "send",
-		faucetWallet.FormattedAddress(),
-		k2.FormattedAddress(),
-		"1000000000stake",
-		"--chain-id", defaultChainConfig.ChainId,
-		"--keyring-backend", "test",
-		"--fees", "100stake",
-		"--yes",
-		"--home", defaultChainConfig.HomeDir,
-	}
-	stdout, stderr, exitCode, err = node.RunCommand(ctx, command)
-	if err != nil || exitCode != 0 {
-		t.Fatal("Failed to fund wallet 2", zap.Error(err), zap.String("stderr", stderr))
-	}
-	logger.Debug("Fund wallet 2 response", zap.String("stdout", stdout))
-
-	// Wait for second send to complete to avoid nonce issues
-	time.Sleep(10 * time.Second)
-
 	var nodeAddresses []loadtesttypes.NodeAddress
-	for _, n := range c.GetNodes() {
+	for _, n := range c.GetValidators() {
 		grpcAddress, err := n.GetExternalAddress(ctx, "9090")
 		if err != nil {
 			t.Fatal("Failed to get node grpc address", zap.Error(err))
@@ -166,16 +111,21 @@ func TestPetriDockerIntegration(t *testing.T) {
 		})
 	}
 
+	var mnemonics []string
+	for _, w := range c.GetValidatorWallets() {
+		mnemonics = append(mnemonics, w.Mnemonic())
+	}
+
 	msgs := []loadtesttypes.LoadTestMsg{
-		{Weight: 0.5, Type: loadtesttypes.MsgSend},
-		{Weight: 0.5, Type: loadtesttypes.MultiMsgSend},
+		//{Weight: 0.5, Type: loadtesttypes.MsgSend},
+		{Weight: 1, Type: loadtesttypes.MultiMsgSend},
 	}
 	spec := loadtesttypes.LoadTestSpec{
 		ChainID:             defaultChainConfig.ChainId,
-		BlockGasLimitTarget: 0.3,
-		NumOfBlocks:         5,
+		BlockGasLimitTarget: 1,
+		NumOfBlocks:         10,
 		NodesAddresses:      nodeAddresses,
-		Mnemonics:           []string{k1.Mnemonic(), k2.Mnemonic()},
+		Mnemonics:           mnemonics,
 		GasDenom:            defaultChainConfig.Denom,
 		Bech32Prefix:        defaultChainConfig.Bech32Prefix,
 		Msgs:                msgs,
