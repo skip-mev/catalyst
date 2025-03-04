@@ -48,8 +48,9 @@ func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.Sen
 
 		if tx.Err == nil {
 			txResponse, err := wallet.GetTxResponse(ctx, client, tx.TxHash)
-			if err != nil {
+			if err != nil || txResponse == nil {
 				m.logger.Error("Error getting tx response. Metrics calculation might be inaccurate as a result", zap.Error(err))
+				continue
 			}
 			tx.TxResponse = txResponse
 

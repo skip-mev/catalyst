@@ -2,13 +2,7 @@ package loadtest
 
 import (
 	"context"
-	sdkmath "cosmossdk.io/math"
 	"fmt"
-	"github.com/cosmos/cosmos-sdk/crypto/hd"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	"github.com/cosmos/cosmos-sdk/crypto/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"go.uber.org/zap"
 	"math"
 	"math/rand"
 	"regexp"
@@ -16,6 +10,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	sdkmath "cosmossdk.io/math"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/cosmos/cosmos-sdk/crypto/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"go.uber.org/zap"
 
 	"github.com/skip-mev/catalyst/internal/cosmos/client"
 	"github.com/skip-mev/catalyst/internal/cosmos/txfactory"
@@ -224,6 +225,8 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 				return
 			case block := <-blockCh:
 				r.mu.Lock()
+
+				r.numBlocksProcessed++
 				r.logger.Debug("processing block", zap.Int64("height", block.Height),
 					zap.Time("timestamp", block.Timestamp), zap.Int64("gas_limit", block.GasLimit))
 
@@ -231,6 +234,10 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 				if err != nil {
 					r.logger.Error("error sending block transactions", zap.Error(err))
 				}
+
+				r.logger.Info("processed block", zap.Int64("height", block.Height),
+					zap.Int("block_number", r.numBlocksProcessed),
+					zap.Int("total_blocks", r.spec.NumOfBlocks))
 
 				if r.numBlocksProcessed >= r.spec.NumOfBlocks {
 					r.logger.Info("Load test completed- number of blocks desired reached",
@@ -242,8 +249,6 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 				}
 
 				r.mu.Unlock()
-				r.numBlocksProcessed++
-				r.logger.Info("processed block", zap.Int64("height", block.Height))
 			}
 		}
 	}()
@@ -273,6 +278,11 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 	txsSent := 0
 	var sentTxs []inttypes.SentTx
+
+	r.logger.Info("Starting to send transactions for block",
+		zap.Int("block_number", r.numBlocksProcessed),
+		zap.Int("total_blocks", r.spec.NumOfBlocks),
+		zap.Int("expected_txs_per_block", r.totalTxsPerBlock))
 
 	latestNonces := make(map[string]uint64)
 	var latestNoncesMu sync.Mutex
@@ -467,10 +477,14 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 		}
 	}
 
-	// Store all sent transactions
 	r.sentTxsMu.Lock()
 	r.sentTxs = append(r.sentTxs, sentTxs...)
 	r.sentTxsMu.Unlock()
+
+	r.logger.Info("Completed sending transactions for block",
+		zap.Int("block_number", r.numBlocksProcessed),
+		zap.Int("txs_sent", txsSent),
+		zap.Int("expected_txs", r.totalTxsPerBlock))
 
 	return txsSent, nil
 }
