@@ -33,6 +33,8 @@ func main() {
 		logger.Fatal("Failed to parse config file", zap.Error(err))
 	}
 
+	logger.Info("load test spec", zap.Any("spec", spec))
+
 	ctx := context.Background()
 	test, err := loadtest.New(ctx, spec)
 	if err != nil {

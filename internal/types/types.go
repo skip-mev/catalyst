@@ -184,6 +184,23 @@ type LoadTestMsg struct {
 	Type   MsgType `yaml:"type"`
 }
 
+func (m *LoadTestMsg) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type LoadTestMsgAux struct {
+		Weight float64 `yaml:"weight"`
+		Type   string  `yaml:"type"`
+	}
+
+	var aux LoadTestMsgAux
+	if err := unmarshal(&aux); err != nil {
+		return err
+	}
+
+	m.Weight = aux.Weight
+	m.Type = MsgType(aux.Type)
+
+	return nil
+}
+
 type MsgType string
 
 const (
