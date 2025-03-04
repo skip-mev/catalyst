@@ -30,7 +30,6 @@ type MetricsCollector struct {
 // NewMetricsCollector creates a new metrics collector
 func NewMetricsCollector() MetricsCollector {
 	return MetricsCollector{
-		startTime:         time.Now(),
 		txsByBlock:        make(map[int64][]types.SentTx),
 		txsByNode:         make(map[string][]types.SentTx),
 		txsByMsgType:      make(map[types.MsgType][]types.SentTx),
@@ -40,7 +39,8 @@ func NewMetricsCollector() MetricsCollector {
 }
 
 // GroupSentTxs groups sent txs by block, node, and message type
-func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, gasLimit int, client *client.Chain) {
+func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, client *client.Chain, startTime time.Time) {
+	m.startTime = startTime
 	m.endTime = time.Now()
 
 	for i := range sentTxs {

@@ -2,18 +2,17 @@ package loadtest
 
 import (
 	"context"
-	"fmt"
-	"math"
-	"math/rand"
-	"sync"
-	"time"
-
 	sdkmath "cosmossdk.io/math"
+	"fmt"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"go.uber.org/zap"
+	"math"
+	"math/rand"
+	"sync"
+	"time"
 
 	"github.com/skip-mev/catalyst/internal/cosmos/client"
 	"github.com/skip-mev/catalyst/internal/cosmos/txfactory"
@@ -239,14 +238,6 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 					return
 				}
 
-				if time.Since(startTime) >= r.spec.Runtime {
-					r.logger.Info("Load test completed - runtime elapsed")
-					r.mu.Unlock()
-					cancelSub()
-					done <- struct{}{}
-					return
-				}
-
 				r.mu.Unlock()
 				r.numBlocksProcessed++
 				r.logger.Info("processed block", zap.Int64("height", block.Height))
@@ -263,7 +254,7 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 			return inttypes.LoadTestResult{}, fmt.Errorf("subscription error: %w", err)
 		}
 		client := r.clients[0]
-		r.collector.GroupSentTxs(ctx, r.sentTxs, r.gasLimit, client)
+		r.collector.GroupSentTxs(ctx, r.sentTxs, client, startTime)
 		return r.collector.ProcessResults(r.gasLimit), nil
 	case err := <-subscriptionErr:
 		// Subscription ended with error before completion

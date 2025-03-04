@@ -13,7 +13,6 @@ import "github.com/skip-mev/catalyst/loadtest"
 spec := types.LoadTestSpec{
     ChainID:             "my-chain-1",
     BlockGasLimitTarget: 0.8,
-    Runtime:             5 * time.Minute,
     NumOfBlocks:         100,
     NodesAddresses:      []types.NodeAddress{...},
     Mnemonics:           []string{"word1 word2 ... word24"},  // BIP39 mnemonics
@@ -48,7 +47,6 @@ make build
 ```yaml
 chain_id: "my-chain-1"
 block_gas_limit_target: 0.8  # Target 80% of block gas limit
-runtime: "5m"  # Run for 5 minutes
 num_of_blocks: 100  # Process 100 blocks
 nodes_addresses:
   - grpc: "localhost:9090"

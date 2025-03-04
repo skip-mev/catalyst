@@ -173,8 +173,7 @@ func TestPetriDockerIntegration(t *testing.T) {
 	spec := loadtesttypes.LoadTestSpec{
 		ChainID:             defaultChainConfig.ChainId,
 		BlockGasLimitTarget: 0.3,
-		Runtime:             1 * time.Minute,
-		NumOfBlocks:         1,
+		NumOfBlocks:         5,
 		NodesAddresses:      nodeAddresses,
 		Mnemonics:           []string{k1.Mnemonic(), k2.Mnemonic()},
 		GasDenom:            defaultChainConfig.Denom,

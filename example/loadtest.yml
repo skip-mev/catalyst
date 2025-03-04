@@ -1,7 +1,6 @@
 # Example load test configuration
 chain_id: "ib-cosmos-0ea659"
 block_gas_limit_target: 0.8  # Target 80% of block gas limit
-runtime: "5m"  # Run for 5 minutes
 num_of_blocks: 100  # Process 100 blocks
 nodes_addresses:
   - grpc: "100.122.238.40:9090"

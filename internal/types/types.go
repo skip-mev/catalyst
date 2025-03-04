@@ -2,7 +2,6 @@ package types
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
@@ -140,7 +139,6 @@ type SentTx struct {
 type LoadTestSpec struct {
 	ChainID             string        `yaml:"chain_id"`
 	BlockGasLimitTarget float64       `yaml:"block_gas_limit_target"` // Target percentage of block gas limit to use (0.0-1.0)
-	Runtime             time.Duration `yaml:"runtime"`
 	NumOfBlocks         int           `yaml:"num_of_blocks"`
 	NodesAddresses      []NodeAddress `yaml:"nodes_addresses"`
 	Mnemonics           []string      `yaml:"mnemonics"`
@@ -154,7 +152,6 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type LoadTestSpecAux struct {
 		ChainID             string        `yaml:"chain_id"`
 		BlockGasLimitTarget float64       `yaml:"block_gas_limit_target"`
-		Runtime             string        `yaml:"runtime"`
 		NumOfBlocks         int           `yaml:"num_of_blocks"`
 		NodesAddresses      []NodeAddress `yaml:"nodes_addresses"`
 		Mnemonics           []string      `yaml:"mnemonics"`
@@ -168,15 +165,9 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	duration, err := time.ParseDuration(aux.Runtime)
-	if err != nil {
-		return fmt.Errorf("failed to parse runtime duration: %w", err)
-	}
-
 	*s = LoadTestSpec{
 		ChainID:             aux.ChainID,
 		BlockGasLimitTarget: aux.BlockGasLimitTarget,
-		Runtime:             duration,
 		NumOfBlocks:         aux.NumOfBlocks,
 		NodesAddresses:      aux.NodesAddresses,
 		Mnemonics:           aux.Mnemonics,
