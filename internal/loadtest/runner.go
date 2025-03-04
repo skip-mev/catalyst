@@ -146,7 +146,8 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 			return fmt.Errorf("failed to get account: %w", err)
 		}
 
-		tx, err := fromWallet.CreateSignedTx(ctx, client, 0, sdk.Coins{}, acc.GetSequence(), acc.GetAccountNumber(), msg)
+		memo := RandomString(16)
+		tx, err := fromWallet.CreateSignedTx(ctx, client, 0, sdk.Coins{}, acc.GetSequence(), acc.GetAccountNumber(), memo, msg)
 		if err != nil {
 			return fmt.Errorf("failed to create transaction for simulation: %w", err)
 		}
@@ -162,7 +163,7 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 		}
 
 		targetGasLimit := float64(blockGasLimit) * r.spec.BlockGasLimitTarget * msgSpec.Weight
-		numTxs := int(math.Floor(targetGasLimit / float64(gasUsed)))
+		numTxs := int(math.Ceil(targetGasLimit / float64(gasUsed)))
 
 		r.gasEstimations[msgSpec.Type] = MsgGasEstimation{
 			gasUsed: int64(gasUsed),
@@ -276,27 +277,11 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 	latestNonces := make(map[string]uint64)
 	var latestNoncesMu sync.Mutex
 
-	getLatestNonce := func(walletAddr string, client *client.Chain) (uint64, error) {
+	getLatestNonce := func(walletAddr string, client *client.Chain) uint64 {
 		latestNoncesMu.Lock()
-		cachedNonce, hasCached := latestNonces[walletAddr]
-		latestNoncesMu.Unlock()
+		defer latestNoncesMu.Unlock()
 
-		acc, err := client.GetAccount(ctx, walletAddr)
-		if err != nil {
-			return 0, err
-		}
-		chainNonce := acc.GetSequence()
-
-		nonce := chainNonce
-		if hasCached && cachedNonce > chainNonce {
-			nonce = cachedNonce
-		}
-
-		latestNoncesMu.Lock()
-		latestNonces[walletAddr] = nonce
-		latestNoncesMu.Unlock()
-
-		return nonce, nil
+		return latestNonces[walletAddr]
 	}
 
 	updateNonce := func(walletAddr string) {
@@ -333,14 +318,14 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 
 				for attempt := 0; attempt < maxRetries && !success; attempt++ {
 					if attempt > 0 {
-						r.logger.Info("retrying transaction due to nonce mismatch",
+						r.logger.Debug("retrying transaction due to nonce mismatch",
 							zap.Int("attempt", attempt+1),
 							zap.String("wallet", walletAddress))
 						// Add a small delay before retrying
 						time.Sleep(100 * time.Millisecond)
 					}
 
-					nonce, err := getLatestNonce(walletAddress, client)
+					nonce := getLatestNonce(walletAddress, client)
 					if err != nil {
 						r.logger.Error("failed to get latest nonce",
 							zap.Error(err),
@@ -356,9 +341,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 
 					gasWithBuffer := int64(float64(estimation.gasUsed) * 1.4)
 
-					// this is to avoid ErrTxInMempoolCache https://github.com/cosmos/cosmos-sdk/blob/main/types/errors/errors.go#L67
-					randomFeeAdjustment := sdkmath.NewInt(int64(rand.Intn(100) + 1))
-					fees := sdk.NewCoins(sdk.NewCoin(r.spec.GasDenom, sdkmath.NewInt(gasWithBuffer).Add(randomFeeAdjustment)))
+					fees := sdk.NewCoins(sdk.NewCoin(r.spec.GasDenom, sdkmath.NewInt(gasWithBuffer)))
 
 					acc, err := client.GetAccount(ctx, walletAddress)
 					if err != nil {
@@ -368,7 +351,9 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 						continue
 					}
 
-					tx, err := fromWallet.CreateSignedTx(ctx, client, uint64(gasWithBuffer), fees, nonce, acc.GetAccountNumber(), msg)
+					// memo added to avoid ErrTxInMempoolCache https://github.com/cosmos/cosmos-sdk/blob/main/types/errors/errors.go#L67
+					memo := RandomString(16)
+					tx, err := fromWallet.CreateSignedTx(ctx, client, uint64(gasWithBuffer), fees, nonce, acc.GetAccountNumber(), memo, msg)
 					if err != nil {
 						r.logger.Error("failed to create signed tx",
 							zap.Error(err),
@@ -385,31 +370,9 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 					}
 
 					res, err := client.BroadcastTx(ctx, txBytes)
-
 					if err != nil {
-						if res != nil && res.Code == 19 {
-							r.logger.Info("transaction already in mempool, considering as success",
-								zap.String("txHash", res.TxHash),
-								zap.String("wallet", walletAddress),
-								zap.Uint64("nonce", nonce))
-
-							sentTx = inttypes.SentTx{
-								TxHash:      res.TxHash,
-								NodeAddress: client.GetNodeAddress().RPC,
-								MsgType:     msgType,
-								Err:         nil, // Consider this a success
-							}
-
-							updateNonce(walletAddress)
-
-							success = true
-
-							txsSentMu.Lock()
-							txsSent++
-							txsSentMu.Unlock()
-
-						} else if res != nil && res.Code == 32 && strings.Contains(res.RawLog, "account sequence mismatch") {
-							r.logger.Warn("nonce mismatch detected, will retry",
+						if res != nil && res.Code == 32 && strings.Contains(res.RawLog, "account sequence mismatch") {
+							r.logger.Debug("nonce mismatch detected, will retry",
 								zap.String("wallet", walletAddress),
 								zap.Uint64("used_nonce", nonce),
 								zap.String("raw_log", res.RawLog))
@@ -421,13 +384,14 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 									latestNonces[walletAddress] = expectedNonce
 									latestNoncesMu.Unlock()
 
-									r.logger.Info("updated nonce based on error message",
+									r.logger.Debug("updated nonce based on error message",
 										zap.String("wallet", walletAddress),
 										zap.Uint64("new_nonce", expectedNonce))
 								}
 							}
 						} else {
 							sentTx = inttypes.SentTx{
+								TxHash:      res.TxHash,
 								Err:         err,
 								NodeAddress: client.GetNodeAddress().RPC,
 								MsgType:     msgType,
@@ -484,4 +448,15 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 
 func (r *Runner) GetCollector() *metrics.MetricsCollector {
 	return &r.collector
+}
+
+func RandomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+	seededRand := rand.New(rand.NewSource(time.Now().UnixNano()))
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[seededRand.Intn(len(charset))]
+	}
+	return string(b)
 }
