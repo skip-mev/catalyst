@@ -3,7 +3,6 @@ package wallet
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/skip-mev/catalyst/internal/cosmos/client"
@@ -81,9 +80,6 @@ func GetTxResponse(ctx context.Context, client types.ChainI, txHash string) (*sd
 	err := util.WaitForCondition(ctx, time.Second*10, time.Millisecond*100, func() (bool, error) {
 		res, err := authtx.QueryTx(clientCtx, txHash)
 		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
-				return false, nil
-			}
 			return false, err
 		}
 
