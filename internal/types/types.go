@@ -2,6 +2,7 @@ package types
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
@@ -63,6 +64,7 @@ type OverallStats struct {
 	StartTime              time.Time
 	EndTime                time.Time
 	BlocksProcessed        int
+	TPS                    float64
 }
 
 // MessageStats represents statistics for a specific message type
@@ -193,4 +195,23 @@ const (
 
 func (m MsgType) String() string {
 	return string(m)
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface
+func (m *MsgType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+
+	switch s {
+	case "MsgSend":
+		*m = MsgSend
+	case "MultiMsgSend":
+		*m = MultiMsgSend
+	default:
+		return fmt.Errorf("unknown MsgType: %s", s)
+	}
+
+	return nil
 }
