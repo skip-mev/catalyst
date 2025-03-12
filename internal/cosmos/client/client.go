@@ -200,7 +200,7 @@ func (c *Chain) BroadcastTx(ctx context.Context, txBytes []byte) (*sdk.TxRespons
 	}
 
 	if resp.TxResponse.Code != 0 {
-		c.logger.Error("checktx failed", zap.String("tx_hash", resp.TxResponse.TxHash),
+		c.logger.Debug("checktx failed", zap.String("tx_hash", resp.TxResponse.TxHash),
 			zap.Uint32("code", resp.TxResponse.Code), zap.String("raw_log", resp.TxResponse.RawLog))
 		return resp.TxResponse, fmt.Errorf("transaction %s failed with error code: %d. Raw log: %s",
 			resp.TxResponse.TxHash, resp.TxResponse.Code, resp.TxResponse.RawLog)

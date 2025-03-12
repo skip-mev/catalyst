@@ -33,6 +33,7 @@ type MsgGasEstimation struct {
 	numTxs  int
 }
 
+// todo: cleanup struct
 // Runner represents a load test runner that executes a single LoadTestSpec
 type Runner struct {
 	spec               inttypes.LoadTestSpec
@@ -286,9 +287,7 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 					r.logger.Error("error sending block transactions", zap.Error(err))
 				}
 
-				r.logger.Info("processed block", zap.Int64("height", block.Height),
-					zap.Int("block_number", r.numBlocksProcessed),
-					zap.Int("total_blocks", r.spec.NumOfBlocks))
+				r.logger.Info("processed block", zap.Int64("height", block.Height))
 
 				if r.numBlocksProcessed >= r.spec.NumOfBlocks {
 					r.logger.Info("Load test completed- number of blocks desired reached",
@@ -317,9 +316,13 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 		// Make sure all txs are processed
 		time.Sleep(30 * time.Second)
 
-		r.logger.Info("beginning metric collection process")
+		collectorStartTime := time.Now()
 		r.collector.GroupSentTxs(ctx, r.sentTxs, client, startTime)
-		return r.collector.ProcessResults(r.gasLimit), nil
+		collectorResults := r.collector.ProcessResults(r.gasLimit, r.spec.NumOfBlocks)
+		collectorEndTime := time.Now()
+		r.logger.Debug("collector running time",
+			zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))
+		return collectorResults, nil
 	case err := <-subscriptionErr:
 		// Subscription ended with error before completion
 		if err != context.Canceled {
@@ -336,9 +339,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 	var sentTxsMu sync.Mutex
 
 	r.logger.Info("Starting to send transactions for block",
-		zap.Int("block_number", r.numBlocksProcessed),
-		zap.Int("total_blocks", r.spec.NumOfBlocks),
-		zap.Int("expected_txs_per_block", r.totalTxsPerBlock))
+		zap.Int("block_number", r.numBlocksProcessed))
 
 	totalTxs := 0
 	for _, estimation := range r.gasEstimations {
@@ -464,7 +465,7 @@ func (r *Runner) processTx(ctx context.Context, msgType inttypes.MsgType, txInde
 			zap.Int("attempt", attempt+1))
 
 		estimation := r.gasEstimations[msgType]
-		gasWithBuffer := int64(float64(estimation.gasUsed) * 1.4)
+		gasWithBuffer := int64(float64(estimation.gasUsed) * 1.6)
 
 		fees := sdk.NewCoins(sdk.NewCoin(r.spec.GasDenom, sdkmath.NewInt(gasWithBuffer)))
 
@@ -533,16 +534,18 @@ func (r *Runner) processTx(ctx context.Context, msgType inttypes.MsgType, txInde
 
 			success = true
 
-			r.logger.Info("transaction sent successfully",
+			r.logger.Debug("transaction sent successfully",
 				zap.String("txHash", res.TxHash),
 				zap.String("wallet", walletAddress),
 				zap.Uint64("nonce", nonce))
 		}
 	}
 
-	sentTxsMu.Lock()
-	*sentTxs = append(*sentTxs, sentTx)
-	sentTxsMu.Unlock()
+	if sentTx != (inttypes.SentTx{}) {
+		sentTxsMu.Lock()
+		*sentTxs = append(*sentTxs, sentTx)
+		sentTxsMu.Unlock()
+	}
 
 	return success
 }

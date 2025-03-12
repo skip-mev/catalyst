@@ -3,6 +3,7 @@ package petri_integration
 import (
 	"context"
 	"fmt"
+	"github.com/skip-mev/petri/core/v3/util"
 	"os/signal"
 	"syscall"
 	"testing"
@@ -24,7 +25,7 @@ var (
 	defaultChainConfig = petritypes.ChainConfig{
 		Denom:         "stake",
 		Decimals:      6,
-		NumValidators: 10,
+		NumValidators: 5,
 		NumNodes:      0,
 		BinaryName:    "/usr/bin/simd",
 		Image: provider.ImageDefinition{
@@ -46,6 +47,7 @@ var (
 			{
 				Key:   "consensus_params.block.max_gas",
 				Value: "1330000",
+				//Value: "75000000",
 			},
 		}),
 		WalletConfig: petritypes.WalletConfig{
@@ -116,14 +118,43 @@ func TestPetriDockerIntegration(t *testing.T) {
 		mnemonics = append(mnemonics, w.Mnemonic())
 	}
 
+	faucetWallet := c.GetFaucetWallet()
+
+	node := c.GetValidators()[0]
+	for _ = range 25 {
+		w, err := c.CreateWallet(ctx, util.RandomString(5), defaultChainOptions.WalletConfig)
+		if err != nil {
+			t.Fatal("Failed to create wallet", zap.Error(err))
+		}
+		command := []string{
+			defaultChainConfig.BinaryName,
+			"tx", "bank", "send",
+			faucetWallet.FormattedAddress(),
+			w.FormattedAddress(),
+			"1000000000stake",
+			"--chain-id", defaultChainConfig.ChainId,
+			"--keyring-backend", "test",
+			"--fees", "100stake",
+			"--yes",
+			"--home", defaultChainConfig.HomeDir,
+		}
+		_, stderr, exitCode, err := node.RunCommand(ctx, command)
+		if err != nil || exitCode != 0 {
+			t.Fatal("Failed to fund wallet 2", zap.Error(err), zap.String("stderr", stderr))
+		}
+
+		mnemonics = append(mnemonics, w.Mnemonic())
+		time.Sleep(5 * time.Second)
+	}
+
 	msgs := []loadtesttypes.LoadTestMsg{
-		//{Weight: 0.5, Type: loadtesttypes.MsgSend},
-		{Weight: 1, Type: loadtesttypes.MultiMsgSend},
+		{Weight: 1, Type: loadtesttypes.MsgSend},
+		//{Weight: 1, Type: loadtesttypes.MultiMsgSend},
 	}
 	spec := loadtesttypes.LoadTestSpec{
 		ChainID:             defaultChainConfig.ChainId,
 		BlockGasLimitTarget: 1,
-		NumOfBlocks:         10,
+		NumOfBlocks:         100,
 		NodesAddresses:      nodeAddresses,
 		Mnemonics:           mnemonics,
 		GasDenom:            defaultChainConfig.Denom,

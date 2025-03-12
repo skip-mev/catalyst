@@ -3,8 +3,12 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sort"
+	"sync"
 	"time"
+
+	logging "github.com/skip-mev/catalyst/internal/shared"
 
 	"go.uber.org/zap"
 
@@ -29,12 +33,13 @@ type MetricsCollector struct {
 
 // NewMetricsCollector creates a new metrics collector
 func NewMetricsCollector() MetricsCollector {
+	logger, _ := logging.DefaultLogger()
 	return MetricsCollector{
 		txsByBlock:        make(map[int64][]types.SentTx),
 		txsByNode:         make(map[string][]types.SentTx),
 		txsByMsgType:      make(map[types.MsgType][]types.SentTx),
 		gasUsageByMsgType: make(map[types.MsgType][]int64),
-		logger:            zap.L().Named("metrics_collector"),
+		logger:            logger,
 	}
 }
 
@@ -43,28 +48,74 @@ func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.Sen
 	m.startTime = startTime
 	m.endTime = time.Now()
 
+	maxWorkers := runtime.NumCPU() * 2
+
+	type workItem struct {
+		index int
+		tx    *types.SentTx
+	}
+
+	workChan := make(chan workItem, len(sentTxs))
+	var wg sync.WaitGroup
+
+	var mu sync.Mutex
+
+	for w := 0; w < maxWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for work := range workChan {
+				tx := work.tx
+				if tx.TxHash == "" {
+					m.logger.Info("found empty string tx hash", zap.Any("tx", tx))
+					continue
+				}
+
+				if tx.Err == nil {
+					txResponse, err := wallet.GetTxResponse(ctx, client, tx.TxHash)
+					if err != nil {
+						m.logger.Error("tx not found", zap.Error(err), zap.String("tx_hash", tx.TxHash))
+						continue
+					}
+
+					tx.TxResponse = txResponse
+
+					if txResponse.Code != 0 {
+						// todo: Do we want to include gas here
+						m.logger.Error("transaction failed after submission",
+							zap.String("tx_hash", txResponse.TxHash),
+							zap.Uint32("code", txResponse.Code),
+							zap.String("raw_log", txResponse.RawLog))
+						tx.Err = fmt.Errorf(txResponse.RawLog)
+					}
+
+					mu.Lock()
+					m.txsByBlock[tx.TxResponse.Height] = append(m.txsByBlock[tx.TxResponse.Height], *tx)
+
+					if tx.TxResponse.GasUsed > 0 {
+						m.gasUsageByMsgType[tx.MsgType] = append(m.gasUsageByMsgType[tx.MsgType], tx.TxResponse.GasUsed)
+					}
+					sentTxs[work.index] = *tx
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+
 	for i := range sentTxs {
 		tx := &sentTxs[i]
 
 		if tx.Err == nil {
-			txResponse, err := wallet.GetTxResponse(ctx, client, tx.TxHash)
-			if err != nil || txResponse == nil {
-				m.logger.Error("Error getting tx response. Metrics calculation might be inaccurate as a result", zap.Error(err))
-				continue
-			}
-			tx.TxResponse = txResponse
-
-			if txResponse.Code != 0 {
-				m.logger.Error("transaction failed after submission", zap.String("tx_hash", txResponse.TxHash),
-					zap.Uint32("code", txResponse.Code), zap.String("raw_log", txResponse.RawLog))
-				tx.Err = fmt.Errorf(txResponse.RawLog)
-			}
-
-			m.txsByBlock[tx.TxResponse.Height] = append(m.txsByBlock[tx.TxResponse.Height], *tx)
-			if tx.TxResponse.GasUsed > 0 {
-				m.gasUsageByMsgType[tx.MsgType] = append(m.gasUsageByMsgType[tx.MsgType], tx.TxResponse.GasUsed)
-			}
+			workChan <- workItem{index: i, tx: tx}
 		}
+	}
+
+	close(workChan)
+	wg.Wait()
+
+	for i := range sentTxs {
+		tx := &sentTxs[i]
 		m.txsByNode[tx.NodeAddress] = append(m.txsByNode[tx.NodeAddress], *tx)
 		m.txsByMsgType[tx.MsgType] = append(m.txsByMsgType[tx.MsgType], *tx)
 	}
@@ -78,36 +129,25 @@ func (m *MetricsCollector) calculateGasStats(gasUsage []int64) types.GasStats {
 		return types.GasStats{}
 	}
 
-	// Sort gas usage for min and max calculations
-	sort.Slice(gasUsage, func(i, j int) bool {
-		return gasUsage[i] < gasUsage[j]
-	})
-
 	var total int64
+	min := gasUsage[0]
+	max := gasUsage[0]
+
 	for _, gas := range gasUsage {
 		total += gas
+		if gas < min {
+			min = gas
+		}
+		if gas > max {
+			max = gas
+		}
 	}
 
 	return types.GasStats{
 		Average: total / int64(len(gasUsage)),
-		Min:     gasUsage[0],
-		Max:     gasUsage[len(gasUsage)-1],
+		Min:     min,
+		Max:     max,
 		Total:   total,
-	}
-}
-
-// initializeLoadTestResult creates and initializes a new LoadTestResult
-func (m *MetricsCollector) initializeLoadTestResult() types.LoadTestResult {
-	return types.LoadTestResult{
-		Overall: types.OverallStats{
-			StartTime:       m.startTime,
-			EndTime:         m.endTime,
-			Runtime:         m.endTime.Sub(m.startTime),
-			BlocksProcessed: m.blocksProcessed,
-		},
-		ByMessage: make(map[types.MsgType]types.MessageStats),
-		ByNode:    make(map[string]types.NodeStats),
-		ByBlock:   make([]types.BlockStat, 0),
 	}
 }
 
@@ -116,31 +156,42 @@ func (m *MetricsCollector) processMessageTypeStats(result *types.LoadTestResult)
 	var totalTxs, successfulTxs, failedTxs int
 	var totalGasUsed int64
 
+	result.ByMessage = make(map[types.MsgType]types.MessageStats, len(m.txsByMsgType))
+
 	for msgType, txs := range m.txsByMsgType {
-		stats := types.MessageStats{
-			Transactions: types.TransactionStats{
-				Total: len(txs),
-			},
-			Gas: m.calculateGasStats(m.gasUsageByMsgType[msgType]),
-			Errors: types.ErrorStats{
-				ErrorCounts: make(map[string]int),
-			},
-		}
+		successful := 0
+		failed := 0
+		errorCounts := make(map[string]int)
+		broadcastErrors := make([]types.BroadcastError, 0)
 
 		for _, tx := range txs {
 			if tx.Err != nil {
-				stats.Transactions.Failed++
+				failed++
 				errMsg := tx.Err.Error()
-				stats.Errors.ErrorCounts[errMsg]++
-				stats.Errors.BroadcastErrors = append(stats.Errors.BroadcastErrors, types.BroadcastError{
+				errorCounts[errMsg]++
+				broadcastErrors = append(broadcastErrors, types.BroadcastError{
 					TxHash:      tx.TxHash,
 					Error:       errMsg,
 					MsgType:     msgType,
 					NodeAddress: tx.NodeAddress,
+					BlockHeight: tx.TxResponse.Height,
 				})
 			} else {
-				stats.Transactions.Successful++
+				successful++
 			}
+		}
+
+		stats := types.MessageStats{
+			Transactions: types.TransactionStats{
+				Total:      len(txs),
+				Successful: successful,
+				Failed:     failed,
+			},
+			Gas: m.calculateGasStats(m.gasUsageByMsgType[msgType]),
+			Errors: types.ErrorStats{
+				ErrorCounts:     errorCounts,
+				BroadcastErrors: broadcastErrors,
+			},
 		}
 
 		result.ByMessage[msgType] = stats
@@ -155,9 +206,12 @@ func (m *MetricsCollector) processMessageTypeStats(result *types.LoadTestResult)
 
 // processNodeStats processes statistics for each node
 func (m *MetricsCollector) processNodeStats(result *types.LoadTestResult) {
+	result.ByNode = make(map[string]types.NodeStats, len(m.txsByNode))
+
 	for nodeAddr, txs := range m.txsByNode {
 		msgCounts := make(map[types.MsgType]int)
-		gasUsage := make([]int64, 0)
+		gasUsage := make([]int64, 0, len(txs))
+
 		stats := types.NodeStats{
 			Address: nodeAddr,
 			TransactionStats: types.TransactionStats{
@@ -166,28 +220,55 @@ func (m *MetricsCollector) processNodeStats(result *types.LoadTestResult) {
 			MessageCounts: msgCounts,
 		}
 
+		successful := 0
+		failed := 0
+
 		for _, tx := range txs {
 			msgCounts[tx.MsgType]++
 
 			if tx.Err != nil {
-				stats.TransactionStats.Failed++
+				failed++
 			} else {
-				stats.TransactionStats.Successful++
+				successful++
 				if tx.TxResponse != nil && tx.TxResponse.GasUsed > 0 {
 					gasUsage = append(gasUsage, tx.TxResponse.GasUsed)
 				}
 			}
 		}
 
+		stats.TransactionStats.Successful = successful
+		stats.TransactionStats.Failed = failed
 		stats.GasStats = m.calculateGasStats(gasUsage)
 		result.ByNode[nodeAddr] = stats
 	}
 }
 
 // processBlockStats processes statistics for each block
-func (m *MetricsCollector) processBlockStats(result *types.LoadTestResult, gasLimit int) {
+func (m *MetricsCollector) processBlockStats(result *types.LoadTestResult, gasLimit int,
+	numberOfBlocksRequested int) {
+	result.ByBlock = make([]types.BlockStat, 0, len(m.txsByBlock))
+
 	var totalGasUtilization float64
-	for height, txs := range m.txsByBlock {
+
+	blockHeights := make([]int64, 0, len(m.txsByBlock))
+
+	for height := range m.txsByBlock {
+		blockHeights = append(blockHeights, height)
+	}
+	sort.Slice(blockHeights, func(i, j int) bool {
+		return blockHeights[i] < blockHeights[j]
+	})
+	// ignore any extra blocks where txs landed in block
+	if len(blockHeights) > numberOfBlocksRequested {
+		m.logger.Debug("found extra blocks, excluding from gas utilization stats",
+			zap.Int("number_of_blocks_requested", numberOfBlocksRequested),
+			zap.Int("number_of_blocks_found", len(blockHeights)),
+			zap.Int("number_of_blocks_excluded", len(blockHeights)-numberOfBlocksRequested))
+		blockHeights = blockHeights[:numberOfBlocksRequested]
+	}
+
+	for _, height := range blockHeights {
+		txs := m.txsByBlock[height]
 		msgStats := make(map[types.MsgType]types.MessageBlockStats)
 		var blockGasUsed int64
 
@@ -206,12 +287,14 @@ func (m *MetricsCollector) processBlockStats(result *types.LoadTestResult, gasLi
 			msgStats[tx.MsgType] = stats
 		}
 
+		gasUtilization := float64(blockGasUsed) / float64(gasLimit)
+
 		blockStats := types.BlockStat{
 			BlockHeight:    height,
 			MessageStats:   msgStats,
 			TotalGasUsed:   blockGasUsed,
 			GasLimit:       gasLimit,
-			GasUtilization: float64(blockGasUsed) / float64(gasLimit),
+			GasUtilization: gasUtilization,
 		}
 
 		// Get block timestamp from any transaction in the block
@@ -225,24 +308,28 @@ func (m *MetricsCollector) processBlockStats(result *types.LoadTestResult, gasLi
 		}
 
 		result.ByBlock = append(result.ByBlock, blockStats)
-		totalGasUtilization += blockStats.GasUtilization
+		totalGasUtilization += gasUtilization
 	}
 
 	if len(result.ByBlock) > 0 {
 		result.Overall.AvgBlockGasUtilization = totalGasUtilization / float64(len(result.ByBlock))
 	}
-
-	// Sort blocks by height
-	sort.Slice(result.ByBlock, func(i, j int) bool {
-		return result.ByBlock[i].BlockHeight < result.ByBlock[j].BlockHeight
-	})
 }
 
 // ProcessResults returns the final load test results
-func (m *MetricsCollector) ProcessResults(gasLimit int) types.LoadTestResult {
-	result := m.initializeLoadTestResult()
+func (m *MetricsCollector) ProcessResults(gasLimit, numOfBlocksRequested int) types.LoadTestResult {
+	result := types.LoadTestResult{
+		Overall: types.OverallStats{
+			StartTime:       m.startTime,
+			EndTime:         m.endTime,
+			Runtime:         m.endTime.Sub(m.startTime),
+			BlocksProcessed: m.blocksProcessed,
+		},
+		ByMessage: make(map[types.MsgType]types.MessageStats, len(m.txsByMsgType)),
+		ByNode:    make(map[string]types.NodeStats, len(m.txsByNode)),
+		ByBlock:   make([]types.BlockStat, 0, len(m.txsByBlock)),
+	}
 
-	// Process message type stats and get overall totals
 	totalTxs, successfulTxs, failedTxs, totalGasUsed := m.processMessageTypeStats(&result)
 
 	// Update overall stats
@@ -253,9 +340,20 @@ func (m *MetricsCollector) ProcessResults(gasLimit int) types.LoadTestResult {
 		result.Overall.AvgGasPerTransaction = totalGasUsed / int64(successfulTxs)
 	}
 
-	// Process node and block stats
-	m.processNodeStats(&result)
-	m.processBlockStats(&result, gasLimit)
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		m.processNodeStats(&result)
+	}()
+
+	go func() {
+		defer wg.Done()
+		m.processBlockStats(&result, gasLimit, numOfBlocksRequested)
+	}()
+
+	wg.Wait()
 
 	return result
 }
