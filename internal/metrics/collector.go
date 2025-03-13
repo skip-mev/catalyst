@@ -386,6 +386,10 @@ func (m *MetricsCollector) calculateTPS(blocks []types.BlockStat, successfulTxs 
 
 	blockTimespan := lastBlock.Timestamp.Sub(firstBlock.Timestamp).Seconds()
 
+	if blockTimespan <= 0 {
+		return 0, 0, firstBlock.BlockHeight, lastBlock.BlockHeight
+	}
+
 	tps := float64(successfulTxs) / blockTimespan
 	return tps, blockTimespan, firstBlock.BlockHeight, lastBlock.BlockHeight
 }

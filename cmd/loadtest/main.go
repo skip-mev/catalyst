@@ -4,8 +4,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	logging "github.com/skip-mev/catalyst/internal/shared"
 	"os"
+
+	logging "github.com/skip-mev/catalyst/internal/shared"
 
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -16,7 +17,7 @@ import (
 
 func main() {
 	logger, _ := logging.DefaultLogger()
-	defer logger.Sync()
+	defer logging.CloseLogFile()
 
 	configPath := flag.String("config", "", "Path to load test configuration file")
 	flag.Parse()
