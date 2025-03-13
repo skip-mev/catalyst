@@ -169,13 +169,16 @@ func (m *MetricsCollector) processMessageTypeStats(result *types.LoadTestResult)
 				failed++
 				errMsg := tx.Err.Error()
 				errorCounts[errMsg]++
-				broadcastErrors = append(broadcastErrors, types.BroadcastError{
+				broadcastError := types.BroadcastError{
 					TxHash:      tx.TxHash,
 					Error:       errMsg,
 					MsgType:     msgType,
 					NodeAddress: tx.NodeAddress,
-					BlockHeight: tx.TxResponse.Height,
-				})
+				}
+				if tx.TxResponse != nil {
+					broadcastError.BlockHeight = tx.TxResponse.Height
+				}
+				broadcastErrors = append(broadcastErrors, broadcastError)
 			} else {
 				successful++
 			}
