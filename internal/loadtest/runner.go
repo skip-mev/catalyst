@@ -311,13 +311,13 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 		if err := <-subscriptionErr; err != nil && err != context.Canceled {
 			return inttypes.LoadTestResult{}, fmt.Errorf("subscription error: %w", err)
 		}
-		client := r.clients[0]
 
 		// Make sure all txs are processed
 		time.Sleep(30 * time.Second)
 
 		collectorStartTime := time.Now()
-		r.collector.GroupSentTxs(ctx, r.sentTxs, client, startTime)
+		collectorClient := r.clients[0]
+		r.collector.GroupSentTxs(ctx, r.sentTxs, collectorClient, startTime)
 		collectorResults := r.collector.ProcessResults(r.gasLimit, r.spec.NumOfBlocks)
 		collectorEndTime := time.Now()
 		r.logger.Debug("collector running time",

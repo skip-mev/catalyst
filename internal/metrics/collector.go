@@ -355,7 +355,27 @@ func (m *MetricsCollector) ProcessResults(gasLimit, numOfBlocksRequested int) ty
 
 	wg.Wait()
 
+	tps, _, _, _ := m.calculateTPS(result.ByBlock, result.Overall.SuccessfulTransactions)
+	if tps > 0 {
+		result.Overall.TPS = tps
+	}
+
 	return result
+}
+
+// calculateTPS calculates transactions per second based on block timestamps
+func (m *MetricsCollector) calculateTPS(blocks []types.BlockStat, successfulTxs int) (float64, float64, int64, int64) {
+	firstBlock := blocks[0]
+	lastBlock := blocks[len(blocks)-1]
+
+	if firstBlock.Timestamp.IsZero() || lastBlock.Timestamp.IsZero() {
+		return 0, 0, 0, 0
+	}
+
+	blockTimespan := lastBlock.Timestamp.Sub(firstBlock.Timestamp).Seconds()
+
+	tps := float64(successfulTxs) / blockTimespan
+	return tps, blockTimespan, firstBlock.BlockHeight, lastBlock.BlockHeight
 }
 
 // PrintResults prints the load test results in a clean, formatted way
@@ -370,6 +390,13 @@ func (m *MetricsCollector) PrintResults(result types.LoadTestResult) {
 	fmt.Printf("Average Block Gas Utilization: %.2f%%\n", result.Overall.AvgBlockGasUtilization*100)
 	fmt.Printf("Runtime: %s\n", result.Overall.Runtime)
 	fmt.Printf("Blocks Processed: %d\n", result.Overall.BlocksProcessed)
+
+	tps, blockTimespan, firstBlockHeight, lastBlockHeight := m.calculateTPS(result.ByBlock, result.Overall.SuccessfulTransactions)
+	if tps > 0 {
+		fmt.Printf("Transactions Per Second (TPS): %.2f\n", tps)
+		fmt.Printf("Block Timespan: %.2f seconds (from block %d to %d)\n",
+			blockTimespan, firstBlockHeight, lastBlockHeight)
+	}
 
 	fmt.Println("\n📊 Message Type Statistics:")
 	for msgType, stats := range result.ByMessage {
