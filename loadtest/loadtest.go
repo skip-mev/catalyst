@@ -36,13 +36,15 @@ func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (types.LoadTest
 	if err != nil {
 		results.Error = err.Error()
 	}
+	logger.Info("runner results", zap.Any("results", results))
+
+	lt.runner.GetCollector().PrintResults(results)
+
 	logger.Info("load test run completed, saving results")
 
 	if saveErr := SaveResults(results, logger); saveErr != nil {
 		return results, fmt.Errorf("failed to save results: %w", saveErr)
 	}
-
-	lt.runner.GetCollector().PrintResults(results)
 
 	return results, err
 }
