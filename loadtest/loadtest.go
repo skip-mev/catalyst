@@ -31,12 +31,12 @@ func New(ctx context.Context, spec types.LoadTestSpec) (*LoadTest, error) {
 
 // Run executes the load test and returns the results
 func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (types.LoadTestResult, error) {
-	logger.Info("Starting new load test run")
+	logger.Info("starting new load test run")
 	results, err := lt.runner.Run(ctx)
 	if err != nil {
 		results.Error = err.Error()
 	}
-	logger.Info("Load test run completed, saving results")
+	logger.Info("load test run completed, saving results")
 
 	if saveErr := SaveResults(results, logger); saveErr != nil {
 		return results, fmt.Errorf("failed to save results: %w", saveErr)
@@ -52,7 +52,7 @@ func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (types.LoadTest
 func SaveResults(results types.LoadTestResult, logger *zap.Logger) error {
 	dir := "/tmp/catalyst"
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		logger.Error("Failed to create results directory",
+		logger.Error("failed to create results directory",
 			zap.String("dir", dir),
 			zap.Error(err))
 		return err
@@ -60,20 +60,20 @@ func SaveResults(results types.LoadTestResult, logger *zap.Logger) error {
 
 	jsonData, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {
-		logger.Error("Failed to marshal results to JSON",
+		logger.Error("failed to marshal results to JSON",
 			zap.Error(err))
 		return err
 	}
 
 	filePath := filepath.Join(dir, "load_test.json")
 	if err := os.WriteFile(filePath, jsonData, 0644); err != nil {
-		logger.Error("Failed to write results to file",
+		logger.Error("failed to write results to file",
 			zap.String("path", filePath),
 			zap.Error(err))
 		return err
 	}
 
-	logger.Debug("Successfully saved load test results",
+	logger.Debug("successfully saved load test results",
 		zap.String("path", filePath))
 
 	return nil

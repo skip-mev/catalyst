@@ -28,6 +28,7 @@ type MetricsCollector struct {
 	txsByNode         map[string][]types.SentTx
 	txsByMsgType      map[types.MsgType][]types.SentTx
 	gasUsageByMsgType map[types.MsgType][]int64
+	txNotFoundCount   int
 	logger            *zap.Logger
 }
 
@@ -59,6 +60,7 @@ func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.Sen
 	var wg sync.WaitGroup
 
 	var mu sync.Mutex
+	var txNotFoundCount int
 
 	for w := 0; w < maxWorkers; w++ {
 		wg.Add(1)
@@ -76,6 +78,10 @@ func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.Sen
 					txResponse, err := wallet.GetTxResponse(ctx, client, tx.TxHash)
 					if err != nil {
 						m.logger.Error("tx not found", zap.Error(err), zap.String("tx_hash", tx.TxHash))
+						tx.Err = err
+						mu.Lock()
+						txNotFoundCount++
+						mu.Unlock()
 						continue
 					}
 
@@ -83,7 +89,7 @@ func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.Sen
 
 					if txResponse.Code != 0 {
 						// todo: Do we want to include gas here
-						m.logger.Error("transaction failed after submission",
+						m.logger.Debug("transaction failed after submission",
 							zap.String("tx_hash", txResponse.TxHash),
 							zap.Uint32("code", txResponse.Code),
 							zap.String("raw_log", txResponse.RawLog))
@@ -113,6 +119,9 @@ func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.Sen
 
 	close(workChan)
 	wg.Wait()
+
+	m.txNotFoundCount = txNotFoundCount
+	m.logger.Info("Completed processing transactions", zap.Int("tx_not_found_count", txNotFoundCount))
 
 	for i := range sentTxs {
 		tx := &sentTxs[i]
@@ -191,10 +200,10 @@ func (m *MetricsCollector) processMessageTypeStats(result *types.LoadTestResult)
 				Failed:     failed,
 			},
 			Gas: m.calculateGasStats(m.gasUsageByMsgType[msgType]),
-			Errors: types.ErrorStats{
-				ErrorCounts:     errorCounts,
-				BroadcastErrors: broadcastErrors,
-			},
+			//Errors: types.ErrorStats{
+			//	ErrorCounts:     errorCounts,
+			//	BroadcastErrors: broadcastErrors,
+			//},
 		}
 
 		result.ByMessage[msgType] = stats
@@ -304,7 +313,7 @@ func (m *MetricsCollector) processBlockStats(result *types.LoadTestResult, gasLi
 		if len(txs) > 0 {
 			timestamp, err := time.Parse(time.RFC3339, txs[0].TxResponse.Timestamp)
 			if err != nil {
-				m.logger.Error("Error parsing tx timestamp", zap.String("tx_hash", txs[0].TxHash),
+				m.logger.Error("failed to parse tx timestamp", zap.String("tx_hash", txs[0].TxHash),
 					zap.String("timestamp", txs[0].TxResponse.Timestamp), zap.Error(err))
 			}
 			blockStats.Timestamp = timestamp
@@ -389,6 +398,7 @@ func (m *MetricsCollector) PrintResults(result types.LoadTestResult) {
 	fmt.Printf("Total Transactions: %d\n", result.Overall.TotalTransactions)
 	fmt.Printf("Successful Transactions: %d\n", result.Overall.SuccessfulTransactions)
 	fmt.Printf("Failed Transactions: %d\n", result.Overall.FailedTransactions)
+	fmt.Printf("Transactions Not Found: %d\n", m.txNotFoundCount)
 	fmt.Printf("Average Gas Per Transaction: %d\n", result.Overall.AvgGasPerTransaction)
 	fmt.Printf("Average Block Gas Utilization: %.2f%%\n", result.Overall.AvgBlockGasUtilization*100)
 	fmt.Printf("Runtime: %s\n", result.Overall.Runtime)
@@ -413,12 +423,12 @@ func (m *MetricsCollector) PrintResults(result types.LoadTestResult) {
 		fmt.Printf("    Min: %d\n", stats.Gas.Min)
 		fmt.Printf("    Max: %d\n", stats.Gas.Max)
 		fmt.Printf("    Total: %d\n", stats.Gas.Total)
-		if len(stats.Errors.BroadcastErrors) > 0 {
-			fmt.Printf("  Errors:\n")
-			for errType, count := range stats.Errors.ErrorCounts {
-				fmt.Printf("    %s: %d occurrences\n", errType, count)
-			}
-		}
+		//if len(stats.Errors.BroadcastErrors) > 0 {
+		//	fmt.Printf("  Errors:\n")
+		//	for errType, count := range stats.Errors.ErrorCounts {
+		//		fmt.Printf("    %s: %d occurrences\n", errType, count)
+		//	}
+		//}
 	}
 
 	fmt.Println("\n🖥️  Node Statistics:")

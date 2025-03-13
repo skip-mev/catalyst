@@ -184,7 +184,7 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 		}
 		r.totalTxsPerBlock += numTxs
 
-		r.logger.Info("Gas estimation results",
+		r.logger.Info("gas estimation results",
 			zap.String("msgType", msgSpec.Type.String()),
 			zap.Int("blockGasLimit", blockGasLimit),
 			zap.Uint64("txGasEstimation", gasUsed),
@@ -200,7 +200,7 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 }
 
 func (r *Runner) initWalletNonces(ctx context.Context) error {
-	r.logger.Info("Initializing wallet nonces and account numbers")
+	r.logger.Info("initializing wallet nonces and account numbers")
 
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -244,7 +244,7 @@ func (r *Runner) initWalletNonces(ctx context.Context) error {
 		return initErr
 	}
 
-	r.logger.Info("Successfully initialized wallet nonces and account numbers",
+	r.logger.Info("successfully initialized wallet nonces and account numbers",
 		zap.Int("wallets", len(r.wallets)))
 	return nil
 }
@@ -290,7 +290,7 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 				r.logger.Info("processed block", zap.Int64("height", block.Height))
 
 				if r.numBlocksProcessed >= r.spec.NumOfBlocks {
-					r.logger.Info("Load test completed- number of blocks desired reached",
+					r.logger.Info("load test completed- number of blocks desired reached",
 						zap.Int("blocks", r.numBlocksProcessed))
 					r.mu.Unlock()
 					cancelSub()
@@ -305,7 +305,7 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 
 	select {
 	case <-ctx.Done():
-		r.logger.Info("Load test interrupted")
+		r.logger.Info("load test interrupted")
 		return inttypes.LoadTestResult{}, ctx.Err()
 	case <-done:
 		if err := <-subscriptionErr; err != nil && err != context.Canceled {
@@ -313,15 +313,18 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 		}
 
 		// Make sure all txs are processed
-		time.Sleep(30 * time.Second)
+		time.Sleep(3 * time.Minute)
 
 		collectorStartTime := time.Now()
 		collectorClient := r.clients[0]
+
 		r.collector.GroupSentTxs(ctx, r.sentTxs, collectorClient, startTime)
 		collectorResults := r.collector.ProcessResults(r.gasLimit, r.spec.NumOfBlocks)
+
 		collectorEndTime := time.Now()
 		r.logger.Debug("collector running time",
 			zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))
+
 		return collectorResults, nil
 	case err := <-subscriptionErr:
 		// Subscription ended with error before completion
@@ -338,7 +341,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 	var sentTxs []inttypes.SentTx
 	var sentTxsMu sync.Mutex
 
-	r.logger.Info("Starting to send transactions for block",
+	r.logger.Info("starting to send transactions for block",
 		zap.Int("block_number", r.numBlocksProcessed))
 
 	totalTxs := 0
@@ -396,7 +399,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 	r.sentTxs = append(r.sentTxs, sentTxs...)
 	r.sentTxsMu.Unlock()
 
-	r.logger.Info("Completed sending transactions for block",
+	r.logger.Info("completed sending transactions for block",
 		zap.Int("block_number", r.numBlocksProcessed),
 		zap.Int("txs_sent", txsSent),
 		zap.Int("expected_txs", r.totalTxsPerBlock))
@@ -465,7 +468,7 @@ func (r *Runner) processTx(ctx context.Context, msgType inttypes.MsgType, txInde
 			zap.Int("attempt", attempt+1))
 
 		estimation := r.gasEstimations[msgType]
-		gasWithBuffer := int64(float64(estimation.gasUsed) * 1.6)
+		gasWithBuffer := int64(float64(estimation.gasUsed) * 2)
 
 		fees := sdk.NewCoins(sdk.NewCoin(r.spec.GasDenom, sdkmath.NewInt(gasWithBuffer)))
 

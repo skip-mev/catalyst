@@ -71,7 +71,7 @@ type OverallStats struct {
 type MessageStats struct {
 	Transactions TransactionStats
 	Gas          GasStats
-	Errors       ErrorStats
+	//Errors       ErrorStats
 }
 
 // TransactionStats represents transaction-related statistics

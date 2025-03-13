@@ -42,12 +42,12 @@ func main() {
 	test, err := loadtest.New(ctx, spec)
 	if err != nil {
 		saveConfigError(fmt.Sprintf("failed to create test. error: %s", err), logger)
-		logger.Fatal("Failed to create test", zap.Error(err))
+		logger.Fatal("failed to create test", zap.Error(err))
 	}
 
 	_, err = test.Run(ctx, logger)
 	if err != nil {
-		logger.Fatal("Failed to run load test", zap.Error(err))
+		logger.Fatal("failed to run load test", zap.Error(err))
 	}
 }
 

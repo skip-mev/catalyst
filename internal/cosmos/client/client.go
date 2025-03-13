@@ -99,7 +99,7 @@ func (c *Chain) SubscribeToBlocks(ctx context.Context, handler types.BlockHandle
 		return fmt.Errorf("failed to subscribe to blocks: %w", err)
 	}
 
-	defer c.unsubscribeFromBlocks(ctx, query)
+	defer c.unsubscribeFromBlocks(query)
 	return c.processBlockEvents(ctx, eventCh, handler)
 }
 
@@ -113,7 +113,7 @@ func (c *Chain) processBlockEvents(ctx context.Context, eventCh <-chan coretypes
 				return fmt.Errorf("event channel closed unexpectedly")
 			}
 			if err := c.handleBlockEvent(ctx, event, handler); err != nil {
-				c.logger.Error("Failed to handle block event", zap.Error(err))
+				c.logger.Error("failed to handle block event", zap.Error(err))
 				continue
 			}
 		}
@@ -123,7 +123,7 @@ func (c *Chain) processBlockEvents(ctx context.Context, eventCh <-chan coretypes
 func (c *Chain) handleBlockEvent(ctx context.Context, event coretypes.ResultEvent, handler types.BlockHandler) error {
 	newBlockEvent, ok := event.Data.(tmtypes.EventDataNewBlock)
 	if !ok {
-		c.logger.Error("Unexpected event type", zap.Any("Event data received", event.Data))
+		c.logger.Error("unexpected event type", zap.Any("Event data received", event.Data))
 		return fmt.Errorf("unexpected event type")
 	}
 
@@ -143,10 +143,10 @@ func (c *Chain) handleBlockEvent(ctx context.Context, event coretypes.ResultEven
 	return nil
 }
 
-func (c *Chain) unsubscribeFromBlocks(ctx context.Context, query string) {
-	err := c.cometClient.Unsubscribe(ctx, "loadtest", query)
+func (c *Chain) unsubscribeFromBlocks(query string) {
+	err := c.cometClient.Unsubscribe(context.TODO(), "loadtest", query)
 	if err != nil {
-		c.logger.Error("failed to unsubscribe from comet client", zap.Error(err))
+		c.logger.Warn("failed to unsubscribe from comet client", zap.Error(err))
 	}
 }
 
