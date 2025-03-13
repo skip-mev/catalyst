@@ -313,7 +313,7 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 		}
 
 		// Make sure all txs are processed
-		time.Sleep(3 * time.Minute)
+		time.Sleep(10 * time.Second)
 
 		collectorStartTime := time.Now()
 		collectorClient := r.clients[0]
@@ -512,10 +512,11 @@ func (r *Runner) processTx(ctx context.Context, msgType inttypes.MsgType, txInde
 				}
 			} else {
 				sentTx = inttypes.SentTx{
-					TxHash:      res.TxHash,
-					Err:         err,
-					NodeAddress: client.GetNodeAddress().RPC,
-					MsgType:     msgType,
+					TxHash:            res.TxHash,
+					Err:               err,
+					NodeAddress:       client.GetNodeAddress().RPC,
+					MsgType:           msgType,
+					InitialTxResponse: res,
 				}
 				r.logger.Error("failed to broadcast tx",
 					zap.Error(err),
@@ -525,10 +526,11 @@ func (r *Runner) processTx(ctx context.Context, msgType inttypes.MsgType, txInde
 			}
 		} else {
 			sentTx = inttypes.SentTx{
-				TxHash:      res.TxHash,
-				NodeAddress: client.GetNodeAddress().RPC,
-				MsgType:     msgType,
-				Err:         nil,
+				TxHash:            res.TxHash,
+				NodeAddress:       client.GetNodeAddress().RPC,
+				MsgType:           msgType,
+				Err:               nil,
+				InitialTxResponse: res,
 			}
 
 			r.walletNoncesMu.Lock()

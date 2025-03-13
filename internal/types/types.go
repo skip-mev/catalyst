@@ -64,7 +64,7 @@ type OverallStats struct {
 	StartTime              time.Time
 	EndTime                time.Time
 	BlocksProcessed        int
-	TPS                    float64
+	TPS                    float64 `json:"TPS,omitempty"`
 }
 
 // MessageStats represents statistics for a specific message type
@@ -131,11 +131,12 @@ type BroadcastError struct {
 }
 
 type SentTx struct {
-	TxHash      string
-	NodeAddress string
-	MsgType     MsgType
-	Err         error
-	TxResponse  *sdk.TxResponse
+	TxHash            string
+	NodeAddress       string
+	MsgType           MsgType
+	Err               error
+	TxResponse        *sdk.TxResponse
+	InitialTxResponse *sdk.TxResponse
 }
 
 type LoadTestSpec struct {
