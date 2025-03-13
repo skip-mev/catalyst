@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	logging "github.com/skip-mev/catalyst/internal/shared"
 	"os"
 
 	"go.uber.org/zap"
@@ -14,7 +15,7 @@ import (
 )
 
 func main() {
-	logger, _ := zap.NewProduction()
+	logger, _ := logging.DefaultLogger()
 	defer logger.Sync()
 
 	configPath := flag.String("config", "", "Path to load test configuration file")
