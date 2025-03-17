@@ -196,7 +196,7 @@ func (c *Chain) BroadcastTx(ctx context.Context, txBytes []byte) (*sdk.TxRespons
 		Mode:    txtypes.BroadcastMode_BROADCAST_MODE_SYNC,
 	})
 	if err != nil {
-		return resp.TxResponse, err
+		return nil, err
 	}
 
 	if resp.TxResponse.Code != 0 {
@@ -205,6 +205,8 @@ func (c *Chain) BroadcastTx(ctx context.Context, txBytes []byte) (*sdk.TxRespons
 		return resp.TxResponse, fmt.Errorf("transaction %s failed with error code: %d. Raw log: %s",
 			resp.TxResponse.TxHash, resp.TxResponse.Code, resp.TxResponse.RawLog)
 	}
+
+	c.logger.Debug("txresponse", zap.Any("resp.txresponse", resp.TxResponse))
 
 	return resp.TxResponse, nil
 }

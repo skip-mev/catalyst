@@ -3,8 +3,6 @@ package wallet
 import (
 	"context"
 	"fmt"
-	"time"
-
 	"github.com/skip-mev/catalyst/internal/cosmos/client"
 
 	sdkclient "github.com/cosmos/cosmos-sdk/client"
@@ -14,7 +12,6 @@ import (
 	xauthsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	"github.com/skip-mev/catalyst/internal/types"
-	"github.com/skip-mev/catalyst/internal/util"
 )
 
 // InteractingWallet represents a wallet that can interact with the chain
@@ -68,8 +65,6 @@ func (w *InteractingWallet) CreateAndBroadcastTx(ctx context.Context, gas uint64
 }
 
 func GetTxResponse(ctx context.Context, client types.ChainI, txHash string) (*sdk.TxResponse, error) {
-	var txResp *sdk.TxResponse
-
 	cometClient := client.GetCometClient()
 
 	clientCtx := sdkclient.Context{}.
@@ -77,18 +72,9 @@ func GetTxResponse(ctx context.Context, client types.ChainI, txHash string) (*sd
 		WithTxConfig(client.GetEncodingConfig().TxConfig).
 		WithInterfaceRegistry(client.GetEncodingConfig().InterfaceRegistry)
 
-	err := util.WaitForCondition(ctx, time.Second*10, time.Millisecond*100, func() (bool, error) {
-		res, err := authtx.QueryTx(clientCtx, txHash)
-		if err != nil {
-			return false, err
-		}
-
-		txResp = res
-
-		return true, nil
-	})
+	txResp, err := authtx.QueryTx(clientCtx, txHash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to find transaction %s after timeout: %w", txHash, err)
 	}
 
 	return txResp, nil
