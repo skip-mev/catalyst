@@ -18,5 +18,5 @@ bech32_prefix: "cosmos"
 msgs:
   - type: "MsgSend"  # MsgSend
     weight: 0.7  # 70% of transactions
-  - type: "MultiMsgSend"  # MultiMsgSend
+  - type: "MsgMultiSend"  # MsgMultiSend
     weight: 0.3  # 30% of transactions

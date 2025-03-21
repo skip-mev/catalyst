@@ -191,7 +191,7 @@ type MsgType string
 
 const (
 	MsgSend      MsgType = "MsgSend"
-	MultiMsgSend MsgType = "MultiMsgSend"
+	MsgMultiSend MsgType = "MsgMultiSend"
 )
 
 func (m MsgType) String() string {
@@ -208,8 +208,8 @@ func (m *MsgType) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	switch s {
 	case "MsgSend":
 		*m = MsgSend
-	case "MultiMsgSend":
-		*m = MultiMsgSend
+	case "MsgMultiSend":
+		*m = MsgMultiSend
 	default:
 		return fmt.Errorf("unknown MsgType: %s", s)
 	}

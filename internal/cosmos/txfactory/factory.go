@@ -30,7 +30,7 @@ func (f *TxFactory) CreateMsg(msgType types.MsgType, fromWallet *wallet.Interact
 	switch msgType {
 	case types.MsgSend:
 		return f.createMsgSend(fromWallet)
-	case types.MultiMsgSend:
+	case types.MsgMultiSend:
 		return f.createMsgMultiSend(fromWallet)
 	default:
 		return nil, fmt.Errorf("unsupported message type: %v", msgType)
