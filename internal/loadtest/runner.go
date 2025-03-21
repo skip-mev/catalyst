@@ -54,11 +54,13 @@ type Runner struct {
 
 // NewRunner creates a new load test runner for a given spec
 func NewRunner(ctx context.Context, spec inttypes.LoadTestSpec) (*Runner, error) {
+	logger, _ := zap.NewDevelopment()
 	var clients []*client.Chain
 	for _, node := range spec.NodesAddresses {
 		client, err := client.NewClient(ctx, node.RPC, node.GRPC, spec.ChainID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create client for node %s: %v", node.RPC, err)
+			logger.Warn("failed to create client for node", zap.String("rpc", node.RPC), zap.Error(err))
+			//return nil, fmt.Errorf("failed to create client for node %s: %v", node.RPC, err)
 		}
 		clients = append(clients, client)
 	}
