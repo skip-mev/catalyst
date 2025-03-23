@@ -60,7 +60,7 @@ func NewRunner(ctx context.Context, spec inttypes.LoadTestSpec) (*Runner, error)
 		client, err := client.NewClient(ctx, node.RPC, node.GRPC, spec.ChainID)
 		if err != nil {
 			logger.Warn("failed to create client for node", zap.String("rpc", node.RPC), zap.Error(err))
-			//return nil, fmt.Errorf("failed to create client for node %s: %v", node.RPC, err)
+			continue
 		}
 		clients = append(clients, client)
 	}

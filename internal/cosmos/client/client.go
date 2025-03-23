@@ -51,7 +51,7 @@ func NewClient(ctx context.Context, rpcAddress, grpcAddress, chainID string) (*C
 		return nil, fmt.Errorf("failed to create rpc client: %w", err)
 	}
 
-	if err := rpcClient.Start(); err != nil {
+	if err = rpcClient.Start(); err != nil {
 		return nil, fmt.Errorf("failed to start rpc client: %w", err)
 	}
 
