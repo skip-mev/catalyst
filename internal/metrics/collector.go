@@ -256,7 +256,7 @@ func (m *MetricsCollector) processNodeStats(result *types.LoadTestResult) {
 }
 
 // processBlockStats processes statistics for each block
-func (m *MetricsCollector) processBlockStats(result *types.LoadTestResult, gasLimit int,
+func (m *MetricsCollector) processBlockStats(result *types.LoadTestResult, gasLimit int64,
 	numberOfBlocksRequested int) {
 	result.ByBlock = make([]types.BlockStat, 0, len(m.txsByBlock))
 
@@ -329,7 +329,7 @@ func (m *MetricsCollector) processBlockStats(result *types.LoadTestResult, gasLi
 }
 
 // ProcessResults returns the final load test results
-func (m *MetricsCollector) ProcessResults(gasLimit, numOfBlocksRequested int) types.LoadTestResult {
+func (m *MetricsCollector) ProcessResults(gasLimit int64, numOfBlocksRequested int) types.LoadTestResult {
 	result := types.LoadTestResult{
 		Overall: types.OverallStats{
 			StartTime:       m.startTime,
@@ -377,6 +377,9 @@ func (m *MetricsCollector) ProcessResults(gasLimit, numOfBlocksRequested int) ty
 
 // calculateTPS calculates transactions per second based on block timestamps
 func (m *MetricsCollector) calculateTPS(blocks []types.BlockStat, successfulTxs int) (float64, float64, int64, int64) {
+	if len(blocks) == 0 {
+		return 0, 0, 0, 0
+	}
 	firstBlock := blocks[0]
 	lastBlock := blocks[len(blocks)-1]
 

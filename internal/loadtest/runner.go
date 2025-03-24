@@ -38,8 +38,8 @@ type Runner struct {
 	spec               inttypes.LoadTestSpec
 	clients            []*client.Chain
 	wallets            []*wallet.InteractingWallet
+	blockGasLimit      int64
 	gasEstimations     map[inttypes.MsgType]MsgGasEstimation
-	gasLimit           int
 	totalTxsPerBlock   int
 	mu                 sync.Mutex
 	numBlocksProcessed int
@@ -125,8 +125,8 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get block gas limit: %w", err)
 	}
+	r.blockGasLimit = blockGasLimit
 
-	r.gasLimit = blockGasLimit
 	if r.spec.BlockGasLimitTarget <= 0 || r.spec.BlockGasLimitTarget > 1 {
 		return fmt.Errorf("block gas limit target must be between 0 and 1, got %f", r.spec.BlockGasLimitTarget)
 	}
@@ -182,7 +182,7 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 
 		r.logger.Info("gas estimation results",
 			zap.String("msgType", msgSpec.Type.String()),
-			zap.Int("blockGasLimit", blockGasLimit),
+			zap.Int64("blockGasLimit", blockGasLimit),
 			zap.Uint64("txGasEstimation", gasUsed),
 			zap.Float64("targetGasLimit", targetGasLimit),
 			zap.Int("numTxs", numTxs))
@@ -211,7 +211,7 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 	blockCh := make(chan inttypes.Block, 1)
 
 	go func() {
-		err := r.clients[0].SubscribeToBlocks(subCtx, func(block inttypes.Block) {
+		err := r.clients[0].SubscribeToBlocks(subCtx, r.blockGasLimit, func(block inttypes.Block) {
 			select {
 			case blockCh <- block:
 			case <-subCtx.Done():
@@ -270,7 +270,7 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 		collectorClient := r.clients[0]
 
 		r.collector.GroupSentTxs(ctx, r.sentTxs, collectorClient, startTime)
-		collectorResults := r.collector.ProcessResults(r.gasLimit, r.spec.NumOfBlocks)
+		collectorResults := r.collector.ProcessResults(r.blockGasLimit, r.spec.NumOfBlocks)
 
 		collectorEndTime := time.Now()
 		r.logger.Debug("collector running time",
@@ -359,8 +359,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 						zap.String("msgType", msgType.String()),
 						zap.Int("attempt", attempt+1))
 
-					gasWithBuffer := int64(float64(estimation.gasUsed) * 1.6)
-
+					gasWithBuffer := int64(float64(estimation.gasUsed) * 2.5)
 					fees := sdk.NewCoins(sdk.NewCoin(r.spec.GasDenom, sdkmath.NewInt(gasWithBuffer)))
 
 					accountNumber := r.accountNumbers[walletAddress]

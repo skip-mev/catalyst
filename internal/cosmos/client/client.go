@@ -92,7 +92,7 @@ func NewClient(ctx context.Context, rpcAddress, grpcAddress, chainID string) (*C
 	return c, nil
 }
 
-func (c *Chain) SubscribeToBlocks(ctx context.Context, handler types.BlockHandler) error {
+func (c *Chain) SubscribeToBlocks(ctx context.Context, gasLimit int64, handler types.BlockHandler) error {
 	query := fmt.Sprintf("%s = '%s'", tmtypes.EventTypeKey, tmtypes.EventNewBlock)
 	eventCh, err := c.cometClient.Subscribe(ctx, "loadtest", query, 100)
 	if err != nil {
@@ -100,10 +100,10 @@ func (c *Chain) SubscribeToBlocks(ctx context.Context, handler types.BlockHandle
 	}
 
 	defer c.unsubscribeFromBlocks(query)
-	return c.processBlockEvents(ctx, eventCh, handler)
+	return c.processBlockEvents(ctx, eventCh, gasLimit, handler)
 }
 
-func (c *Chain) processBlockEvents(ctx context.Context, eventCh <-chan coretypes.ResultEvent, handler types.BlockHandler) error {
+func (c *Chain) processBlockEvents(ctx context.Context, eventCh <-chan coretypes.ResultEvent, gasLimit int64, handler types.BlockHandler) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -112,7 +112,7 @@ func (c *Chain) processBlockEvents(ctx context.Context, eventCh <-chan coretypes
 			if !ok {
 				return fmt.Errorf("event channel closed unexpectedly")
 			}
-			if err := c.handleBlockEvent(ctx, event, handler); err != nil {
+			if err := c.handleBlockEvent(ctx, event, gasLimit, handler); err != nil {
 				c.logger.Error("failed to handle block event", zap.Error(err))
 				continue
 			}
@@ -120,7 +120,7 @@ func (c *Chain) processBlockEvents(ctx context.Context, eventCh <-chan coretypes
 	}
 }
 
-func (c *Chain) handleBlockEvent(ctx context.Context, event coretypes.ResultEvent, handler types.BlockHandler) error {
+func (c *Chain) handleBlockEvent(ctx context.Context, event coretypes.ResultEvent, maxGasLimit int64, handler types.BlockHandler) error {
 	newBlockEvent, ok := event.Data.(tmtypes.EventDataNewBlock)
 	if !ok {
 		c.logger.Error("unexpected event type", zap.Any("Event data received", event.Data))
@@ -129,14 +129,9 @@ func (c *Chain) handleBlockEvent(ctx context.Context, event coretypes.ResultEven
 
 	c.logger.Debug("received new block event", zap.Int64("height", newBlockEvent.Block.Height))
 
-	params, err := c.cometClient.ConsensusParams(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to get consensus params: %w", err)
-	}
-
 	block := types.Block{
 		Height:    newBlockEvent.Block.Height,
-		GasLimit:  params.ConsensusParams.Block.MaxGas,
+		GasLimit:  maxGasLimit,
 		Timestamp: newBlockEvent.Block.Time,
 	}
 	handler(block)
@@ -150,7 +145,7 @@ func (c *Chain) unsubscribeFromBlocks(query string) {
 	}
 }
 
-func (c *Chain) GetGasLimit(ctx context.Context) (int, error) {
+func (c *Chain) GetGasLimit(ctx context.Context) (int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -178,7 +173,7 @@ func (c *Chain) GetGasLimit(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("invalid max gas value: %d", maxGas)
 	}
 
-	return int(maxGas), nil
+	return maxGas, nil
 }
 
 func (c *Chain) EstimateGasUsed(ctx context.Context, txBz []byte) (uint64, error) {

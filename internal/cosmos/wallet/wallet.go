@@ -74,7 +74,7 @@ func GetTxResponse(ctx context.Context, client types.ChainI, txHash string) (*sd
 
 	txResp, err := authtx.QueryTx(clientCtx, txHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find transaction %s after timeout: %w", txHash, err)
+		return nil, fmt.Errorf("failed to find transaction %s: %w", txHash, err)
 	}
 
 	return txResp, nil

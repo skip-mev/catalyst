@@ -29,7 +29,7 @@ type ChainI interface {
 	GetEncodingConfig() EncodingConfig
 	GetChainID() string
 	GetNodeAddress() NodeAddress
-	SubscribeToBlocks(ctx context.Context, handler BlockHandler) error
+	SubscribeToBlocks(ctx context.Context, gasLimit int64, handler BlockHandler) error
 	GetCometClient() *rpchttp.HTTP
 }
 
@@ -107,7 +107,7 @@ type NodeStats struct {
 type BlockStat struct {
 	BlockHeight    int64
 	Timestamp      time.Time
-	GasLimit       int
+	GasLimit       int64
 	TotalGasUsed   int64
 	MessageStats   map[MsgType]MessageBlockStats
 	GasUtilization float64
