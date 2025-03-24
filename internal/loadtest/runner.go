@@ -359,7 +359,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 						zap.String("msgType", msgType.String()),
 						zap.Int("attempt", attempt+1))
 
-					gasWithBuffer := int64(float64(estimation.gasUsed) * 2.5)
+					gasWithBuffer := int64(float64(estimation.gasUsed) * 2)
 					fees := sdk.NewCoins(sdk.NewCoin(r.spec.GasDenom, sdkmath.NewInt(gasWithBuffer)))
 
 					accountNumber := r.accountNumbers[walletAddress]
