@@ -4,11 +4,17 @@ go 1.23.1
 
 toolchain go1.23.5
 
+replace (
+	github.com/skip-mev/petri/core/v3 => ../petri/core
+	github.com/skip-mev/petri/cosmos/v3 => ../petri/cosmos
+
+)
+
 require (
 	cosmossdk.io/math v1.3.0
 	github.com/cometbft/cometbft v0.38.16
 	github.com/cosmos/cosmos-sdk v0.50.10
-	github.com/skip-mev/petri/core/v3 v3.0.0
+	github.com/skip-mev/petri/core/v3 v3.0.2
 	github.com/skip-mev/petri/cosmos/v3 v3.0.1
 	go.uber.org/zap v1.27.0
 	google.golang.org/grpc v1.69.4

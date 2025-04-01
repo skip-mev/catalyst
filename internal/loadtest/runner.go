@@ -264,12 +264,11 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 		}
 
 		// Make sure all txs are processed
-		time.Sleep(10 * time.Second)
+		time.Sleep(30 * time.Second)
 
 		collectorStartTime := time.Now()
-		collectorClient := r.clients[0]
 
-		r.collector.GroupSentTxs(ctx, r.sentTxs, collectorClient, startTime)
+		r.collector.GroupSentTxs(ctx, r.sentTxs, r.clients, startTime)
 		collectorResults := r.collector.ProcessResults(r.blockGasLimit, r.spec.NumOfBlocks)
 
 		collectorEndTime := time.Now()
@@ -359,7 +358,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 						zap.String("msgType", msgType.String()),
 						zap.Int("attempt", attempt+1))
 
-					gasWithBuffer := int64(float64(estimation.gasUsed) * 2)
+					gasWithBuffer := int64(float64(estimation.gasUsed) * 1.01)
 					fees := sdk.NewCoins(sdk.NewCoin(r.spec.GasDenom, sdkmath.NewInt(gasWithBuffer)))
 
 					accountNumber := r.accountNumbers[walletAddress]
@@ -404,14 +403,16 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 							}
 						} else {
 							sentTx = inttypes.SentTx{
-								TxHash:      res.TxHash,
 								Err:         err,
 								NodeAddress: client.GetNodeAddress().RPC,
 								MsgType:     msgType,
 							}
+							if res != nil {
+								sentTx.TxHash = res.TxHash
+							}
 							r.logger.Error("failed to broadcast tx",
 								zap.Error(err),
-								zap.String("node", client.GetNodeAddress().RPC))
+								zap.Any("tx", sentTx))
 
 							break
 						}
@@ -432,7 +433,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 						txsSentMu.Unlock()
 
 						r.logger.Info("transaction sent successfully",
-							zap.String("txHash", res.TxHash),
+							zap.Any("res", res),
 							zap.String("wallet", walletAddress),
 							zap.Uint64("nonce", nonce))
 					}

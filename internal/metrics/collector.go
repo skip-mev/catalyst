@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"runtime"
 	"sort"
 	"sync"
@@ -45,7 +46,7 @@ func NewMetricsCollector() MetricsCollector {
 }
 
 // GroupSentTxs groups sent txs by block, node, and message type
-func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, client *client.Chain, startTime time.Time) {
+func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, clients []*client.Chain, startTime time.Time) {
 	m.startTime = startTime
 	m.endTime = time.Now()
 
@@ -75,7 +76,8 @@ func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.Sen
 				}
 
 				if tx.Err == nil {
-					txResponse, err := wallet.GetTxResponse(ctx, client, tx.TxHash)
+					randomClient := &clients[rand.Intn(len(clients))]
+					txResponse, err := wallet.GetTxResponse(ctx, *randomClient, tx.TxHash)
 					if err != nil {
 						m.logger.Error("tx not found", zap.Error(err), zap.String("tx_hash", tx.TxHash))
 						tx.Err = err
@@ -88,7 +90,6 @@ func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.Sen
 					tx.TxResponse = txResponse
 
 					if txResponse.Code != 0 {
-						// todo: Do we want to include gas here
 						m.logger.Debug("transaction failed after submission",
 							zap.String("tx_hash", txResponse.TxHash),
 							zap.Uint32("code", txResponse.Code),
@@ -258,11 +259,12 @@ func (m *MetricsCollector) processNodeStats(result *types.LoadTestResult) {
 // processBlockStats processes statistics for each block
 func (m *MetricsCollector) processBlockStats(result *types.LoadTestResult, gasLimit int64,
 	numberOfBlocksRequested int) {
-	result.ByBlock = make([]types.BlockStat, 0, len(m.txsByBlock))
+	var results []types.BlockStat
+	result.ByBlock = results
 
 	var totalGasUtilization float64
 
-	blockHeights := make([]int64, 0, len(m.txsByBlock))
+	var blockHeights []int64
 
 	for height := range m.txsByBlock {
 		blockHeights = append(blockHeights, height)
@@ -272,7 +274,7 @@ func (m *MetricsCollector) processBlockStats(result *types.LoadTestResult, gasLi
 	})
 	// ignore any extra blocks where txs landed in block
 	if len(blockHeights) > numberOfBlocksRequested {
-		m.logger.Debug("found extra blocks, excluding from gas utilization stats",
+		m.logger.Info("found extra blocks, excluding from gas utilization stats",
 			zap.Int("number_of_blocks_requested", numberOfBlocksRequested),
 			zap.Int("number_of_blocks_found", len(blockHeights)),
 			zap.Int("number_of_blocks_excluded", len(blockHeights)-numberOfBlocksRequested))
@@ -460,8 +462,8 @@ func (m *MetricsCollector) PrintResults(result types.LoadTestResult) {
 	var totalGasUtilization float64
 	var maxGasUtilization float64
 	minGasUtilization := result.ByBlock[0].GasUtilization // set first block as min initially
-	var maxGasBlock int64
-	var minGasBlock int64
+	maxGasBlock := result.ByBlock[0].BlockHeight
+	minGasBlock := result.ByBlock[0].BlockHeight
 	for _, block := range result.ByBlock {
 		totalGasUtilization += block.GasUtilization
 		if block.GasUtilization > maxGasUtilization {
