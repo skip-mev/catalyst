@@ -188,7 +188,8 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 		}
 
 		memo := RandomString(16)
-		tx, err := fromWallet.CreateSignedTx(ctx, client, 0, sdk.Coins{}, acc.GetSequence(), acc.GetAccountNumber(), memo, msgs...)
+		tx, err := fromWallet.CreateSignedTx(ctx, client, 0, sdk.Coins{}, acc.GetSequence(), acc.GetAccountNumber(),
+			memo, r.spec.UnorderedTxs, r.spec.TxTimeout, msgs...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create transaction for simulation: %w", err)
 		}
@@ -520,7 +521,8 @@ func (r *Runner) createAndSendTransaction(
 	accountNumber := r.accountNumbers[walletAddress]
 	memo := RandomString(16) // Avoid ErrTxInMempoolCache
 
-	tx, err := fromWallet.CreateSignedTx(ctx, client, uint64(gasWithBuffer), fees, nonce, accountNumber, memo, msgs...)
+	tx, err := fromWallet.CreateSignedTx(ctx, client, uint64(gasWithBuffer), fees, nonce, accountNumber,
+		memo, r.spec.UnorderedTxs, r.spec.TxTimeout, msgs...)
 	if err != nil {
 		r.logger.Error("failed to create signed tx",
 			zap.Error(err),

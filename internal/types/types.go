@@ -150,6 +150,8 @@ type LoadTestSpec struct {
 	GasDenom            string        `yaml:"gas_denom"`
 	Bech32Prefix        string        `yaml:"bech32_prefix"`
 	Msgs                []LoadTestMsg `yaml:"msgs"`
+	UnorderedTxs        bool          `yaml:"unordered_txs"`
+	TxTimeout           time.Duration `yaml:"tx_timeout"`
 }
 
 func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
