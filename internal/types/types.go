@@ -185,6 +185,83 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
+// Validate validates the LoadTestSpec and returns an error if it's invalid
+func (s *LoadTestSpec) Validate() error {
+	if len(s.NodesAddresses) == 0 {
+		return fmt.Errorf("no node addresses provided")
+	}
+
+	if s.ChainID == "" {
+		return fmt.Errorf("chain ID must be specified")
+	}
+
+	if s.BlockGasLimitTarget <= 0 && s.NumOfTxs <= 0 {
+		return fmt.Errorf("either block_gas_limit_target or num_of_txs must be set")
+	}
+
+	if s.BlockGasLimitTarget > 0 && s.NumOfTxs > 0 {
+		return fmt.Errorf("only one of block_gas_limit_target or num_of_txs should be set, not both")
+	}
+
+	if s.BlockGasLimitTarget > 1 {
+		return fmt.Errorf("block gas limit target must be between 0 and 1, got %f", s.BlockGasLimitTarget)
+	}
+
+	if s.NumOfBlocks <= 0 {
+		return fmt.Errorf("num_of_blocks must be greater than 0")
+	}
+
+	if len(s.Msgs) == 0 {
+		return fmt.Errorf("no messages specified for load testing")
+	}
+
+	seenMsgTypes := make(map[MsgType]bool)
+	seenMsgArrTypes := make(map[MsgType]bool)
+
+	var totalWeight float64
+	for _, msg := range s.Msgs {
+		totalWeight += msg.Weight
+
+		if msg.Type == MsgArr {
+			if msg.ContainedType == "" {
+				return fmt.Errorf("contained_type must be specified for MsgArr")
+			}
+
+			if msg.NumMsgs <= 0 {
+				return fmt.Errorf("num_msgs must be greater than 0 for MsgArr")
+			}
+
+			if seenMsgArrTypes[msg.ContainedType] {
+				return fmt.Errorf("duplicate MsgArr with contained_type %s", msg.ContainedType)
+			}
+			seenMsgArrTypes[msg.ContainedType] = true
+		} else {
+			if seenMsgTypes[msg.Type] {
+				return fmt.Errorf("duplicate message type: %s", msg.Type)
+			}
+			seenMsgTypes[msg.Type] = true
+		}
+	}
+
+	if totalWeight != 1 {
+		return fmt.Errorf("total message weights must add up to 1.0, got %f", totalWeight)
+	}
+
+	if len(s.Mnemonics) == 0 && len(s.PrivateKeys) == 0 {
+		return fmt.Errorf("either mnemonics or private keys must be provided")
+	}
+
+	if s.GasDenom == "" {
+		return fmt.Errorf("gas denomination must be specified")
+	}
+
+	if s.Bech32Prefix == "" {
+		return fmt.Errorf("bech32 prefix must be specified")
+	}
+
+	return nil
+}
+
 type MsgType string
 
 const (
