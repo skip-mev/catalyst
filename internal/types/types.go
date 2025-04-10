@@ -142,6 +142,7 @@ type SentTx struct {
 type LoadTestSpec struct {
 	ChainID             string        `yaml:"chain_id"`
 	BlockGasLimitTarget float64       `yaml:"block_gas_limit_target"` // Target percentage of block gas limit to use (0.0-1.0)
+	NumOfTxs            int           `yaml:"num_of_txs"`
 	NumOfBlocks         int           `yaml:"num_of_blocks"`
 	NodesAddresses      []NodeAddress `yaml:"nodes_addresses"`
 	Mnemonics           []string      `yaml:"mnemonics"`
@@ -155,6 +156,7 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type LoadTestSpecAux struct {
 		ChainID             string        `yaml:"chain_id"`
 		BlockGasLimitTarget float64       `yaml:"block_gas_limit_target"`
+		NumOfTxs            int           `yaml:"num_of_txs"`
 		NumOfBlocks         int           `yaml:"num_of_blocks"`
 		NodesAddresses      []NodeAddress `yaml:"nodes_addresses"`
 		Mnemonics           []string      `yaml:"mnemonics"`
@@ -171,6 +173,7 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*s = LoadTestSpec{
 		ChainID:             aux.ChainID,
 		BlockGasLimitTarget: aux.BlockGasLimitTarget,
+		NumOfTxs:            aux.NumOfTxs,
 		NumOfBlocks:         aux.NumOfBlocks,
 		NodesAddresses:      aux.NodesAddresses,
 		Mnemonics:           aux.Mnemonics,
