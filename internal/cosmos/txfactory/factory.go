@@ -32,6 +32,8 @@ func (f *TxFactory) CreateMsg(msgType types.MsgType, fromWallet *wallet.Interact
 		return f.createMsgSend(fromWallet)
 	case types.MsgMultiSend:
 		return f.createMsgMultiSend(fromWallet)
+	case types.MsgArr:
+		return nil, fmt.Errorf("MsgArr requires using CreateMsgs instead of CreateMsg")
 	default:
 		return nil, fmt.Errorf("unsupported message type: %v", msgType)
 	}
@@ -39,7 +41,7 @@ func (f *TxFactory) CreateMsg(msgType types.MsgType, fromWallet *wallet.Interact
 
 // createMsgSend creates a basic bank send message
 func (f *TxFactory) createMsgSend(fromWallet *wallet.InteractingWallet) (sdk.Msg, error) {
-	amount := sdk.NewCoins(sdk.NewCoin(f.gasDenom, sdkmath.NewInt(1000000)))
+	amount := sdk.NewCoins(sdk.NewCoin(f.gasDenom, sdkmath.NewInt(10)))
 
 	var toWallet *wallet.InteractingWallet
 	if len(f.wallets) == 1 {
@@ -107,4 +109,41 @@ func (f *TxFactory) createMsgMultiSend(fromWallet *wallet.InteractingWallet) (sd
 		},
 		Outputs: outputs,
 	}, nil
+}
+
+// createMsgArray creates an array of messages of the specified type
+func (f *TxFactory) createMsgArray(containedType types.MsgType, fromWallet *wallet.InteractingWallet, numMsgs int) ([]sdk.Msg, error) {
+	messages := make([]sdk.Msg, 0, numMsgs)
+
+	for i := 0; i < numMsgs; i++ {
+		var msg sdk.Msg
+		var err error
+
+		switch containedType {
+		case types.MsgSend:
+			msg, err = f.createMsgSend(fromWallet)
+		case types.MsgMultiSend:
+			msg, err = f.createMsgMultiSend(fromWallet)
+		default:
+			return nil, fmt.Errorf("unsupported contained message type: %v", containedType)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to create message of type %s at index %d: %w",
+				containedType, i, err)
+		}
+
+		messages = append(messages, msg)
+	}
+
+	return messages, nil
+}
+
+// CreateMsgs is a variant of CreateMsg that returns multiple messages of x type as part of the same transaction
+func (f *TxFactory) CreateMsgs(msgType types.MsgType, containedType types.MsgType, fromWallet *wallet.InteractingWallet, numMsgs int) ([]sdk.Msg, error) {
+	if msgType != types.MsgArr {
+		return nil, fmt.Errorf("CreateMsgs only accepts MsgArr type")
+	}
+
+	return f.createMsgArray(containedType, fromWallet, numMsgs)
 }

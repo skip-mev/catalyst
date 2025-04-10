@@ -185,16 +185,12 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-type LoadTestMsg struct {
-	Weight float64 `yaml:"weight"`
-	Type   MsgType `yaml:"type"`
-}
-
 type MsgType string
 
 const (
 	MsgSend      MsgType = "MsgSend"
 	MsgMultiSend MsgType = "MsgMultiSend"
+	MsgArr       MsgType = "MsgArr"
 )
 
 func (m MsgType) String() string {
@@ -213,9 +209,18 @@ func (m *MsgType) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		*m = MsgSend
 	case "MsgMultiSend":
 		*m = MsgMultiSend
+	case "MsgArr":
+		*m = MsgArr
 	default:
 		return fmt.Errorf("unknown MsgType: %s", s)
 	}
 
 	return nil
+}
+
+type LoadTestMsg struct {
+	Weight        float64 `yaml:"weight"`
+	Type          MsgType `yaml:"type"`
+	NumMsgs       int     `yaml:"num_msgs,omitempty"`       // Number of messages to include in MsgArr
+	ContainedType MsgType `yaml:"contained_type,omitempty"` // Type of messages to include in MsgArr
 }

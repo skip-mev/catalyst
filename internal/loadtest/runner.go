@@ -167,9 +167,28 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 	gasEstimations := make(map[inttypes.MsgType]uint64)
 
 	for _, msgSpec := range r.spec.Msgs {
-		msg, err := r.txFactory.CreateMsg(msgSpec.Type, fromWallet)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create message for gas estimation: %w", err)
+		var msgs []sdk.Msg
+		var err error
+
+		if msgSpec.Type == inttypes.MsgArr {
+			numMsgs := r.getNumMsgsForMsgType(msgSpec.Type)
+			containedType := r.getContainedTypeForMsgArr(msgSpec.Type)
+
+			msgs, err = r.txFactory.CreateMsgs(msgSpec.Type, containedType, fromWallet, numMsgs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create messages for gas estimation: %w", err)
+			}
+
+			r.logger.Debug("using MsgArr for gas estimation",
+				zap.Int("configured_num_msgs", numMsgs),
+				zap.String("contained_type", string(containedType)),
+				zap.Int("actual_num_msgs", len(msgs)))
+		} else {
+			msg, err := r.txFactory.CreateMsg(msgSpec.Type, fromWallet)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create message for gas estimation: %w", err)
+			}
+			msgs = []sdk.Msg{msg}
 		}
 
 		acc, err := client.GetAccount(ctx, fromWallet.FormattedAddress())
@@ -178,7 +197,7 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 		}
 
 		memo := RandomString(16)
-		tx, err := fromWallet.CreateSignedTx(ctx, client, 0, sdk.Coins{}, acc.GetSequence(), acc.GetAccountNumber(), memo, msg)
+		tx, err := fromWallet.CreateSignedTx(ctx, client, 0, sdk.Coins{}, acc.GetSequence(), acc.GetAccountNumber(), memo, msgs...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create transaction for simulation: %w", err)
 		}
@@ -194,6 +213,13 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 		}
 
 		gasEstimations[msgSpec.Type] = gasUsed
+
+		if msgSpec.Type == inttypes.MsgArr {
+			r.logger.Debug("gas estimation for MsgArr",
+				zap.String("contained_type", string(r.getContainedTypeForMsgArr(msgSpec.Type))),
+				zap.Int("num_messages", len(msgs)),
+				zap.Uint64("gas_estimation", gasUsed))
+		}
 	}
 
 	return gasEstimations, nil
@@ -384,7 +410,26 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 				walletAddress := fromWallet.FormattedAddress()
 				client := fromWallet.GetClient()
 
-				msg, err := r.txFactory.CreateMsg(msgType, fromWallet)
+				var msgs []sdk.Msg
+				var err error
+
+				if msgType == inttypes.MsgArr {
+					numMsgs := r.getNumMsgsForMsgType(msgType)
+					containedType := r.getContainedTypeForMsgArr(msgType)
+
+					msgs, err = r.txFactory.CreateMsgs(msgType, containedType, fromWallet, numMsgs)
+
+					r.logger.Debug("creating MsgArr transaction",
+						zap.Int("configured_num_msgs", numMsgs),
+						zap.String("contained_type", string(containedType)),
+						zap.Int("actual_num_msgs", len(msgs)))
+				} else {
+					msg, err := r.txFactory.CreateMsg(msgType, fromWallet)
+					if err == nil {
+						msgs = []sdk.Msg{msg}
+					}
+				}
+
 				if err != nil {
 					r.logger.Error("failed to create message",
 						zap.Error(err),
@@ -419,14 +464,15 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 						zap.String("msgType", msgType.String()),
 						zap.Int("attempt", attempt+1))
 
-					gasWithBuffer := int64(float64(estimation.gasUsed) * 1.01)
+					gasBufferFactor := 1.01
+					gasWithBuffer := int64(float64(estimation.gasUsed) * gasBufferFactor)
 					fees := sdk.NewCoins(sdk.NewCoin(r.spec.GasDenom, sdkmath.NewInt(gasWithBuffer)))
 
 					accountNumber := r.accountNumbers[walletAddress]
 
 					// memo added to avoid ErrTxInMempoolCache https://github.com/cosmos/cosmos-sdk/blob/main/types/errors/errors.go#L67
 					memo := RandomString(16)
-					tx, err := fromWallet.CreateSignedTx(ctx, client, uint64(gasWithBuffer), fees, nonce, accountNumber, memo, msg)
+					tx, err := fromWallet.CreateSignedTx(ctx, client, uint64(gasWithBuffer), fees, nonce, accountNumber, memo, msgs...)
 					if err != nil {
 						r.logger.Error("failed to create signed tx",
 							zap.Error(err),
@@ -496,6 +542,8 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 						r.logger.Info("transaction sent successfully",
 							zap.Any("res", res),
 							zap.String("wallet", walletAddress),
+							zap.String("msgType", msgType.String()),
+							zap.Int("num_msgs", len(msgs)),
 							zap.Uint64("nonce", nonce))
 					}
 				}
@@ -595,4 +643,23 @@ func (r *Runner) getWorkflowName() string {
 		return "BlockGasLimitTarget"
 	}
 	return "NumOfTxs"
+}
+
+func (r *Runner) getNumMsgsForMsgType(msgType inttypes.MsgType) int {
+	for _, msgSpec := range r.spec.Msgs {
+		if msgSpec.Type == msgType {
+			return msgSpec.NumMsgs
+		}
+	}
+	return 0
+}
+
+func (r *Runner) getContainedTypeForMsgArr(msgType inttypes.MsgType) inttypes.MsgType {
+	for _, msgSpec := range r.spec.Msgs {
+		if msgSpec.Type == msgType {
+			return msgSpec.ContainedType
+		}
+	}
+	// Default to MsgSend if not specified
+	return inttypes.MsgSend
 }
