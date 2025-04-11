@@ -39,7 +39,7 @@ type Runner struct {
 	clients            []*client.Chain
 	wallets            []*wallet.InteractingWallet
 	blockGasLimit      int64
-	gasEstimations     map[inttypes.MsgType]MsgGasEstimation
+	gasEstimations     map[inttypes.LoadTestMsg]MsgGasEstimation
 	totalTxsPerBlock   int
 	mu                 sync.Mutex
 	numBlocksProcessed int
@@ -50,11 +50,17 @@ type Runner struct {
 	txFactory          *txfactory.TxFactory
 	accountNumbers     map[string]uint64
 	walletNonces       map[string]uint64
+	walletNoncesMu     sync.Mutex
 }
 
 // NewRunner creates a new load test runner for a given spec
 func NewRunner(ctx context.Context, spec inttypes.LoadTestSpec) (*Runner, error) {
 	logger, _ := zap.NewDevelopment()
+
+	if err := spec.Validate(); err != nil {
+		return nil, err
+	}
+
 	var clients []*client.Chain
 	for _, node := range spec.NodesAddresses {
 		client, err := client.NewClient(ctx, node.RPC, node.GRPC, spec.ChainID)
@@ -116,6 +122,10 @@ func NewRunner(ctx context.Context, spec inttypes.LoadTestSpec) (*Runner, error)
 	return runner, nil
 }
 
+func (r *Runner) isBlockGasLimitTargetWorkflow() bool {
+	return r.spec.BlockGasLimitTarget > 0
+}
+
 // initGasEstimation performs initial gas estimation to determine how many transactions
 // to send to chain
 func (r *Runner) initGasEstimation(ctx context.Context) error {
@@ -127,64 +137,133 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 	}
 	r.blockGasLimit = blockGasLimit
 
-	if r.spec.BlockGasLimitTarget <= 0 || r.spec.BlockGasLimitTarget > 1 {
-		return fmt.Errorf("block gas limit target must be between 0 and 1, got %f", r.spec.BlockGasLimitTarget)
-	}
-
-	var totalWeight float64
-	for _, msg := range r.spec.Msgs {
-		totalWeight += msg.Weight
-	}
-	if totalWeight != 1.0 {
-		return fmt.Errorf("total message weights must add up to 1.0, got %f", totalWeight)
-	}
-
-	fromWallet := r.wallets[0]
-	r.gasEstimations = make(map[inttypes.MsgType]MsgGasEstimation)
+	r.gasEstimations = make(map[inttypes.LoadTestMsg]MsgGasEstimation)
 	r.totalTxsPerBlock = 0
 
+	gasEstimations, err := r.calculateMsgGasEstimations(ctx, client)
+	if err != nil {
+		return err
+	}
+
+	if r.isBlockGasLimitTargetWorkflow() {
+		return r.initBlockGasLimitTargetWorkflow(gasEstimations, blockGasLimit)
+	} else {
+		return r.initNumOfTxsWorkflow(gasEstimations)
+	}
+}
+
+// calculateMsgGasEstimations calculates gas estimations for all message types
+func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.Chain) (map[inttypes.LoadTestMsg]uint64, error) {
+	fromWallet := r.wallets[0]
+	gasEstimations := make(map[inttypes.LoadTestMsg]uint64)
+
 	for _, msgSpec := range r.spec.Msgs {
-		msg, err := r.txFactory.CreateMsg(msgSpec.Type, fromWallet)
-		if err != nil {
-			return fmt.Errorf("failed to create message for gas estimation: %w", err)
+		var msgs []sdk.Msg
+		var err error
+
+		if msgSpec.Type == inttypes.MsgArr {
+			numMsgs := msgSpec.NumMsgs
+			containedType := msgSpec.ContainedType
+
+			msgs, err = r.txFactory.CreateMsgs(msgSpec.Type, containedType, fromWallet, numMsgs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create messages for gas estimation: %w", err)
+			}
+
+			r.logger.Debug("using MsgArr for gas estimation",
+				zap.Int("configured_num_msgs", numMsgs),
+				zap.String("contained_type", string(containedType)),
+				zap.Int("actual_num_msgs", len(msgs)))
+		} else {
+			msg, err := r.txFactory.CreateMsg(msgSpec.Type, fromWallet)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create message for gas estimation: %w", err)
+			}
+			msgs = []sdk.Msg{msg}
 		}
 
 		acc, err := client.GetAccount(ctx, fromWallet.FormattedAddress())
 		if err != nil {
-			return fmt.Errorf("failed to get account: %w", err)
+			return nil, fmt.Errorf("failed to get account: %w", err)
 		}
 
 		memo := RandomString(16)
-		tx, err := fromWallet.CreateSignedTx(ctx, client, 0, sdk.Coins{}, acc.GetSequence(), acc.GetAccountNumber(), memo, msg)
+		tx, err := fromWallet.CreateSignedTx(ctx, client, 0, sdk.Coins{}, acc.GetSequence(), acc.GetAccountNumber(), memo, msgs...)
 		if err != nil {
-			return fmt.Errorf("failed to create transaction for simulation: %w", err)
+			return nil, fmt.Errorf("failed to create transaction for simulation: %w", err)
 		}
 
 		txBytes, err := client.GetEncodingConfig().TxConfig.TxEncoder()(tx)
 		if err != nil {
-			return fmt.Errorf("failed to encode transaction: %w", err)
+			return nil, fmt.Errorf("failed to encode transaction: %w", err)
 		}
 
 		gasUsed, err := client.EstimateGasUsed(ctx, txBytes)
 		if err != nil {
-			return fmt.Errorf("failed to estimate gas: %w", err)
+			return nil, fmt.Errorf("failed to estimate gas: %w", err)
 		}
+
+		gasEstimations[msgSpec] = gasUsed
+
+		if msgSpec.Type == inttypes.MsgArr {
+			r.logger.Debug("gas estimation for MsgArr",
+				zap.String("contained_type", string(msgSpec.ContainedType)),
+				zap.Int("num_messages", len(msgs)),
+				zap.Uint64("gas_estimation", gasUsed))
+		}
+	}
+
+	return gasEstimations, nil
+}
+
+// initBlockGasLimitTargetWorkflow initializes the gas estimations based on block gas limit target
+func (r *Runner) initBlockGasLimitTargetWorkflow(gasEstimations map[inttypes.LoadTestMsg]uint64, blockGasLimit int64) error {
+	for _, msgSpec := range r.spec.Msgs {
+		gasUsed := gasEstimations[msgSpec]
 
 		targetGasLimit := float64(blockGasLimit) * r.spec.BlockGasLimitTarget * msgSpec.Weight
 		numTxs := int(math.Ceil(targetGasLimit/(float64(gasUsed))) * 1.4)
 
-		r.gasEstimations[msgSpec.Type] = MsgGasEstimation{
+		r.gasEstimations[msgSpec] = MsgGasEstimation{
 			gasUsed: int64(gasUsed),
 			weight:  msgSpec.Weight,
 			numTxs:  numTxs,
 		}
 		r.totalTxsPerBlock += numTxs
 
-		r.logger.Info("gas estimation results",
+		r.logger.Info("gas estimation results for BlockGasLimitTarget workflow",
 			zap.String("msgType", msgSpec.Type.String()),
 			zap.Int64("blockGasLimit", blockGasLimit),
 			zap.Uint64("txGasEstimation", gasUsed),
 			zap.Float64("targetGasLimit", targetGasLimit),
+			zap.Int("numTxs", numTxs))
+	}
+
+	if r.totalTxsPerBlock <= 0 {
+		return fmt.Errorf("calculated total number of transactions per block is zero or negative: %d", r.totalTxsPerBlock)
+	}
+
+	return nil
+}
+
+// initNumOfTxsWorkflow initializes the gas estimations based on number of transactions
+func (r *Runner) initNumOfTxsWorkflow(gasEstimations map[inttypes.LoadTestMsg]uint64) error {
+	for _, msgSpec := range r.spec.Msgs {
+		gasUsed := gasEstimations[msgSpec]
+
+		numTxs := int(float64(r.spec.NumOfTxs) * msgSpec.Weight)
+
+		r.gasEstimations[msgSpec] = MsgGasEstimation{
+			gasUsed: int64(gasUsed),
+			weight:  msgSpec.Weight,
+			numTxs:  numTxs,
+		}
+		r.totalTxsPerBlock += numTxs
+
+		r.logger.Info("transaction allocation based on NumOfTxs workflow",
+			zap.String("msgType", msgSpec.Type.String()),
+			zap.Int("totalTxs", r.spec.NumOfTxs),
+			zap.Float64("weight", msgSpec.Weight),
 			zap.Int("numTxs", numTxs))
 	}
 
@@ -290,161 +369,35 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 	var sentTxs []inttypes.SentTx
 	var sentTxsMu sync.Mutex
 
-	r.logger.Info("starting to send transactions for block",
-		zap.Int("block_number", r.numBlocksProcessed))
-
-	var latestNoncesMu sync.Mutex
+	r.logWorkflowStart()
 
 	getLatestNonce := func(walletAddr string, client *client.Chain) uint64 {
-		latestNoncesMu.Lock()
-		defer latestNoncesMu.Unlock()
-
+		r.walletNoncesMu.Lock()
+		defer r.walletNoncesMu.Unlock()
 		return r.walletNonces[walletAddr]
 	}
 
 	updateNonce := func(walletAddr string) {
-		latestNoncesMu.Lock()
-		defer latestNoncesMu.Unlock()
-
+		r.walletNoncesMu.Lock()
+		defer r.walletNoncesMu.Unlock()
 		r.walletNonces[walletAddr]++
 	}
 
 	var wg sync.WaitGroup
 	var txsSentMu sync.Mutex
 
-	for msgType, estimation := range r.gasEstimations {
+	for mspSpec, estimation := range r.gasEstimations {
 		for i := 0; i < estimation.numTxs; i++ {
 			wg.Add(1)
-
-			go func(msgType inttypes.MsgType, txIndex int) {
+			go func(msgSpec inttypes.LoadTestMsg, txIndex int) {
 				defer wg.Done()
 
-				fromWallet := r.wallets[rand.Intn(len(r.wallets))]
-				walletAddress := fromWallet.FormattedAddress()
-				client := fromWallet.GetClient()
-
-				msg, err := r.txFactory.CreateMsg(msgType, fromWallet)
-				if err != nil {
-					r.logger.Error("failed to create message",
-						zap.Error(err),
-						zap.String("node", client.GetNodeAddress().RPC))
-					return
-				}
-
-				maxRetries := 3
-				var sentTx inttypes.SentTx
-				success := false
-
-				for attempt := 0; attempt < maxRetries && !success; attempt++ {
-					if attempt > 0 {
-						r.logger.Debug("retrying transaction due to nonce mismatch",
-							zap.Int("attempt", attempt+1),
-							zap.String("wallet", walletAddress))
-						// Add a small delay before retrying
-						time.Sleep(100 * time.Millisecond)
-					}
-
-					nonce := getLatestNonce(walletAddress, client)
-					if err != nil {
-						r.logger.Error("failed to get latest nonce",
-							zap.Error(err),
-							zap.String("node", client.GetNodeAddress().RPC))
-						continue
-					}
-
-					r.logger.Debug("using nonce for transaction",
-						zap.Uint64("nonce", nonce),
-						zap.String("wallet", walletAddress),
-						zap.String("msgType", msgType.String()),
-						zap.Int("attempt", attempt+1))
-
-					gasWithBuffer := int64(float64(estimation.gasUsed) * 1.01)
-					fees := sdk.NewCoins(sdk.NewCoin(r.spec.GasDenom, sdkmath.NewInt(gasWithBuffer)))
-
-					accountNumber := r.accountNumbers[walletAddress]
-
-					// memo added to avoid ErrTxInMempoolCache https://github.com/cosmos/cosmos-sdk/blob/main/types/errors/errors.go#L67
-					memo := RandomString(16)
-					tx, err := fromWallet.CreateSignedTx(ctx, client, uint64(gasWithBuffer), fees, nonce, accountNumber, memo, msg)
-					if err != nil {
-						r.logger.Error("failed to create signed tx",
-							zap.Error(err),
-							zap.String("node", client.GetNodeAddress().RPC))
-						continue
-					}
-
-					txBytes, err := client.GetEncodingConfig().TxConfig.TxEncoder()(tx)
-					if err != nil {
-						r.logger.Error("failed to encode tx",
-							zap.Error(err),
-							zap.String("node", client.GetNodeAddress().RPC))
-						continue
-					}
-
-					res, err := client.BroadcastTx(ctx, txBytes)
-					if err != nil {
-						if res != nil && res.Code == 32 && strings.Contains(res.RawLog, "account sequence mismatch") {
-							r.logger.Debug("nonce mismatch detected, will retry",
-								zap.String("wallet", walletAddress),
-								zap.Uint64("used_nonce", nonce),
-								zap.String("raw_log", res.RawLog))
-
-							expectedNonceStr := regexp.MustCompile(`expected (\d+)`).FindStringSubmatch(res.RawLog)
-							if len(expectedNonceStr) > 1 {
-								if expectedNonce, err := strconv.ParseUint(expectedNonceStr[1], 10, 64); err == nil {
-									latestNoncesMu.Lock()
-									r.walletNonces[walletAddress] = expectedNonce
-									latestNoncesMu.Unlock()
-
-									r.logger.Debug("updated nonce based on error message",
-										zap.String("wallet", walletAddress),
-										zap.Uint64("new_nonce", expectedNonce))
-								}
-							}
-						} else {
-							sentTx = inttypes.SentTx{
-								Err:         err,
-								NodeAddress: client.GetNodeAddress().RPC,
-								MsgType:     msgType,
-							}
-							if res != nil {
-								sentTx.TxHash = res.TxHash
-							}
-							r.logger.Error("failed to broadcast tx",
-								zap.Error(err),
-								zap.Any("tx", sentTx))
-
-							break
-						}
-					} else {
-						sentTx = inttypes.SentTx{
-							TxHash:      res.TxHash,
-							NodeAddress: client.GetNodeAddress().RPC,
-							MsgType:     msgType,
-							Err:         nil,
-						}
-
-						updateNonce(walletAddress)
-
-						success = true
-
-						txsSentMu.Lock()
-						txsSent++
-						txsSentMu.Unlock()
-
-						r.logger.Info("transaction sent successfully",
-							zap.Any("res", res),
-							zap.String("wallet", walletAddress),
-							zap.Uint64("nonce", nonce))
-					}
-				}
-
-				if sentTx != (inttypes.SentTx{}) {
+				if sentTx, _ := r.processSingleTransaction(ctx, msgSpec, getLatestNonce, updateNonce, &txsSentMu, &txsSent); sentTx != (inttypes.SentTx{}) {
 					sentTxsMu.Lock()
 					sentTxs = append(sentTxs, sentTx)
 					sentTxsMu.Unlock()
 				}
-			}(msgType, i)
+			}(mspSpec, i)
 		}
 	}
 
@@ -454,12 +407,255 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 	r.sentTxs = append(r.sentTxs, sentTxs...)
 	r.sentTxsMu.Unlock()
 
-	r.logger.Info("completed sending transactions for block",
-		zap.Int("block_number", r.numBlocksProcessed),
-		zap.Int("txs_sent", txsSent),
-		zap.Int("expected_txs", r.totalTxsPerBlock))
+	r.logWorkflowComplete(txsSent)
 
 	return txsSent, nil
+}
+
+// processSingleTransaction handles creating, signing, and broadcasting a single transaction
+func (r *Runner) processSingleTransaction(
+	ctx context.Context,
+	msgSpec inttypes.LoadTestMsg,
+	getLatestNonce func(string, *client.Chain) uint64,
+	updateNonce func(string),
+	txsSentMu *sync.Mutex,
+	txsSent *int,
+) (inttypes.SentTx, bool) {
+	// Select a random wallet for this transaction
+	fromWallet := r.wallets[rand.Intn(len(r.wallets))]
+	walletAddress := fromWallet.FormattedAddress()
+	client := fromWallet.GetClient()
+
+	msgs, err := r.createMessagesForType(msgSpec, fromWallet)
+	if err != nil {
+		r.logger.Error("failed to create message",
+			zap.Error(err),
+			zap.String("node", client.GetNodeAddress().RPC))
+		return inttypes.SentTx{}, false
+	}
+
+	maxRetries := 3
+	var sentTx inttypes.SentTx
+	success := false
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			r.handleRetry(walletAddress, attempt)
+		}
+
+		nonce := getLatestNonce(walletAddress, client)
+
+		sentTx, success = r.createAndSendTransaction(
+			ctx, msgSpec, fromWallet, client, msgs, nonce,
+			updateNonce, txsSentMu, txsSent,
+		)
+
+		if success {
+			break
+		}
+	}
+
+	return sentTx, success
+}
+
+// createMessagesForType creates the appropriate messages based on message type
+func (r *Runner) createMessagesForType(msgSpec inttypes.LoadTestMsg, fromWallet *wallet.InteractingWallet) ([]sdk.Msg, error) {
+	var msgs []sdk.Msg
+	var err error
+
+	if msgSpec.Type == inttypes.MsgArr {
+		if msgSpec.ContainedType == "" {
+			return nil, fmt.Errorf("msgSpec.ContainedType must not be empty")
+		}
+
+		msgs, err = r.txFactory.CreateMsgs(msgSpec.Type, msgSpec.ContainedType, fromWallet, msgSpec.NumMsgs)
+
+		r.logger.Debug("creating MsgArr transaction",
+			zap.Int("configured_num_msgs", msgSpec.NumMsgs),
+			zap.String("contained_type", string(msgSpec.ContainedType)),
+			zap.Int("actual_num_msgs", len(msgs)))
+	} else {
+		msg, err := r.txFactory.CreateMsg(msgSpec.Type, fromWallet)
+		if err == nil {
+			msgs = []sdk.Msg{msg}
+		}
+	}
+
+	return msgs, err
+}
+
+// handleRetry logs retry information and adds a small delay
+func (r *Runner) handleRetry(walletAddress string, attempt int) {
+	r.logger.Debug("retrying transaction due to nonce mismatch",
+		zap.Int("attempt", attempt+1),
+		zap.String("wallet", walletAddress))
+	// Add a small delay before retrying
+	time.Sleep(100 * time.Millisecond)
+}
+
+// createAndSendTransaction creates and sends a transaction, handling the response
+func (r *Runner) createAndSendTransaction(
+	ctx context.Context,
+	mspSpec inttypes.LoadTestMsg,
+	fromWallet *wallet.InteractingWallet,
+	client *client.Chain,
+	msgs []sdk.Msg,
+	nonce uint64,
+	updateNonce func(string),
+	txsSentMu *sync.Mutex,
+	txsSent *int,
+) (inttypes.SentTx, bool) {
+	walletAddress := fromWallet.FormattedAddress()
+
+	r.logger.Debug("using nonce for transaction",
+		zap.Uint64("nonce", nonce),
+		zap.String("wallet", walletAddress),
+		zap.String("msgType", mspSpec.Type.String()),
+		zap.String("containedType", string(mspSpec.ContainedType)))
+
+	gasBufferFactor := 1.01
+	estimation := r.gasEstimations[mspSpec]
+	gasWithBuffer := int64(float64(estimation.gasUsed) * gasBufferFactor)
+	fees := sdk.NewCoins(sdk.NewCoin(r.spec.GasDenom, sdkmath.NewInt(gasWithBuffer)))
+	accountNumber := r.accountNumbers[walletAddress]
+	memo := RandomString(16) // Avoid ErrTxInMempoolCache
+
+	tx, err := fromWallet.CreateSignedTx(ctx, client, uint64(gasWithBuffer), fees, nonce, accountNumber, memo, msgs...)
+	if err != nil {
+		r.logger.Error("failed to create signed tx",
+			zap.Error(err),
+			zap.String("node", client.GetNodeAddress().RPC))
+		return inttypes.SentTx{}, false
+	}
+
+	txBytes, err := client.GetEncodingConfig().TxConfig.TxEncoder()(tx)
+	if err != nil {
+		r.logger.Error("failed to encode tx",
+			zap.Error(err),
+			zap.String("node", client.GetNodeAddress().RPC))
+		return inttypes.SentTx{}, false
+	}
+
+	if mspSpec.Type == inttypes.MsgArr {
+		r.logger.Debug("sending MsgArr transaction",
+			zap.String("contained_type", string(mspSpec.ContainedType)),
+			zap.Int("num_msgs", len(msgs)))
+	}
+
+	return r.broadcastAndHandleResponse(ctx, client, txBytes, mspSpec.Type, walletAddress, nonce, updateNonce, txsSentMu, txsSent, msgs)
+}
+
+// broadcastAndHandleResponse broadcasts a transaction and handles the response
+func (r *Runner) broadcastAndHandleResponse(
+	ctx context.Context,
+	client *client.Chain,
+	txBytes []byte,
+	msgType inttypes.MsgType,
+	walletAddress string,
+	nonce uint64,
+	updateNonce func(string),
+	txsSentMu *sync.Mutex,
+	txsSent *int,
+	msgs []sdk.Msg,
+) (inttypes.SentTx, bool) {
+	res, err := client.BroadcastTx(ctx, txBytes)
+
+	if err != nil {
+		if res != nil && res.Code == 32 && strings.Contains(res.RawLog, "account sequence mismatch") {
+			r.handleNonceMismatch(walletAddress, nonce, res.RawLog)
+			return inttypes.SentTx{}, false
+		}
+
+		sentTx := inttypes.SentTx{
+			Err:         err,
+			NodeAddress: client.GetNodeAddress().RPC,
+			MsgType:     msgType,
+		}
+		if res != nil {
+			sentTx.TxHash = res.TxHash
+		}
+		r.logger.Error("failed to broadcast tx",
+			zap.Error(err),
+			zap.Any("tx", sentTx))
+
+		return sentTx, false
+	}
+
+	sentTx := inttypes.SentTx{
+		TxHash:      res.TxHash,
+		NodeAddress: client.GetNodeAddress().RPC,
+		MsgType:     msgType,
+		Err:         nil,
+	}
+
+	updateNonce(walletAddress)
+
+	txsSentMu.Lock()
+	*txsSent++
+	txsSentMu.Unlock()
+
+	r.logger.Info("transaction sent successfully",
+		zap.Any("res", res),
+		zap.String("wallet", walletAddress),
+		zap.String("msgType", msgType.String()),
+		zap.Int("num_msgs", len(msgs)),
+		zap.Uint64("nonce", nonce))
+
+	return sentTx, true
+}
+
+// handleNonceMismatch extracts the expected nonce from the error message and updates the wallet nonce
+func (r *Runner) handleNonceMismatch(walletAddress string, nonce uint64, rawLog string) {
+	r.logger.Debug("nonce mismatch detected, will retry",
+		zap.String("wallet", walletAddress),
+		zap.Uint64("used_nonce", nonce),
+		zap.String("raw_log", rawLog))
+
+	expectedNonceStr := regexp.MustCompile(`expected (\d+)`).FindStringSubmatch(rawLog)
+	if len(expectedNonceStr) > 1 {
+		if expectedNonce, err := strconv.ParseUint(expectedNonceStr[1], 10, 64); err == nil {
+			r.walletNoncesMu.Lock()
+			r.walletNonces[walletAddress] = expectedNonce
+			r.walletNoncesMu.Unlock()
+
+			r.logger.Debug("updated nonce based on error message",
+				zap.String("wallet", walletAddress),
+				zap.Uint64("new_nonce", expectedNonce))
+		}
+	}
+}
+
+func (r *Runner) logWorkflowStart() {
+	workflowName := r.getWorkflowName()
+	baseFields := []zap.Field{
+		zap.Int("block_number", r.numBlocksProcessed),
+		zap.Int("expected_txs", r.totalTxsPerBlock),
+	}
+
+	if r.isBlockGasLimitTargetWorkflow() {
+		r.logger.Info(fmt.Sprintf("starting to send transactions for block (%s workflow)", workflowName),
+			append(baseFields, zap.Float64("block_gas_limit_target", r.spec.BlockGasLimitTarget))...)
+	} else {
+		r.logger.Info(fmt.Sprintf("starting to send transactions for block (%s workflow)", workflowName),
+			baseFields...)
+	}
+}
+
+func (r *Runner) logWorkflowComplete(txsSent int) {
+	workflowName := r.getWorkflowName()
+	baseFields := []zap.Field{
+		zap.Int("block_number", r.numBlocksProcessed),
+		zap.Int("txs_sent", txsSent),
+		zap.Int("expected_txs", r.totalTxsPerBlock),
+	}
+
+	if r.isBlockGasLimitTargetWorkflow() {
+		r.logger.Info(fmt.Sprintf("completed sending transactions for block (%s workflow)", workflowName),
+			append(baseFields, zap.Float64("block_gas_limit_target", r.spec.BlockGasLimitTarget))...)
+	} else {
+		r.logger.Info(fmt.Sprintf("completed sending transactions for block (%s workflow)", workflowName),
+			baseFields...)
+	}
 }
 
 func (r *Runner) GetCollector() *metrics.MetricsCollector {
@@ -488,7 +684,10 @@ func (r *Runner) initAccountNumbers(ctx context.Context) error {
 		}
 
 		r.accountNumbers[walletAddress] = acc.GetAccountNumber()
+
+		r.walletNoncesMu.Lock()
 		r.walletNonces[walletAddress] = acc.GetSequence()
+		r.walletNoncesMu.Unlock()
 
 		r.logger.Debug("Initialized account data",
 			zap.String("wallet", walletAddress),
@@ -497,4 +696,11 @@ func (r *Runner) initAccountNumbers(ctx context.Context) error {
 	}
 	r.logger.Info("Account numbers and nonces initialized successfully for all wallets")
 	return nil
+}
+
+func (r *Runner) getWorkflowName() string {
+	if r.isBlockGasLimitTargetWorkflow() {
+		return "BlockGasLimitTarget"
+	}
+	return "NumOfTxs"
 }
