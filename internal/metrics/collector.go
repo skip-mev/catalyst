@@ -293,6 +293,10 @@ func (m *MetricsCollector) processBlockStats(result *types.LoadTestResult, gasLi
 
 			if tx.Err != nil {
 				stats.FailedTxs++
+				if tx.TxResponse != nil && tx.TxResponse.GasUsed > 0 {
+					stats.GasUsed += tx.TxResponse.GasUsed
+					blockGasUsed += tx.TxResponse.GasUsed
+				}
 			} else if tx.TxResponse != nil {
 				stats.SuccessfulTxs++
 				stats.GasUsed += tx.TxResponse.GasUsed
@@ -351,8 +355,12 @@ func (m *MetricsCollector) ProcessResults(gasLimit int64, numOfBlocksRequested i
 	result.Overall.TotalTransactions = totalTxs
 	result.Overall.SuccessfulTransactions = successfulTxs
 	result.Overall.FailedTransactions = failedTxs
-	if successfulTxs > 0 {
-		result.Overall.AvgGasPerTransaction = totalGasUsed / int64(successfulTxs)
+	totalTxsWithGasData := 0
+	for _, gasUsage := range m.gasUsageByMsgType {
+		totalTxsWithGasData += len(gasUsage)
+	}
+	if totalTxsWithGasData > 0 {
+		result.Overall.AvgGasPerTransaction = totalGasUsed / int64(totalTxsWithGasData)
 	}
 
 	var wg sync.WaitGroup
