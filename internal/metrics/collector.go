@@ -243,9 +243,10 @@ func (m *MetricsCollector) processNodeStats(result *types.LoadTestResult) {
 				failed++
 			} else {
 				successful++
-				if tx.TxResponse != nil && tx.TxResponse.GasUsed > 0 {
-					gasUsage = append(gasUsage, tx.TxResponse.GasUsed)
-				}
+			}
+
+			if tx.TxResponse != nil && tx.TxResponse.GasUsed > 0 {
+				gasUsage = append(gasUsage, tx.TxResponse.GasUsed)
 			}
 		}
 
