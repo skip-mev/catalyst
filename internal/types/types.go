@@ -298,6 +298,6 @@ func (m *MsgType) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type LoadTestMsg struct {
 	Weight        float64 `yaml:"weight"`
 	Type          MsgType `yaml:"type"`
-	NumMsgs       int     `yaml:"num_msgs,omitempty"`       // Number of messages to include in MsgArr
-	ContainedType MsgType `yaml:"contained_type,omitempty"` // Type of messages to include in MsgArr
+	NumMsgs       int     `yaml:"num_msgs,omitempty" json:"NumMsgs,omitempty"`             // Number of messages to include in MsgArr
+	ContainedType MsgType `yaml:"contained_type,omitempty" json:"ContainedType,omitempty"` // Type of messages to include in MsgArr
 }
