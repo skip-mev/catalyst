@@ -140,6 +140,8 @@ type SentTx struct {
 }
 
 type LoadTestSpec struct {
+	Name                string        `yaml:"Name"`
+	Description         string        `yaml:"Description"`
 	ChainID             string        `yaml:"chain_id"`
 	BlockGasLimitTarget float64       `yaml:"block_gas_limit_target,omitempty" json:"BlockGasLimitTarget,omitempty"` // Target percentage of block gas limit to use (0.0-1.0)
 	NumOfTxs            int           `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
