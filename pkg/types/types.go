@@ -167,6 +167,8 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		GasDenom            string        `yaml:"gas_denom"`
 		Bech32Prefix        string        `yaml:"bech32_prefix"`
 		Msgs                []LoadTestMsg `yaml:"msgs"`
+		UnorderedTxs        bool          `yaml:"unordered_txs"`
+		TxTimeout           time.Duration `yaml:"tx_timeout"`
 	}
 
 	var aux LoadTestSpecAux
@@ -184,6 +186,8 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		GasDenom:            aux.GasDenom,
 		Bech32Prefix:        aux.Bech32Prefix,
 		Msgs:                aux.Msgs,
+		UnorderedTxs:        aux.UnorderedTxs,
+		TxTimeout:           aux.TxTimeout,
 	}
 
 	return nil
