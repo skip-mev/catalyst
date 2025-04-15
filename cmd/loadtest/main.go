@@ -11,8 +11,8 @@ import (
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
-	loadtesttypes "github.com/skip-mev/catalyst/internal/types"
 	"github.com/skip-mev/catalyst/loadtest"
+	loadtesttypes "github.com/skip-mev/catalyst/pkg/types"
 )
 
 func main() {

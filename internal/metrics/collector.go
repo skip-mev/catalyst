@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"github.com/skip-mev/catalyst/pkg/types"
 	"math/rand"
 	"runtime"
 	"sort"
@@ -16,8 +17,6 @@ import (
 	"github.com/skip-mev/catalyst/internal/cosmos/wallet"
 
 	"github.com/skip-mev/catalyst/internal/cosmos/client"
-
-	"github.com/skip-mev/catalyst/internal/types"
 )
 
 // MetricsCollector collects and processes metrics for load tests

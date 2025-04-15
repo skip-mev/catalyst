@@ -2,13 +2,13 @@ package txfactory
 
 import (
 	"fmt"
+	"github.com/skip-mev/catalyst/pkg/types"
 	"math/rand"
 
 	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/skip-mev/catalyst/internal/cosmos/wallet"
-	"github.com/skip-mev/catalyst/internal/types"
 )
 
 // TxFactory creates transactions for load testing

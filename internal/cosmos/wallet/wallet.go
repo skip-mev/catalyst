@@ -3,6 +3,7 @@ package wallet
 import (
 	"context"
 	"fmt"
+
 	"github.com/skip-mev/catalyst/internal/cosmos/client"
 
 	sdkclient "github.com/cosmos/cosmos-sdk/client"
@@ -11,7 +12,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	xauthsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
-	"github.com/skip-mev/catalyst/internal/types"
+	"github.com/skip-mev/catalyst/pkg/types"
 )
 
 // InteractingWallet represents a wallet that can interact with the chain

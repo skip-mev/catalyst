@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/skip-mev/catalyst/pkg/types"
 	"os"
 	"path/filepath"
 
 	"github.com/skip-mev/catalyst/internal/loadtest"
-	"github.com/skip-mev/catalyst/internal/types"
 	"go.uber.org/zap"
 )
 
