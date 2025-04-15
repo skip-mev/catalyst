@@ -195,6 +195,10 @@ func (s *LoadTestSpec) Validate() error {
 		return fmt.Errorf("no node addresses provided")
 	}
 
+	if s.UnorderedTxs == true && s.TxTimeout == 0 {
+		return fmt.Errorf("tx_timeout must be set if unordered txs is set to true")
+	}
+
 	if s.ChainID == "" {
 		return fmt.Errorf("chain ID must be specified")
 	}
@@ -239,6 +243,10 @@ func (s *LoadTestSpec) Validate() error {
 				return fmt.Errorf("duplicate MsgArr with contained_type %s", msg.ContainedType)
 			}
 			seenMsgArrTypes[msg.ContainedType] = true
+		} else if msg.Type == MsgMultiSend {
+			if msg.NumOfRecipients > len(s.Mnemonics) {
+				return fmt.Errorf("number of recipients must be less than or equal to number of mneomnics available")
+			}
 		} else {
 			if seenMsgTypes[msg.Type] {
 				return fmt.Errorf("duplicate message type: %s", msg.Type)
@@ -300,8 +308,9 @@ func (m *MsgType) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 type LoadTestMsg struct {
-	Weight        float64 `yaml:"weight"`
-	Type          MsgType `yaml:"type"`
-	NumMsgs       int     `yaml:"num_msgs,omitempty" json:"NumMsgs,omitempty"`             // Number of messages to include in MsgArr
-	ContainedType MsgType `yaml:"contained_type,omitempty" json:"ContainedType,omitempty"` // Type of messages to include in MsgArr
+	Weight          float64 `yaml:"weight"`
+	Type            MsgType `yaml:"type"`
+	NumMsgs         int     `yaml:"num_msgs,omitempty" json:"NumMsgs,omitempty"`                  // Number of messages to include in MsgArr
+	ContainedType   MsgType `yaml:"contained_type,omitempty" json:"ContainedType,omitempty"`      // Type of messages to include in MsgArr
+	NumOfRecipients int     `yaml:"num_of_recipients,omitempty" json:"NumOfRecipients,omitempty"` // Number of recipients to include for MsgMultiSend
 }

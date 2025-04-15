@@ -165,7 +165,7 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 			numMsgs := msgSpec.NumMsgs
 			containedType := msgSpec.ContainedType
 
-			msgs, err = r.txFactory.CreateMsgs(msgSpec.Type, containedType, fromWallet, numMsgs)
+			msgs, err = r.txFactory.CreateMsgs(msgSpec, fromWallet)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create messages for gas estimation: %w", err)
 			}
@@ -175,7 +175,7 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 				zap.String("contained_type", string(containedType)),
 				zap.Int("actual_num_msgs", len(msgs)))
 		} else {
-			msg, err := r.txFactory.CreateMsg(msgSpec.Type, fromWallet)
+			msg, err := r.txFactory.CreateMsg(msgSpec, fromWallet)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create message for gas estimation: %w", err)
 			}
@@ -469,14 +469,14 @@ func (r *Runner) createMessagesForType(msgSpec inttypes.LoadTestMsg, fromWallet 
 			return nil, fmt.Errorf("msgSpec.ContainedType must not be empty")
 		}
 
-		msgs, err = r.txFactory.CreateMsgs(msgSpec.Type, msgSpec.ContainedType, fromWallet, msgSpec.NumMsgs)
+		msgs, err = r.txFactory.CreateMsgs(msgSpec, fromWallet)
 
 		r.logger.Debug("creating MsgArr transaction",
 			zap.Int("configured_num_msgs", msgSpec.NumMsgs),
 			zap.String("contained_type", string(msgSpec.ContainedType)),
 			zap.Int("actual_num_msgs", len(msgs)))
 	} else {
-		msg, err := r.txFactory.CreateMsg(msgSpec.Type, fromWallet)
+		msg, err := r.txFactory.CreateMsg(msgSpec, fromWallet)
 		if err == nil {
 			msgs = []sdk.Msg{msg}
 		}
