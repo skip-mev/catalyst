@@ -59,7 +59,9 @@ func (w *InteractingWallet) CreateSignedTx(ctx context.Context, client types.Cha
 	txBuilder.SetFeeAmount(fees)
 	txBuilder.SetMemo(memo)
 	txBuilder.SetUnordered(unordered)
-	txBuilder.SetTimeoutTimestamp(time.Now().Add(timeoutDuration))
+	if unordered {
+		txBuilder.SetTimeoutTimestamp(time.Now().Add(timeoutDuration))
+	}
 
 	chainID := client.GetChainID()
 	if chainID == "" {
