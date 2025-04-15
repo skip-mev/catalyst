@@ -33,7 +33,7 @@ var (
 		NumNodes:      0,
 		BinaryName:    "/usr/bin/simd",
 		Image: provider.ImageDefinition{
-			Image: "cosmos-sdk-v53:latest",
+			Image: "ghcr.io/cosmos/simapp:v0.50",
 			UID:   "1000",
 			GID:   "1000",
 		},
@@ -52,9 +52,6 @@ var (
 				Key:   "consensus.params.block.max_gas",
 				Value: "75000000",
 			},
-			//{
-			//	//Key: "app_state.feemarket.params.enabled",
-			//},
 		}),
 		WalletConfig: petritypes.WalletConfig{
 			SigningAlgorithm: string(hd.Secp256k1.Name()),
@@ -120,9 +117,6 @@ func TestPetriDockerIntegration(t *testing.T) {
 	}
 
 	var mnemonics []string
-	//for _, w := range c.GetValidatorWallets() {
-	//	mnemonics = append(mnemonics, w.Mnemonic())
-	//}
 	var wallets []petritypes.WalletI
 	var walletsMutex sync.Mutex
 	var wg sync.WaitGroup
@@ -369,15 +363,15 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 	}
 
 	time.Sleep(360 * time.Second)
-	//test, err := loadtest.New(ctx, spec)
-	//if err != nil {
-	//	t.Fatal("Failed to create test", zap.Error(err))
-	//}
-	//
-	//result, err := test.Run(ctx, logger)
-	//if err != nil {
-	//	t.Fatal("Failed to run load test", zap.Error(err))
-	//}
+	test, err := loadtest.New(ctx, spec)
+	if err != nil {
+		t.Fatal("Failed to create test", zap.Error(err))
+	}
 
-	//fmt.Printf("Load test results: %+v\n", result)
+	result, err := test.Run(ctx, logger)
+	if err != nil {
+		t.Fatal("Failed to run load test", zap.Error(err))
+	}
+
+	fmt.Printf("Load test results: %+v\n", result)
 }
