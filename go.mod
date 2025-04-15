@@ -1,24 +1,24 @@
 module github.com/skip-mev/catalyst
 
-go 1.23.1
+go 1.23.2
 
 toolchain go1.23.5
 
 require (
 	cosmossdk.io/math v1.5.2
 	github.com/cometbft/cometbft v0.38.17
-	github.com/cosmos/cosmos-sdk v0.53.0-rc.1.0.20250401172146-71d88f47fdaa
+	github.com/cosmos/cosmos-sdk v0.53.0-rc.2
 	github.com/skip-mev/petri/core/v3 v3.0.2
 	github.com/skip-mev/petri/cosmos/v3 v3.0.1
 	go.uber.org/zap v1.27.0
-	google.golang.org/grpc v1.71.0
+	google.golang.org/grpc v1.71.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	cosmossdk.io/api v0.9.0 // indirect
-	cosmossdk.io/collections v0.4.0 // indirect
-	cosmossdk.io/core v0.11.1 // indirect
+	cosmossdk.io/collections v1.2.0 // indirect
+	cosmossdk.io/core v0.11.3 // indirect
 	cosmossdk.io/depinject v1.2.0-rc.1 // indirect
 	cosmossdk.io/errors v1.0.2 // indirect
 	cosmossdk.io/log v1.5.1 // indirect
@@ -142,7 +142,7 @@ require (
 	github.com/jmhodges/levigo v1.0.0 // indirect
 	github.com/josharian/native v1.1.1-0.20230202152459-5c7d0dd6ab86 // indirect
 	github.com/jsimonetti/rtnetlink v1.4.0 // indirect
-	github.com/klauspost/compress v1.17.11 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/kortschak/wol v0.0.0-20200729010619-da482cc4850a // indirect
 	github.com/kr/pretty v0.3.1 // indirect
