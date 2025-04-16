@@ -25,8 +25,8 @@ jobs:
       id-token: write
       contents: read
     env:
-      registry_url: 494494944992.dkr.ecr.us-east-2.amazonaws.com/skip-mev/catalyst-${{ matrix.builds.image }}
-      repo_name: skip-mev/catalyst-${{ matrix.builds.image }}
+      registry_url: 494494944992.dkr.ecr.us-east-2.amazonaws.com/skip-mev/${{ matrix.builds.image }}
+      repo_name: skip-mev/${{ matrix.builds.image }}
     steps:
       - name: Check out the repo
         if: github.event_name != 'pull_request'
