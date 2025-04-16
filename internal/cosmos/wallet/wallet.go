@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/skip-mev/catalyst/internal/cosmos/client"
+	"time"
 
 	sdkclient "github.com/cosmos/cosmos-sdk/client"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
@@ -29,42 +30,6 @@ func NewInteractingWallet(privKey cryptotypes.PrivKey, bech32Prefix string, clie
 	}
 }
 
-// CreateAndBroadcastTx creates and broadcasts a transaction
-func (w *InteractingWallet) CreateAndBroadcastTx(ctx context.Context, gas uint64, fees sdk.Coins, memo string,
-	blocking bool, msgs ...sdk.Msg) (*sdk.TxResponse, error) {
-	client := w.GetClient()
-
-	acc, err := client.GetAccount(ctx, w.signer.FormattedAddress())
-	if err != nil {
-		return nil, err
-	}
-
-	tx, err := w.CreateSignedTx(ctx, client, gas, fees, acc.GetSequence(), acc.GetAccountNumber(), memo, msgs...)
-	if err != nil {
-		return nil, err
-	}
-
-	txBytes, err := client.GetEncodingConfig().TxConfig.TxEncoder()(tx)
-	if err != nil {
-		return nil, err
-	}
-
-	txResp, err := client.BroadcastTx(ctx, txBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	if txResp.Code != 0 {
-		return txResp, fmt.Errorf("checkTx failed: %s", txResp.RawLog)
-	}
-
-	if !blocking {
-		return txResp, nil
-	}
-
-	return GetTxResponse(ctx, client, txResp.TxHash)
-}
-
 func GetTxResponse(ctx context.Context, client types.ChainI, txHash string) (*sdk.TxResponse, error) {
 	cometClient := client.GetCometClient()
 
@@ -83,7 +48,7 @@ func GetTxResponse(ctx context.Context, client types.ChainI, txHash string) (*sd
 
 // CreateSignedTx creates and signs a transaction
 func (w *InteractingWallet) CreateSignedTx(ctx context.Context, client types.ChainI, gas uint64, fees sdk.Coins, sequence,
-	accountNumber uint64, memo string, msgs ...sdk.Msg) (sdk.Tx, error) {
+	accountNumber uint64, memo string, unordered bool, timeoutDuration time.Duration, msgs ...sdk.Msg) (sdk.Tx, error) {
 	encodingConfig := client.GetEncodingConfig()
 
 	txBuilder := encodingConfig.TxConfig.NewTxBuilder()
@@ -94,6 +59,10 @@ func (w *InteractingWallet) CreateSignedTx(ctx context.Context, client types.Cha
 	txBuilder.SetGasLimit(gas)
 	txBuilder.SetFeeAmount(fees)
 	txBuilder.SetMemo(memo)
+	txBuilder.SetUnordered(unordered)
+	if unordered {
+		txBuilder.SetTimeoutTimestamp(time.Now().Add(timeoutDuration))
+	}
 
 	chainID := client.GetChainID()
 	if chainID == "" {

@@ -165,7 +165,7 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 			numMsgs := msgSpec.NumMsgs
 			containedType := msgSpec.ContainedType
 
-			msgs, err = r.txFactory.CreateMsgs(msgSpec.Type, containedType, fromWallet, numMsgs)
+			msgs, err = r.txFactory.CreateMsgs(msgSpec, fromWallet)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create messages for gas estimation: %w", err)
 			}
@@ -175,7 +175,7 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 				zap.String("contained_type", string(containedType)),
 				zap.Int("actual_num_msgs", len(msgs)))
 		} else {
-			msg, err := r.txFactory.CreateMsg(msgSpec.Type, fromWallet)
+			msg, err := r.txFactory.CreateMsg(msgSpec, fromWallet)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create message for gas estimation: %w", err)
 			}
@@ -188,7 +188,8 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 		}
 
 		memo := RandomString(16)
-		tx, err := fromWallet.CreateSignedTx(ctx, client, 0, sdk.Coins{}, acc.GetSequence(), acc.GetAccountNumber(), memo, msgs...)
+		tx, err := fromWallet.CreateSignedTx(ctx, client, 0, sdk.Coins{}, acc.GetSequence(), acc.GetAccountNumber(),
+			memo, r.spec.UnorderedTxs, r.spec.TxTimeout, msgs...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create transaction for simulation: %w", err)
 		}
@@ -468,14 +469,14 @@ func (r *Runner) createMessagesForType(msgSpec inttypes.LoadTestMsg, fromWallet 
 			return nil, fmt.Errorf("msgSpec.ContainedType must not be empty")
 		}
 
-		msgs, err = r.txFactory.CreateMsgs(msgSpec.Type, msgSpec.ContainedType, fromWallet, msgSpec.NumMsgs)
+		msgs, err = r.txFactory.CreateMsgs(msgSpec, fromWallet)
 
 		r.logger.Debug("creating MsgArr transaction",
 			zap.Int("configured_num_msgs", msgSpec.NumMsgs),
 			zap.String("contained_type", string(msgSpec.ContainedType)),
 			zap.Int("actual_num_msgs", len(msgs)))
 	} else {
-		msg, err := r.txFactory.CreateMsg(msgSpec.Type, fromWallet)
+		msg, err := r.txFactory.CreateMsg(msgSpec, fromWallet)
 		if err == nil {
 			msgs = []sdk.Msg{msg}
 		}
@@ -520,7 +521,8 @@ func (r *Runner) createAndSendTransaction(
 	accountNumber := r.accountNumbers[walletAddress]
 	memo := RandomString(16) // Avoid ErrTxInMempoolCache
 
-	tx, err := fromWallet.CreateSignedTx(ctx, client, uint64(gasWithBuffer), fees, nonce, accountNumber, memo, msgs...)
+	tx, err := fromWallet.CreateSignedTx(ctx, client, uint64(gasWithBuffer), fees, nonce, accountNumber,
+		memo, r.spec.UnorderedTxs, r.spec.TxTimeout, msgs...)
 	if err != nil {
 		r.logger.Error("failed to create signed tx",
 			zap.Error(err),

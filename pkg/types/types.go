@@ -152,6 +152,8 @@ type LoadTestSpec struct {
 	GasDenom            string        `yaml:"gas_denom"`
 	Bech32Prefix        string        `yaml:"bech32_prefix"`
 	Msgs                []LoadTestMsg `yaml:"msgs"`
+	UnorderedTxs        bool          `yaml:"unordered_txs"`
+	TxTimeout           time.Duration `yaml:"tx_timeout"`
 }
 
 func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
@@ -165,6 +167,8 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		GasDenom            string        `yaml:"gas_denom"`
 		Bech32Prefix        string        `yaml:"bech32_prefix"`
 		Msgs                []LoadTestMsg `yaml:"msgs"`
+		UnorderedTxs        bool          `yaml:"unordered_txs"`
+		TxTimeout           time.Duration `yaml:"tx_timeout"`
 	}
 
 	var aux LoadTestSpecAux
@@ -182,6 +186,8 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		GasDenom:            aux.GasDenom,
 		Bech32Prefix:        aux.Bech32Prefix,
 		Msgs:                aux.Msgs,
+		UnorderedTxs:        aux.UnorderedTxs,
+		TxTimeout:           aux.TxTimeout,
 	}
 
 	return nil
@@ -191,6 +197,10 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 func (s *LoadTestSpec) Validate() error {
 	if len(s.NodesAddresses) == 0 {
 		return fmt.Errorf("no node addresses provided")
+	}
+
+	if s.UnorderedTxs == true && s.TxTimeout == 0 {
+		return fmt.Errorf("tx_timeout must be set if unordered txs is set to true")
 	}
 
 	if s.ChainID == "" {
@@ -237,6 +247,10 @@ func (s *LoadTestSpec) Validate() error {
 				return fmt.Errorf("duplicate MsgArr with contained_type %s", msg.ContainedType)
 			}
 			seenMsgArrTypes[msg.ContainedType] = true
+		} else if msg.Type == MsgMultiSend {
+			if msg.NumOfRecipients > len(s.Mnemonics) {
+				return fmt.Errorf("number of recipients must be less than or equal to number of mneomnics available")
+			}
 		} else {
 			if seenMsgTypes[msg.Type] {
 				return fmt.Errorf("duplicate message type: %s", msg.Type)
@@ -298,8 +312,9 @@ func (m *MsgType) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 type LoadTestMsg struct {
-	Weight        float64 `yaml:"weight"`
-	Type          MsgType `yaml:"type"`
-	NumMsgs       int     `yaml:"num_msgs,omitempty" json:"NumMsgs,omitempty"`             // Number of messages to include in MsgArr
-	ContainedType MsgType `yaml:"contained_type,omitempty" json:"ContainedType,omitempty"` // Type of messages to include in MsgArr
+	Weight          float64 `yaml:"weight"`
+	Type            MsgType `yaml:"type"`
+	NumMsgs         int     `yaml:"num_msgs,omitempty" json:"NumMsgs,omitempty"`                  // Number of messages to include in MsgArr
+	ContainedType   MsgType `yaml:"contained_type,omitempty" json:"ContainedType,omitempty"`      // Type of messages to include in MsgArr
+	NumOfRecipients int     `yaml:"num_of_recipients,omitempty" json:"NumOfRecipients,omitempty"` // Number of recipients to include for MsgMultiSend
 }
