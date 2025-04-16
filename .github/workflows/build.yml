@@ -1,0 +1,106 @@
+name: Build catalyst
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+jobs:
+  gather_env:
+    runs-on: ubuntu-latest
+    outputs:
+      env: ${{ env.environment }}
+    steps:
+      - name: Set the environment to dev if running a workflow_dispatch
+        id: set_env
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "environment=dev" >> "$GITHUB_ENV"
+      - name: Set the environment to dev if running on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "environment=dev" >> "$GITHUB_ENV"
+      - name: Set the environment to prod if running on a tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "environment=prod" >> "$GITHUB_ENV"
+  build:
+    needs: [gather_env]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    env:
+      registry_url: 494494944992.dkr.ecr.us-east-2.amazonaws.com/skip-mev/catalyst
+      repo_name: skip-mev/catalyst
+    steps:
+      - name: Set the environment to dev if running a workflow_dispatch
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "ENVIRONMENT=dev" >> $GITHUB_ENV
+      - name: Set the environment to dev if running on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "ENVIRONMENT=dev" >> $GITHUB_ENV
+      - name: Set the environment to prod if running on a tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "ENVIRONMENT=prod" >> $GITHUB_ENV
+      - name: Check out the repo
+        uses: actions/checkout@v3
+      - name: Connect to Tailnet
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_SECRET }}
+          tags: tag:githubactions
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: us-east-2
+          role-session-name: catalyst-build-dev
+          role-to-assume: arn:aws:iam::494494944992:role/GithubImagePusher
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Create ECR repository if it does not exist
+        run: |
+          aws ecr describe-repositories --region us-east-2 --repository-names $repo_name || aws ecr create-repository --repository-name $repo_name --region us-east-2
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # list of Docker images to use as base name for tags
+          images: |
+            ${{ env.registry_url }}
+          tags: |
+            type=sha,priority=900,prefix=
+            type=semver,priority=1000,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}.{{patch}}
+            type=semver,pattern={{major}}
+            type=ref,event=branch
+            type=ref,event=pr
+      - uses: cloudposse/github-action-matrix-outputs-write@v1
+        id: out
+        with:
+          matrix-step-name: github-action-matrix-outputs-read
+          matrix-key: image
+          outputs: |-
+            image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+            tag: ${{ steps.meta.outputs.version }}
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: "Dockerfile"
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: true
