@@ -10,6 +10,7 @@ inputs:
     description: 'Tailscale OAuth Secret'
     required: true
 
+
 runs:
   using: composite
   steps:
@@ -26,7 +27,7 @@ runs:
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-region: us-east-2
-        role-session-name: `service_name`-dev
+        role-session-name: catalyst-dev
         role-to-assume: arn:aws:iam::494494944992:role/GithubImagePusher
     - name: Login to Amazon ECR
       id: login-ecr
