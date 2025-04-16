@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"github.com/skip-mev/catalyst/pkg/types"
 	"time"
 
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
@@ -23,7 +24,6 @@ import (
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/skip-mev/catalyst/internal/types"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"

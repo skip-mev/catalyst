@@ -19,8 +19,8 @@ import (
 	"github.com/skip-mev/petri/cosmos/v3/node"
 	"go.uber.org/zap"
 
-	loadtesttypes "github.com/skip-mev/catalyst/internal/types"
 	"github.com/skip-mev/catalyst/loadtest"
+	loadtesttypes "github.com/skip-mev/catalyst/pkg/types"
 )
 
 var (

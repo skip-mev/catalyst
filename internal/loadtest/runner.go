@@ -23,7 +23,7 @@ import (
 	"github.com/skip-mev/catalyst/internal/cosmos/wallet"
 	"github.com/skip-mev/catalyst/internal/metrics"
 	logging "github.com/skip-mev/catalyst/internal/shared"
-	inttypes "github.com/skip-mev/catalyst/internal/types"
+	inttypes "github.com/skip-mev/catalyst/pkg/types"
 )
 
 // MsgGasEstimation stores gas estimation for a specific message type
