@@ -1,4 +1,4 @@
-name: Deploy catalyst
+name: Build catalyst
 
 on:
   push:
