@@ -6,7 +6,7 @@ on:
       - main
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   gather_env:
@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Set the environment to dev if running a workflow_dispatch
         id: set_env
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+        if: github.event_name == 'workflow_dispatch'
         run: |
           echo "environment=dev" >> "$GITHUB_ENV"
       - name: Set the environment to dev if running on main
@@ -39,7 +39,7 @@ jobs:
       repo_name: skip-mev/catalyst
     steps:
       - name: Set the environment to dev if running a workflow_dispatch
-        if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+        if: github.event_name == 'workflow_dispatch'
         run: |
           echo "ENVIRONMENT=dev" >> $GITHUB_ENV
       - name: Set the environment to dev if running on main
