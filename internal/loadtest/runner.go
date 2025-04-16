@@ -347,10 +347,8 @@ func (r *Runner) Run(ctx context.Context) (inttypes.LoadTestResult, error) {
 		time.Sleep(30 * time.Second)
 
 		collectorStartTime := time.Now()
-
 		r.collector.GroupSentTxs(ctx, r.sentTxs, r.clients, startTime)
 		collectorResults := r.collector.ProcessResults(r.blockGasLimit, r.spec.NumOfBlocks)
-
 		collectorEndTime := time.Now()
 		r.logger.Debug("collector running time",
 			zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))
