@@ -140,35 +140,37 @@ type SentTx struct {
 }
 
 type LoadTestSpec struct {
-	Name                string        `yaml:"Name"`
-	Description         string        `yaml:"Description"`
-	ChainID             string        `yaml:"chain_id"`
-	BlockGasLimitTarget float64       `yaml:"block_gas_limit_target,omitempty" json:"BlockGasLimitTarget,omitempty"` // Target percentage of block gas limit to use (0.0-1.0)
+	Name                string        `yaml:"name" json:"Name"`
+	Description         string        `yaml:"description" json:"Description"`
+	ChainID             string        `yaml:"chain_id" json:"ChainID"`
+	BlockGasLimitTarget float64       `yaml:"block_gas_limit_target,omitempty" json:"BlockGasLimitTarget,omitempty"`
 	NumOfTxs            int           `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
-	NumOfBlocks         int           `yaml:"num_of_blocks"`
-	NodesAddresses      []NodeAddress `yaml:"nodes_addresses"`
-	Mnemonics           []string      `yaml:"mnemonics"`
+	NumOfBlocks         int           `yaml:"num_of_blocks" json:"NumOfBlocks"`
+	NodesAddresses      []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
+	Mnemonics           []string      `yaml:"mnemonics" json:"Mnemonics"`
 	PrivateKeys         []types.PrivKey
-	GasDenom            string        `yaml:"gas_denom"`
-	Bech32Prefix        string        `yaml:"bech32_prefix"`
-	Msgs                []LoadTestMsg `yaml:"msgs"`
-	UnorderedTxs        bool          `yaml:"unordered_txs"`
-	TxTimeout           time.Duration `yaml:"tx_timeout"`
+	GasDenom            string        `yaml:"gas_denom" json:"GasDenom"`
+	Bech32Prefix        string        `yaml:"bech32_prefix" json:"Bech32Prefix"`
+	Msgs                []LoadTestMsg `yaml:"msgs" json:"Msgs"`
+	UnorderedTxs        bool          `yaml:"unordered_txs,omitempty" json:"UnorderedTxs,omitempty"`
+	TxTimeout           time.Duration `yaml:"tx_timeout,omitempty" json:"TxTimeout,omitempty"`
 }
 
 func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type LoadTestSpecAux struct {
-		ChainID             string        `yaml:"chain_id"`
-		BlockGasLimitTarget float64       `yaml:"block_gas_limit_target"`
-		NumOfTxs            int           `yaml:"num_of_txs"`
-		NumOfBlocks         int           `yaml:"num_of_blocks"`
-		NodesAddresses      []NodeAddress `yaml:"nodes_addresses"`
-		Mnemonics           []string      `yaml:"mnemonics"`
-		GasDenom            string        `yaml:"gas_denom"`
-		Bech32Prefix        string        `yaml:"bech32_prefix"`
-		Msgs                []LoadTestMsg `yaml:"msgs"`
-		UnorderedTxs        bool          `yaml:"unordered_txs"`
-		TxTimeout           time.Duration `yaml:"tx_timeout"`
+		Name                string        `yaml:"name" json:"Name"`
+		Description         string        `yaml:"description" json:"Description"`
+		ChainID             string        `yaml:"chain_id" json:"ChainID"`
+		BlockGasLimitTarget float64       `yaml:"block_gas_limit_target,omitempty" json:"BlockGasLimitTarget,omitempty"`
+		NumOfTxs            int           `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
+		NumOfBlocks         int           `yaml:"num_of_blocks" json:"NumOfBlocks"`
+		NodesAddresses      []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
+		Mnemonics           []string      `yaml:"mnemonics" json:"Mnemonics"`
+		GasDenom            string        `yaml:"gas_denom" json:"GasDenom"`
+		Bech32Prefix        string        `yaml:"bech32_prefix" json:"Bech32Prefix"`
+		Msgs                []LoadTestMsg `yaml:"msgs" json:"Msgs"`
+		UnorderedTxs        bool          `yaml:"unordered_txs,omitempty" json:"UnorderedTxs,omitempty"`
+		TxTimeout           time.Duration `yaml:"tx_timeout,omitempty" json:"TxTimeout,omitempty"`
 	}
 
 	var aux LoadTestSpecAux
@@ -177,6 +179,8 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	*s = LoadTestSpec{
+		Name:                aux.Name,
+		Description:         aux.Description,
 		ChainID:             aux.ChainID,
 		BlockGasLimitTarget: aux.BlockGasLimitTarget,
 		NumOfTxs:            aux.NumOfTxs,
