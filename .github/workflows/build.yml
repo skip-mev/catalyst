@@ -19,11 +19,6 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: read
-  packages: write
-  id-token: write
-
 env:
   # Use docker.io for Docker Hub if empty
   REGISTRY: ghcr.io
@@ -33,6 +28,10 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,7 +61,7 @@ jobs:
       - name: Publish to GitHub Packages
         uses: depot/build-push-action@v1
         with:
-          project: gnm1jqptpw
+          project: rpx95khdpz
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
