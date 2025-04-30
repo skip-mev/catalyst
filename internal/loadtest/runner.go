@@ -512,7 +512,7 @@ func (r *Runner) createAndSendTransaction(
 		zap.String("msgType", mspSpec.Type.String()),
 		zap.String("containedType", string(mspSpec.ContainedType)))
 
-	gasBufferFactor := 1.01
+	gasBufferFactor := 1.1
 	estimation := r.gasEstimations[mspSpec]
 	gasWithBuffer := int64(float64(estimation.gasUsed) * gasBufferFactor)
 	fees := sdk.NewCoins(sdk.NewCoin(r.spec.GasDenom, sdkmath.NewInt(gasWithBuffer)))
