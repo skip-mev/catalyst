@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/skip-mev/catalyst/internal/cosmos/client"
 	"time"
+
+	"github.com/skip-mev/catalyst/internal/cosmos/client"
 
 	sdkclient "github.com/cosmos/cosmos-sdk/client"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
@@ -70,23 +71,28 @@ func (w *InteractingWallet) CreateSignedTx(ctx context.Context, client types.Cha
 	}
 
 	pubKey := w.signer.PublicKey()
-	err := txBuilder.SetSignatures(signing.SignatureV2{
+	sig := signing.SignatureV2{
 		PubKey: pubKey,
 		Data: &signing.SingleSignatureData{
-			SignMode:  signing.SignMode(encodingConfig.TxConfig.SignModeHandler().DefaultMode()),
+			SignMode:  signing.SignMode_SIGN_MODE_DIRECT,
 			Signature: nil,
 		},
-		Sequence: sequence,
-	})
+	}
+	if !unordered {
+		sig.Sequence = sequence
+	}
+	err := txBuilder.SetSignatures(sig)
 	if err != nil {
 		return nil, err
 	}
 
 	signerData := xauthsigning.SignerData{
 		ChainID:       chainID,
-		AccountNumber: accountNumber,
-		Sequence:      sequence,
 		PubKey:        pubKey,
+		AccountNumber: accountNumber,
+	}
+	if !unordered {
+		signerData.Sequence = sequence
 	}
 
 	sigV2, err := w.signer.SignTx(signerData, txBuilder, encodingConfig.TxConfig)
