@@ -89,10 +89,6 @@ func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.Sen
 					tx.TxResponse = txResponse
 
 					if txResponse.Code != 0 {
-						m.logger.Debug("transaction failed after submission",
-							zap.String("tx_hash", txResponse.TxHash),
-							zap.Uint32("code", txResponse.Code),
-							zap.String("raw_log", txResponse.RawLog))
 						tx.Err = fmt.Errorf(txResponse.RawLog)
 					}
 
