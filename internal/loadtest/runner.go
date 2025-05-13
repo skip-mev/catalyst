@@ -162,18 +162,11 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 		var err error
 
 		if msgSpec.Type == inttypes.MsgArr {
-			numMsgs := msgSpec.NumMsgs
-			containedType := msgSpec.ContainedType
-
 			msgs, err = r.txFactory.CreateMsgs(msgSpec, fromWallet)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create messages for gas estimation: %w", err)
 			}
 
-			r.logger.Debug("using MsgArr for gas estimation",
-				zap.Int("configured_num_msgs", numMsgs),
-				zap.String("contained_type", string(containedType)),
-				zap.Int("actual_num_msgs", len(msgs)))
 		} else {
 			msg, err := r.txFactory.CreateMsg(msgSpec, fromWallet)
 			if err != nil {
@@ -205,13 +198,6 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 		}
 
 		gasEstimations[msgSpec] = gasUsed
-
-		if msgSpec.Type == inttypes.MsgArr {
-			r.logger.Debug("gas estimation for MsgArr",
-				zap.String("contained_type", string(msgSpec.ContainedType)),
-				zap.Int("num_messages", len(msgs)),
-				zap.Uint64("gas_estimation", gasUsed))
-		}
 	}
 
 	return gasEstimations, nil
@@ -439,7 +425,7 @@ func (r *Runner) processSingleTransaction(
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
-			r.handleRetry(walletAddress, attempt)
+			time.Sleep(100 * time.Millisecond)
 		}
 
 		nonce := getLatestNonce(walletAddress, client)
@@ -468,11 +454,6 @@ func (r *Runner) createMessagesForType(msgSpec inttypes.LoadTestMsg, fromWallet 
 		}
 
 		msgs, err = r.txFactory.CreateMsgs(msgSpec, fromWallet)
-
-		r.logger.Debug("creating MsgArr transaction",
-			zap.Int("configured_num_msgs", msgSpec.NumMsgs),
-			zap.String("contained_type", string(msgSpec.ContainedType)),
-			zap.Int("actual_num_msgs", len(msgs)))
 	} else {
 		msg, err := r.txFactory.CreateMsg(msgSpec, fromWallet)
 		if err == nil {
@@ -481,15 +462,6 @@ func (r *Runner) createMessagesForType(msgSpec inttypes.LoadTestMsg, fromWallet 
 	}
 
 	return msgs, err
-}
-
-// handleRetry logs retry information and adds a small delay
-func (r *Runner) handleRetry(walletAddress string, attempt int) {
-	r.logger.Debug("retrying transaction due to nonce mismatch",
-		zap.Int("attempt", attempt+1),
-		zap.String("wallet", walletAddress))
-	// Add a small delay before retrying
-	time.Sleep(100 * time.Millisecond)
 }
 
 // createAndSendTransaction creates and sends a transaction, handling the response
@@ -505,12 +477,6 @@ func (r *Runner) createAndSendTransaction(
 	txsSent *int,
 ) (inttypes.SentTx, bool) {
 	walletAddress := fromWallet.FormattedAddress()
-
-	r.logger.Debug("using nonce for transaction",
-		zap.Uint64("nonce", nonce),
-		zap.String("wallet", walletAddress),
-		zap.String("msgType", mspSpec.Type.String()),
-		zap.String("containedType", string(mspSpec.ContainedType)))
 
 	gasBufferFactor := 1.1
 	estimation := r.gasEstimations[mspSpec]
@@ -534,12 +500,6 @@ func (r *Runner) createAndSendTransaction(
 			zap.Error(err),
 			zap.String("node", client.GetNodeAddress().RPC))
 		return inttypes.SentTx{}, false
-	}
-
-	if mspSpec.Type == inttypes.MsgArr {
-		r.logger.Debug("sending MsgArr transaction",
-			zap.String("contained_type", string(mspSpec.ContainedType)),
-			zap.Int("num_msgs", len(msgs)))
 	}
 
 	return r.broadcastAndHandleResponse(ctx, client, txBytes, mspSpec.Type, walletAddress, nonce, updateNonce, txsSentMu, txsSent, msgs)
@@ -594,33 +554,17 @@ func (r *Runner) broadcastAndHandleResponse(
 	*txsSent++
 	txsSentMu.Unlock()
 
-	r.logger.Info("transaction sent successfully",
-		zap.Any("res", res),
-		zap.String("wallet", walletAddress),
-		zap.String("msgType", msgType.String()),
-		zap.Int("num_msgs", len(msgs)),
-		zap.Uint64("nonce", nonce))
-
 	return sentTx, true
 }
 
 // handleNonceMismatch extracts the expected nonce from the error message and updates the wallet nonce
 func (r *Runner) handleNonceMismatch(walletAddress string, nonce uint64, rawLog string) {
-	r.logger.Debug("nonce mismatch detected, will retry",
-		zap.String("wallet", walletAddress),
-		zap.Uint64("used_nonce", nonce),
-		zap.String("raw_log", rawLog))
-
 	expectedNonceStr := regexp.MustCompile(`expected (\d+)`).FindStringSubmatch(rawLog)
 	if len(expectedNonceStr) > 1 {
 		if expectedNonce, err := strconv.ParseUint(expectedNonceStr[1], 10, 64); err == nil {
 			r.walletNoncesMu.Lock()
 			r.walletNonces[walletAddress] = expectedNonce
 			r.walletNoncesMu.Unlock()
-
-			r.logger.Debug("updated nonce based on error message",
-				zap.String("wallet", walletAddress),
-				zap.Uint64("new_nonce", expectedNonce))
 		}
 	}
 }
@@ -673,7 +617,6 @@ func RandomString(n int) string {
 }
 
 func (r *Runner) initAccountNumbers(ctx context.Context) error {
-	r.logger.Info("Initializing account numbers and nonces for all wallets")
 	for _, wallet := range r.wallets {
 		walletAddress := wallet.FormattedAddress()
 		client := wallet.GetClient()
@@ -688,11 +631,6 @@ func (r *Runner) initAccountNumbers(ctx context.Context) error {
 		r.walletNoncesMu.Lock()
 		r.walletNonces[walletAddress] = acc.GetSequence()
 		r.walletNoncesMu.Unlock()
-
-		r.logger.Debug("Initialized account data",
-			zap.String("wallet", walletAddress),
-			zap.Uint64("accountNumber", acc.GetAccountNumber()),
-			zap.Uint64("nonce", acc.GetSequence()))
 	}
 	r.logger.Info("Account numbers and nonces initialized successfully for all wallets")
 	return nil

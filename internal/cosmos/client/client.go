@@ -201,8 +201,6 @@ func (c *Chain) BroadcastTx(ctx context.Context, txBytes []byte) (*sdk.TxRespons
 			resp.TxResponse.TxHash, resp.TxResponse.Code, resp.TxResponse.RawLog)
 	}
 
-	c.logger.Debug("txresponse", zap.Any("resp.txresponse", resp.TxResponse))
-
 	return resp.TxResponse, nil
 }
 
