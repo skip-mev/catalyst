@@ -140,37 +140,35 @@ type SentTx struct {
 }
 
 type LoadTestSpec struct {
-	Name                string        `yaml:"name" json:"Name"`
-	Description         string        `yaml:"description" json:"Description"`
-	ChainID             string        `yaml:"chain_id" json:"ChainID"`
-	BlockGasLimitTarget float64       `yaml:"block_gas_limit_target,omitempty" json:"BlockGasLimitTarget,omitempty"`
-	NumOfTxs            int           `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
-	NumOfBlocks         int           `yaml:"num_of_blocks" json:"NumOfBlocks"`
-	NodesAddresses      []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
-	Mnemonics           []string      `yaml:"mnemonics" json:"Mnemonics"`
-	PrivateKeys         []types.PrivKey
-	GasDenom            string        `yaml:"gas_denom" json:"GasDenom"`
-	Bech32Prefix        string        `yaml:"bech32_prefix" json:"Bech32Prefix"`
-	Msgs                []LoadTestMsg `yaml:"msgs" json:"Msgs"`
-	UnorderedTxs        bool          `yaml:"unordered_txs,omitempty" json:"UnorderedTxs,omitempty"`
-	TxTimeout           time.Duration `yaml:"tx_timeout,omitempty" json:"TxTimeout,omitempty"`
+	Name           string        `yaml:"name" json:"Name"`
+	Description    string        `yaml:"description" json:"Description"`
+	ChainID        string        `yaml:"chain_id" json:"ChainID"`
+	NumOfTxs       int           `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
+	NumOfBlocks    int           `yaml:"num_of_blocks" json:"NumOfBlocks"`
+	NodesAddresses []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
+	Mnemonics      []string      `yaml:"mnemonics" json:"Mnemonics"`
+	PrivateKeys    []types.PrivKey
+	GasDenom       string        `yaml:"gas_denom" json:"GasDenom"`
+	Bech32Prefix   string        `yaml:"bech32_prefix" json:"Bech32Prefix"`
+	Msgs           []LoadTestMsg `yaml:"msgs" json:"Msgs"`
+	UnorderedTxs   bool          `yaml:"unordered_txs,omitempty" json:"UnorderedTxs,omitempty"`
+	TxTimeout      time.Duration `yaml:"tx_timeout,omitempty" json:"TxTimeout,omitempty"`
 }
 
 func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type LoadTestSpecAux struct {
-		Name                string        `yaml:"name" json:"Name"`
-		Description         string        `yaml:"description" json:"Description"`
-		ChainID             string        `yaml:"chain_id" json:"ChainID"`
-		BlockGasLimitTarget float64       `yaml:"block_gas_limit_target,omitempty" json:"BlockGasLimitTarget,omitempty"`
-		NumOfTxs            int           `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
-		NumOfBlocks         int           `yaml:"num_of_blocks" json:"NumOfBlocks"`
-		NodesAddresses      []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
-		Mnemonics           []string      `yaml:"mnemonics" json:"Mnemonics"`
-		GasDenom            string        `yaml:"gas_denom" json:"GasDenom"`
-		Bech32Prefix        string        `yaml:"bech32_prefix" json:"Bech32Prefix"`
-		Msgs                []LoadTestMsg `yaml:"msgs" json:"Msgs"`
-		UnorderedTxs        bool          `yaml:"unordered_txs,omitempty" json:"UnorderedTxs,omitempty"`
-		TxTimeout           time.Duration `yaml:"tx_timeout,omitempty" json:"TxTimeout,omitempty"`
+		Name           string        `yaml:"name" json:"Name"`
+		Description    string        `yaml:"description" json:"Description"`
+		ChainID        string        `yaml:"chain_id" json:"ChainID"`
+		NumOfTxs       int           `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
+		NumOfBlocks    int           `yaml:"num_of_blocks" json:"NumOfBlocks"`
+		NodesAddresses []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
+		Mnemonics      []string      `yaml:"mnemonics" json:"Mnemonics"`
+		GasDenom       string        `yaml:"gas_denom" json:"GasDenom"`
+		Bech32Prefix   string        `yaml:"bech32_prefix" json:"Bech32Prefix"`
+		Msgs           []LoadTestMsg `yaml:"msgs" json:"Msgs"`
+		UnorderedTxs   bool          `yaml:"unordered_txs,omitempty" json:"UnorderedTxs,omitempty"`
+		TxTimeout      time.Duration `yaml:"tx_timeout,omitempty" json:"TxTimeout,omitempty"`
 	}
 
 	var aux LoadTestSpecAux
@@ -179,19 +177,18 @@ func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	*s = LoadTestSpec{
-		Name:                aux.Name,
-		Description:         aux.Description,
-		ChainID:             aux.ChainID,
-		BlockGasLimitTarget: aux.BlockGasLimitTarget,
-		NumOfTxs:            aux.NumOfTxs,
-		NumOfBlocks:         aux.NumOfBlocks,
-		NodesAddresses:      aux.NodesAddresses,
-		Mnemonics:           aux.Mnemonics,
-		GasDenom:            aux.GasDenom,
-		Bech32Prefix:        aux.Bech32Prefix,
-		Msgs:                aux.Msgs,
-		UnorderedTxs:        aux.UnorderedTxs,
-		TxTimeout:           aux.TxTimeout,
+		Name:           aux.Name,
+		Description:    aux.Description,
+		ChainID:        aux.ChainID,
+		NumOfTxs:       aux.NumOfTxs,
+		NumOfBlocks:    aux.NumOfBlocks,
+		NodesAddresses: aux.NodesAddresses,
+		Mnemonics:      aux.Mnemonics,
+		GasDenom:       aux.GasDenom,
+		Bech32Prefix:   aux.Bech32Prefix,
+		Msgs:           aux.Msgs,
+		UnorderedTxs:   aux.UnorderedTxs,
+		TxTimeout:      aux.TxTimeout,
 	}
 
 	return nil
@@ -211,16 +208,8 @@ func (s *LoadTestSpec) Validate() error {
 		return fmt.Errorf("chain ID must be specified")
 	}
 
-	if s.BlockGasLimitTarget <= 0 && s.NumOfTxs <= 0 {
-		return fmt.Errorf("either block_gas_limit_target or num_of_txs must be set")
-	}
-
-	if s.BlockGasLimitTarget > 0 && s.NumOfTxs > 0 {
-		return fmt.Errorf("only one of block_gas_limit_target or num_of_txs should be set, not both")
-	}
-
-	if s.BlockGasLimitTarget > 1 {
-		return fmt.Errorf("block gas limit target must be between 0 and 1, got %f", s.BlockGasLimitTarget)
+	if s.NumOfTxs <= 0 {
+		return fmt.Errorf("num_of_txs must be greater than 0")
 	}
 
 	if s.NumOfBlocks <= 0 {

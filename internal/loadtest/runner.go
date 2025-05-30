@@ -3,7 +3,6 @@ package loadtest
 import (
 	"context"
 	"fmt"
-	"math"
 	"math/rand"
 	"regexp"
 	"strconv"
@@ -122,10 +121,6 @@ func NewRunner(ctx context.Context, spec inttypes.LoadTestSpec) (*Runner, error)
 	return runner, nil
 }
 
-func (r *Runner) isBlockGasLimitTargetWorkflow() bool {
-	return r.spec.BlockGasLimitTarget > 0
-}
-
 // initGasEstimation performs initial gas estimation to determine how many transactions
 // to send to chain
 func (r *Runner) initGasEstimation(ctx context.Context) error {
@@ -145,11 +140,7 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 		return err
 	}
 
-	if r.isBlockGasLimitTargetWorkflow() {
-		return r.initBlockGasLimitTargetWorkflow(gasEstimations, blockGasLimit)
-	} else {
-		return r.initNumOfTxsWorkflow(gasEstimations)
-	}
+	return r.initNumOfTxsWorkflow(gasEstimations)
 }
 
 // calculateMsgGasEstimations calculates gas estimations for all message types
@@ -201,36 +192,6 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 	}
 
 	return gasEstimations, nil
-}
-
-// initBlockGasLimitTargetWorkflow initializes the gas estimations based on block gas limit target
-func (r *Runner) initBlockGasLimitTargetWorkflow(gasEstimations map[inttypes.LoadTestMsg]uint64, blockGasLimit int64) error {
-	for _, msgSpec := range r.spec.Msgs {
-		gasUsed := gasEstimations[msgSpec]
-
-		targetGasLimit := float64(blockGasLimit) * r.spec.BlockGasLimitTarget * msgSpec.Weight
-		numTxs := int(math.Ceil(targetGasLimit/(float64(gasUsed))) * 1.4)
-
-		r.gasEstimations[msgSpec] = MsgGasEstimation{
-			gasUsed: int64(gasUsed),
-			weight:  msgSpec.Weight,
-			numTxs:  numTxs,
-		}
-		r.totalTxsPerBlock += numTxs
-
-		r.logger.Info("gas estimation results for BlockGasLimitTarget workflow",
-			zap.String("msgType", msgSpec.Type.String()),
-			zap.Int64("blockGasLimit", blockGasLimit),
-			zap.Uint64("txGasEstimation", gasUsed),
-			zap.Float64("targetGasLimit", targetGasLimit),
-			zap.Int("numTxs", numTxs))
-	}
-
-	if r.totalTxsPerBlock <= 0 {
-		return fmt.Errorf("calculated total number of transactions per block is zero or negative: %d", r.totalTxsPerBlock)
-	}
-
-	return nil
 }
 
 // initNumOfTxsWorkflow initializes the gas estimations based on number of transactions
@@ -354,7 +315,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 	var sentTxs []inttypes.SentTx
 	var sentTxsMu sync.Mutex
 
-	r.logWorkflowStart()
+	r.logger.Info(fmt.Sprintf("starting to send transactions for block"), zap.Int("block_number", r.numBlocksProcessed), zap.Int("expected_txs", r.totalTxsPerBlock))
 
 	getLatestNonce := func(walletAddr string, client *client.Chain) uint64 {
 		r.walletNoncesMu.Lock()
@@ -392,7 +353,9 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 	r.sentTxs = append(r.sentTxs, sentTxs...)
 	r.sentTxsMu.Unlock()
 
-	r.logWorkflowComplete(txsSent)
+	r.logger.Info("completed sending transactions for block",
+		zap.Int("block_number", r.numBlocksProcessed), zap.Int("txs_sent", txsSent),
+		zap.Int("expected_txs", r.totalTxsPerBlock))
 
 	return txsSent, nil
 }
@@ -569,39 +532,6 @@ func (r *Runner) handleNonceMismatch(walletAddress string, nonce uint64, rawLog 
 	}
 }
 
-func (r *Runner) logWorkflowStart() {
-	workflowName := r.getWorkflowName()
-	baseFields := []zap.Field{
-		zap.Int("block_number", r.numBlocksProcessed),
-		zap.Int("expected_txs", r.totalTxsPerBlock),
-	}
-
-	if r.isBlockGasLimitTargetWorkflow() {
-		r.logger.Info(fmt.Sprintf("starting to send transactions for block (%s workflow)", workflowName),
-			append(baseFields, zap.Float64("block_gas_limit_target", r.spec.BlockGasLimitTarget))...)
-	} else {
-		r.logger.Info(fmt.Sprintf("starting to send transactions for block (%s workflow)", workflowName),
-			baseFields...)
-	}
-}
-
-func (r *Runner) logWorkflowComplete(txsSent int) {
-	workflowName := r.getWorkflowName()
-	baseFields := []zap.Field{
-		zap.Int("block_number", r.numBlocksProcessed),
-		zap.Int("txs_sent", txsSent),
-		zap.Int("expected_txs", r.totalTxsPerBlock),
-	}
-
-	if r.isBlockGasLimitTargetWorkflow() {
-		r.logger.Info(fmt.Sprintf("completed sending transactions for block (%s workflow)", workflowName),
-			append(baseFields, zap.Float64("block_gas_limit_target", r.spec.BlockGasLimitTarget))...)
-	} else {
-		r.logger.Info(fmt.Sprintf("completed sending transactions for block (%s workflow)", workflowName),
-			baseFields...)
-	}
-}
-
 func (r *Runner) GetCollector() *metrics.MetricsCollector {
 	return &r.collector
 }
@@ -634,11 +564,4 @@ func (r *Runner) initAccountNumbers(ctx context.Context) error {
 	}
 	r.logger.Info("Account numbers and nonces initialized successfully for all wallets")
 	return nil
-}
-
-func (r *Runner) getWorkflowName() string {
-	if r.isBlockGasLimitTargetWorkflow() {
-		return "BlockGasLimitTarget"
-	}
-	return "NumOfTxs"
 }

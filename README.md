@@ -12,8 +12,8 @@ import "github.com/skip-mev/catalyst/loadtest"
 // Create a load test specification
 spec := types.LoadTestSpec{
     ChainID:             "my-chain-1",
-    BlockGasLimitTarget: 0.8,
     NumOfBlocks:         100,
+	NumOfTxs:            100,
     NodesAddresses:      []types.NodeAddress{...},
     Mnemonics:           []string{"word1 word2 ... word24"},  // BIP39 mnemonics
     GasDenom:            "stake",
@@ -46,7 +46,6 @@ make build
 2. Create a YAML configuration file (see example in `example/loadtest.yml`):
 ```yaml
 chain_id: "my-chain-1"
-block_gas_limit_target: 0.8  # Target 80% of block gas limit
 num_of_blocks: 100  # Process 100 blocks
 nodes_addresses:
   - grpc: "localhost:9090"
