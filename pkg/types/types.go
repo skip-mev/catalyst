@@ -142,7 +142,7 @@ type SentTx struct {
 type LoadTestSpec struct {
 	Name           string        `yaml:"name" json:"Name"`
 	Description    string        `yaml:"description" json:"Description"`
-	Evm            bool          `yaml:"evm" json:"Evm"`
+	IsEvmChain     bool          `yaml:"is_evm_chain" json:"IsEvmChain"`
 	ChainID        string        `yaml:"chain_id" json:"ChainID"`
 	NumOfTxs       int           `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
 	NumOfBlocks    int           `yaml:"num_of_blocks" json:"NumOfBlocks"`
