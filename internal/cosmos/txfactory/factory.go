@@ -2,7 +2,7 @@ package txfactory
 
 import (
 	"fmt"
-	"github.com/skip-mev/catalyst/pkg/types"
+	"github.com/skip-mev/catalyst/internal/cosmos/types"
 	"math/rand"
 
 	sdkmath "cosmossdk.io/math"

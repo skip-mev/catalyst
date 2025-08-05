@@ -3,14 +3,15 @@ package metrics
 import (
 	"context"
 	"fmt"
-	"github.com/skip-mev/catalyst/pkg/types"
 	"math/rand"
 	"runtime"
 	"sort"
 	"sync"
 	"time"
 
-	logging "github.com/skip-mev/catalyst/internal/shared"
+	"github.com/skip-mev/catalyst/internal/cosmos/types"
+
+	logging "github.com/skip-mev/catalyst/internal/log"
 
 	"go.uber.org/zap"
 

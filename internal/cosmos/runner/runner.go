@@ -1,4 +1,4 @@
-package loadtest
+package runner
 
 import (
 	"context"
@@ -10,19 +10,20 @@ import (
 	"sync"
 	"time"
 
-	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"go.uber.org/zap"
 
+	sdkmath "cosmossdk.io/math"
+
 	"github.com/skip-mev/catalyst/internal/cosmos/client"
+	"github.com/skip-mev/catalyst/internal/cosmos/metrics"
 	"github.com/skip-mev/catalyst/internal/cosmos/txfactory"
+	inttypes "github.com/skip-mev/catalyst/internal/cosmos/types"
 	"github.com/skip-mev/catalyst/internal/cosmos/wallet"
-	"github.com/skip-mev/catalyst/internal/metrics"
-	logging "github.com/skip-mev/catalyst/internal/shared"
-	inttypes "github.com/skip-mev/catalyst/pkg/types"
+	logging "github.com/skip-mev/catalyst/internal/log"
 )
 
 // MsgGasEstimation stores gas estimation for a specific message type

@@ -1,25 +1,26 @@
-package loadtest
+package cosmos
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/skip-mev/catalyst/pkg/types"
 	"os"
 	"path/filepath"
 
-	"github.com/skip-mev/catalyst/internal/loadtest"
+	cosmosrunner "github.com/skip-mev/catalyst/internal/cosmos/runner"
+	"github.com/skip-mev/catalyst/internal/cosmos/types"
+
 	"go.uber.org/zap"
 )
 
 // LoadTest represents a load test that can be executed
 type LoadTest struct {
-	runner *loadtest.Runner
+	runner *cosmosrunner.Runner
 }
 
 // New creates a new load test from a specification
 func New(ctx context.Context, spec types.LoadTestSpec) (*LoadTest, error) {
-	runner, err := loadtest.NewRunner(ctx, spec)
+	runner, err := cosmosrunner.NewRunner(ctx, spec)
 	if err != nil {
 		return nil, err
 	}
