@@ -6,11 +6,13 @@ type TxFactory struct {
 	wallets []*ethwallet.InteractingWallet
 }
 
-// Useful Scenarios
-
 // Contract Creation
 // Simple Eth Transfers
 // Contract interaction with large payload
 // Contract interaction that calls into other contracts.
 // Contract interaction with heavy state reads
 // Contract interaction with heavy state writes
+
+func NewTxFactory(wallets []*ethwallet.InteractingWallet) *TxFactory {
+	return &TxFactory{wallets: wallets}
+}
