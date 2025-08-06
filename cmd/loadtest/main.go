@@ -5,8 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	logging "github.com/skip-mev/catalyst/internal/log"
+	"github.com/skip-mev/catalyst/internal/types"
 	"golang.org/x/exp/slices"
 
 	"go.uber.org/zap"
@@ -16,7 +18,7 @@ import (
 	cosmostypes "github.com/skip-mev/catalyst/internal/cosmos/types"
 )
 
-type LoadTestType string
+type LoadTestType = string
 
 const (
 	LoadTestTypeEth    LoadTestType = "eth"
@@ -43,8 +45,8 @@ func main() {
 	testType := LoadTestType(*loadtestType)
 
 	if !slices.Contains(loadTestTypes, testType) {
-		saveConfigError("loadtest type must be one of: cosmos, eth", logger)
-		logger.Fatal("loadtest type must be one of: cosmos, eth")
+		saveConfigError(fmt.Sprintf("loadtest type must be one of: %s", strings.Join(loadTestTypes, ",")), logger)
+		logger.Fatal(fmt.Sprintf("loadtest type must be one of: %s", strings.Join(loadTestTypes, ",")))
 	}
 
 	configData, err := os.ReadFile(*configPath)
@@ -79,7 +81,7 @@ func main() {
 }
 
 func saveConfigError(err string, logger *zap.Logger) {
-	if saveErr := cosmos.SaveResults(cosmostypes.LoadTestResult{
+	if saveErr := cosmos.SaveResults(types.LoadTestResult{
 		Error: err,
 	}, logger); saveErr != nil {
 		logger.Fatal("failed to save results", zap.Error(saveErr))

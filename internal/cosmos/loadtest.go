@@ -10,6 +10,8 @@ import (
 	cosmosrunner "github.com/skip-mev/catalyst/internal/cosmos/runner"
 	"github.com/skip-mev/catalyst/internal/cosmos/types"
 
+	loadtesttypes "github.com/skip-mev/catalyst/internal/types"
+
 	"go.uber.org/zap"
 )
 
@@ -31,7 +33,7 @@ func New(ctx context.Context, spec types.LoadTestSpec) (*LoadTest, error) {
 }
 
 // Run executes the load test and returns the results
-func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (types.LoadTestResult, error) {
+func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (loadtesttypes.LoadTestResult, error) {
 	logger.Info("starting new load test run")
 	results, err := lt.runner.Run(ctx)
 	if err != nil {
@@ -52,7 +54,7 @@ func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (types.LoadTest
 
 // todo: add timestamp suffix to file
 // saveResults saves the load test results to /catalyst/load_test.json
-func SaveResults(results types.LoadTestResult, logger *zap.Logger) error {
+func SaveResults(results loadtesttypes.LoadTestResult, logger *zap.Logger) error {
 	dir := "/tmp/catalyst"
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		logger.Error("failed to create results directory",
