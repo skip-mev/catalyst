@@ -34,7 +34,7 @@ func main() {
 	defer logging.CloseLogFile()
 
 	configPath := flag.String("config", "", "Path to load test configuration file")
-	loadtestType := flag.String("type", "cosmos", "Load test type to use (cosmos, eth)")
+	loadtestType := flag.String("type", LoadTestTypeCosmos, fmt.Sprintf("Load test type to use (%s)", strings.Join(loadTestTypes, ","))
 	flag.Parse()
 
 	if *configPath == "" {
