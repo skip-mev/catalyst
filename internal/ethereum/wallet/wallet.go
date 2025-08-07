@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -67,6 +68,14 @@ func (w *InteractingWallet) estimateGasWithBuffer(ctx context.Context, msg ether
 	// add a 20% buffer to limit (common practice)
 	buffer := gasLimit / 20
 	return gasLimit + buffer, nil
+}
+
+func (w *InteractingWallet) SignerFn() bind.SignerFn {
+	return w.signer.SignerFn()
+}
+
+func (w *InteractingWallet) SignerFnLegacy() bind.SignerFn {
+	return w.signer.SignLegacyTxFn()
 }
 
 // CreateSignedTransaction creates and signs an Ethereum transaction

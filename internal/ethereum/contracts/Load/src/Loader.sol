@@ -57,11 +57,4 @@ contract Loader {
         storage1[0] = sum;
         return keccak256(data);
     }
-
-    // Helper to add more targets after deployment
-    function addTargets(address[] memory _targets) public {
-        for (uint256 i = 0; i < _targets.length; i++) {
-            targets.push(ITarget(_targets[i]));
-        }
-    }
 }

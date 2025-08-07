@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -43,6 +44,18 @@ func (s *Signer) SignTx(tx *types.Transaction) (*types.Transaction, error) {
 func (s *Signer) SignLegacyTx(tx *types.Transaction) (*types.Transaction, error) {
 	signer := types.NewLondonSigner(s.chainID)
 	return types.SignTx(tx, signer, s.privKey)
+}
+
+func (s *Signer) SignerFn() bind.SignerFn {
+	return func(addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
+		return s.SignTx(tx)
+	}
+}
+
+func (s *Signer) SignLegacyTxFn() bind.SignerFn {
+	return func(address common.Address, transaction *types.Transaction) (*types.Transaction, error) {
+		return s.SignLegacyTx(transaction)
+	}
 }
 
 // SignDynamicFeeTx signs an EIP-1559 dynamic fee transaction
