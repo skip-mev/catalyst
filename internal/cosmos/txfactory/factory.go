@@ -2,13 +2,17 @@ package txfactory
 
 import (
 	"fmt"
-	"github.com/skip-mev/catalyst/pkg/types"
+
+	"github.com/skip-mev/catalyst/internal/cosmos/types"
+	loadtesttypes "github.com/skip-mev/catalyst/internal/types"
+
 	"math/rand"
 
-	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/skip-mev/catalyst/internal/cosmos/wallet"
+
+	sdkmath "cosmossdk.io/math"
 )
 
 // TxFactory creates transactions for load testing
@@ -26,7 +30,7 @@ func NewTxFactory(gasDenom string, wallets []*wallet.InteractingWallet) *TxFacto
 }
 
 // CreateMsg creates a message of the specified type
-func (f *TxFactory) CreateMsg(msgSpec types.LoadTestMsg, fromWallet *wallet.InteractingWallet) (sdk.Msg, error) {
+func (f *TxFactory) CreateMsg(msgSpec loadtesttypes.LoadTestMsg, fromWallet *wallet.InteractingWallet) (sdk.Msg, error) {
 	switch msgSpec.Type {
 	case types.MsgSend:
 		return f.createMsgSend(fromWallet)
@@ -99,7 +103,7 @@ func (f *TxFactory) createMsgMultiSend(fromWallet *wallet.InteractingWallet, num
 }
 
 // createMsgArray creates an array of messages of the specified type
-func (f *TxFactory) createMsgArray(msgSpec types.LoadTestMsg, fromWallet *wallet.InteractingWallet) ([]sdk.Msg, error) {
+func (f *TxFactory) createMsgArray(msgSpec loadtesttypes.LoadTestMsg, fromWallet *wallet.InteractingWallet) ([]sdk.Msg, error) {
 	messages := make([]sdk.Msg, 0, msgSpec.NumMsgs)
 
 	for i := 0; i < msgSpec.NumMsgs; i++ {
@@ -127,7 +131,7 @@ func (f *TxFactory) createMsgArray(msgSpec types.LoadTestMsg, fromWallet *wallet
 }
 
 // CreateMsgs is a variant of CreateMsg that returns multiple messages of x type as part of the same transaction
-func (f *TxFactory) CreateMsgs(msgSpec types.LoadTestMsg, fromWallet *wallet.InteractingWallet) ([]sdk.Msg, error) {
+func (f *TxFactory) CreateMsgs(msgSpec loadtesttypes.LoadTestMsg, fromWallet *wallet.InteractingWallet) ([]sdk.Msg, error) {
 	if msgSpec.Type != types.MsgArr {
 		return nil, fmt.Errorf("CreateMsgs only accepts MsgArr type")
 	}

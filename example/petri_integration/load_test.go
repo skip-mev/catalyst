@@ -181,16 +181,15 @@ func TestPetriDockerIntegration(t *testing.T) {
 	}
 
 	spec := loadtesttypes.LoadTestSpec{
-		ChainID:             defaultChainConfig.ChainId,
-		BlockGasLimitTarget: 1,
-		NumOfBlocks:         20,
-		NodesAddresses:      nodeAddresses,
-		Mnemonics:           mnemonics,
-		GasDenom:            defaultChainConfig.Denom,
-		Bech32Prefix:        defaultChainConfig.Bech32Prefix,
-		Msgs:                msgs,
-		UnorderedTxs:        true,
-		TxTimeout:           time.Second * 20,
+		ChainID:        defaultChainConfig.ChainId,
+		NumOfBlocks:    20,
+		NodesAddresses: nodeAddresses,
+		Mnemonics:      mnemonics,
+		GasDenom:       defaultChainConfig.Denom,
+		Bech32Prefix:   defaultChainConfig.Bech32Prefix,
+		Msgs:           msgs,
+		UnorderedTxs:   true,
+		TxTimeout:      time.Second * 20,
 	}
 
 	time.Sleep(10 * time.Second)
@@ -321,14 +320,13 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 		{Weight: 1, Type: loadtesttypes.MsgMultiSend},
 	}
 	spec := loadtesttypes.LoadTestSpec{
-		ChainID:             defaultChainConfig.ChainId,
-		BlockGasLimitTarget: 1,
-		NumOfBlocks:         20,
-		NodesAddresses:      nodeAddresses,
-		Mnemonics:           mnemonics,
-		GasDenom:            defaultChainConfig.Denom,
-		Bech32Prefix:        defaultChainConfig.Bech32Prefix,
-		Msgs:                msgs,
+		ChainID:        defaultChainConfig.ChainId,
+		NumOfBlocks:    20,
+		NodesAddresses: nodeAddresses,
+		Mnemonics:      mnemonics,
+		GasDenom:       defaultChainConfig.Denom,
+		Bech32Prefix:   defaultChainConfig.Bech32Prefix,
+		Msgs:           msgs,
 	}
 
 	task, err := p.CreateTask(ctx, provider.TaskDefinition{

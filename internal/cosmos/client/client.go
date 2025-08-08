@@ -3,12 +3,12 @@ package client
 import (
 	"context"
 	"fmt"
-	"github.com/skip-mev/catalyst/pkg/types"
+	"github.com/skip-mev/catalyst/internal/cosmos/types"
 	"time"
 
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 
-	logging "github.com/skip-mev/catalyst/internal/shared"
+	logging "github.com/skip-mev/catalyst/internal/log"
 
 	sdkClient "github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"

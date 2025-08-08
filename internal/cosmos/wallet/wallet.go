@@ -14,7 +14,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	xauthsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
-	"github.com/skip-mev/catalyst/pkg/types"
+	"github.com/skip-mev/catalyst/internal/cosmos/types"
 )
 
 // InteractingWallet represents a wallet that can interact with the chain
