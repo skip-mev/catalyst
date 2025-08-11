@@ -24,7 +24,7 @@ type LoadTestSpec struct {
 	Description    string                      `yaml:"description" json:"Description"`
 	ChainID        big.Int                     `yaml:"chain_id" json:"ChainID"`
 	NumOfTxs       int                         `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
-	NumOfBlocks    int                         `yaml:"num_of_blocks" json:"NumOfBlocks"`
+	NumOfBlocks    int64                       `yaml:"num_of_blocks" json:"NumOfBlocks"`
 	NodesAddresses []string                    `yaml:"nodes_addresses" json:"NodesAddresses"`
 	Msgs           []loadtesttypes.LoadTestMsg `yaml:"msgs" json:"Msgs"`
 	TxTimeout      time.Duration               `yaml:"tx_timeout,omitempty" json:"TxTimeout,omitempty"`
