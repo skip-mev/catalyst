@@ -27,25 +27,25 @@ func NewTxFactory(wallets []*ethwallet.InteractingWallet) *TxFactory {
 	return &TxFactory{wallets: wallets}
 }
 
-func (f *TxFactory) CreateMsg(msgSpec loadtesttypes.LoadTestMsg, fromWallet *wallet.InteractingWallet) ([]*types.Transaction, error) {
+func (f *TxFactory) BuildTxs(msgSpec loadtesttypes.LoadTestMsg, fromWallet *wallet.InteractingWallet, nonce uint64) ([]*types.Transaction, error) {
 	ctx := context.Background()
 	switch msgSpec.Type {
 	case ethtypes.MsgCreateContract:
-		return f.createMsgCreateContract(ctx, fromWallet, nil)
+		return f.createMsgCreateContract(ctx, fromWallet, nil, nonce)
 	case ethtypes.MsgWriteTo:
-		tx, err := f.createMsgWriteTo(ctx, fromWallet, msgSpec.NumOfIterations)
+		tx, err := f.createMsgWriteTo(ctx, fromWallet, msgSpec.NumOfIterations, nonce)
 		if err != nil {
 			return nil, err
 		}
 		return []*types.Transaction{tx}, nil
 	case ethtypes.MsgCallDataBlast:
-		tx, err := f.createMsgCallDataBlast(ctx, fromWallet, msgSpec.CalldataSize)
+		tx, err := f.createMsgCallDataBlast(ctx, fromWallet, msgSpec.CalldataSize, nonce)
 		if err != nil {
 			return nil, err
 		}
 		return []*types.Transaction{tx}, nil
 	case ethtypes.MsgCrossContractCall:
-		tx, err := f.createMsgCrossContractCall(ctx, fromWallet, msgSpec.NumOfIterations)
+		tx, err := f.createMsgCrossContractCall(ctx, fromWallet, msgSpec.NumOfIterations, nonce)
 		if err != nil {
 			return nil, err
 		}
@@ -59,7 +59,7 @@ func (f *TxFactory) SetContractAddrs(addrs ...common.Address) {
 	f.contractAddresses = append(f.contractAddresses, addrs...)
 }
 
-func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *wallet.InteractingWallet, targets *int) ([]*types.Transaction, error) {
+func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *wallet.InteractingWallet, targets *int, nonce uint64) ([]*types.Transaction, error) {
 	var numTargets int
 	if targets != nil {
 		numTargets = *targets
@@ -71,10 +71,6 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *wal
 	// Deploy target contracts first
 	targetDeployTxs := make([]*types.Transaction, 0, numTargets)
 	targetContractAddrs := make([]common.Address, 0, numTargets)
-	nonce, err := fromWallet.GetNonce(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get nonce: %w", err)
-	}
 	for i := 0; i < numTargets; i++ {
 		addr, tx, _, err := target.DeployTarget(&bind.TransactOpts{
 			From:    fromWallet.Address(),
@@ -103,7 +99,7 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *wal
 	return append(targetDeployTxs, loaderDeployTx), nil
 }
 
-func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *wallet.InteractingWallet, iterations int) (*types.Transaction, error) {
+func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *wallet.InteractingWallet, iterations int, nonce uint64) (*types.Transaction, error) {
 	// Default to 100 iterations if not specified
 	if iterations <= 0 {
 		iterations = 100
@@ -122,6 +118,7 @@ func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *wallet.Int
 	tx, err := loaderInstance.TestStorageWrites(&bind.TransactOpts{
 		From:    fromWallet.Address(),
 		Signer:  fromWallet.SignerFnLegacy(),
+		Nonce:   big.NewInt(int64(nonce)),
 		Context: ctx,
 		NoSend:  true,
 	}, big.NewInt(int64(iterations)))
@@ -131,7 +128,7 @@ func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *wallet.Int
 	return tx, nil
 }
 
-func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *wallet.InteractingWallet, dataSize int) (*types.Transaction, error) {
+func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *wallet.InteractingWallet, dataSize int, nonce uint64) (*types.Transaction, error) {
 	if len(f.contractAddresses) == 0 {
 		return nil, fmt.Errorf("no deployed contracts available for calldata blast")
 	}
@@ -155,6 +152,7 @@ func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *wall
 		From:    fromWallet.Address(),
 		Signer:  fromWallet.SignerFnLegacy(),
 		Context: ctx,
+		Nonce:   big.NewInt(int64(nonce)),
 		NoSend:  true,
 	}, randomBytes)
 	if err != nil {
@@ -163,7 +161,7 @@ func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *wall
 	return tx, nil
 }
 
-func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *wallet.InteractingWallet, iterations int) (*types.Transaction, error) {
+func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *wallet.InteractingWallet, iterations int, nonce uint64) (*types.Transaction, error) {
 	// Default to 10 iterations if not specified
 	if iterations <= 0 {
 		iterations = 10
@@ -182,6 +180,7 @@ func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *
 	tx, err := loaderInstance.TestCrossContractCalls(&bind.TransactOpts{
 		From:    fromWallet.Address(),
 		Signer:  fromWallet.SignerFnLegacy(),
+		Nonce:   big.NewInt(int64(nonce)),
 		Context: ctx,
 		NoSend:  true,
 	}, big.NewInt(int64(iterations)))

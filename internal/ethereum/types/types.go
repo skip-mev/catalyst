@@ -1,7 +1,6 @@
 package types
 
 import (
-	"crypto/ecdsa"
 	"math/big"
 	"time"
 
@@ -29,5 +28,5 @@ type LoadTestSpec struct {
 	Msgs           []loadtesttypes.LoadTestMsg `yaml:"msgs" json:"Msgs"`
 	TxTimeout      time.Duration               `yaml:"tx_timeout,omitempty" json:"TxTimeout,omitempty"`
 	Mnemonics      []string                    `yaml:"mnemonics" json:"Mnemonics"`
-	PrivateKeys    []ecdsa.PrivateKey
+	PrivateKeys    []string                    `yaml:"private_keys" json:"PrivateKeys"`
 }
