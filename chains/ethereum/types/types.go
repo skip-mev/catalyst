@@ -3,6 +3,7 @@ package types
 import (
 	"errors"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -42,7 +43,7 @@ type LoadTestSpec struct {
 	PrivateKeys    []string                    `yaml:"private_keys" json:"PrivateKeys"`
 }
 
-func (spec LoadTestSpec) Validate() error {
+func (spec *LoadTestSpec) Validate() error {
 	if spec.ChainID.Int64() <= 0 {
 		return errors.New("ChainID must be positive")
 	}
@@ -54,6 +55,11 @@ func (spec LoadTestSpec) Validate() error {
 	}
 	if len(spec.PrivateKeys) <= 0 {
 		return errors.New("must have PrivateKeys")
+	}
+	for i, pk := range spec.PrivateKeys {
+		if strings.HasPrefix(pk, "0x") {
+			spec.PrivateKeys[i] = pk[2:]
+		}
 	}
 	return nil
 }

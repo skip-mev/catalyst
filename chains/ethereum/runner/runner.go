@@ -28,6 +28,8 @@ type Runner struct {
 
 	clients []*ethclient.Client
 
+	wsClients []*ethclient.Client
+
 	spec          types.LoadTestSpec
 	nonces        sync.Map
 	wallets       []*wallet.InteractingWallet
@@ -43,11 +45,21 @@ type Runner struct {
 func NewRunner(ctx context.Context, logger *zap.Logger, spec types.LoadTestSpec) (*Runner, error) {
 	clients := make([]*ethclient.Client, 0, len(spec.NodesAddresses))
 	for _, nodeAddress := range spec.NodesAddresses {
-		client, err := ethclient.DialContext(ctx, nodeAddress)
+		client, err := ethclient.DialContext(ctx, "http://"+nodeAddress)
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to node %s: %w", nodeAddress, err)
 		}
 		clients = append(clients, client)
+	}
+
+	wsClients := make([]*ethclient.Client, 0, len(spec.NodesAddresses))
+	for _, nodeAddress := range spec.NodesAddresses {
+		nodeAddress = "localhost:8546"
+		client, err := ethclient.DialContext(ctx, "ws://"+nodeAddress)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect ws to node %s: %w", nodeAddress, err)
+		}
+		wsClients = append(wsClients, client)
 	}
 	wallets := make([]*wallet.InteractingWallet, 0, len(spec.PrivateKeys))
 	for i, privKey := range spec.PrivateKeys {
@@ -60,7 +72,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec types.LoadTestSpec)
 		wallets = append(wallets, wallet)
 	}
 
-	txf := txfactory.NewTxFactory(wallets)
+	txf := txfactory.NewTxFactory(logger, wallets)
 	nonces := sync.Map{}
 	for _, wallet := range wallets {
 		nonce, err := wallet.GetNonce(ctx)
@@ -72,6 +84,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec types.LoadTestSpec)
 	r := &Runner{
 		logger:          logger,
 		clients:         clients,
+		wsClients:       wsClients,
 		spec:            spec,
 		wallets:         wallets,
 		mu:              sync.Mutex{},
@@ -97,7 +110,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 	defer cancel()
 
 	blockCh := make(chan *gethtypes.Header, 1)
-	subscription, err := r.clients[0].SubscribeNewHead(ctx, blockCh)
+	subscription, err := r.wsClients[0].SubscribeNewHead(ctx, blockCh)
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
@@ -166,8 +179,10 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 
 func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 	// first we build the tx load. this constructs all the ethereum txs based in the spec.
+	r.logger.Debug("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
 	txs := make([]*gethtypes.Transaction, 0, len(r.spec.Msgs))
 	for _, msgSpec := range r.spec.Msgs {
+		r.logger.Debug("building load", zap.String("type", msgSpec.Type.String()), zap.Int("num_msgs", msgSpec.NumMsgs))
 		for i := 0; i < msgSpec.NumMsgs; i++ {
 			load, err := r.buildLoad(msgSpec)
 			if err != nil {
@@ -229,6 +244,9 @@ func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg) ([]*gethtypes.Tran
 	// the tx factory will correctly handle setting the correct nonces for these txs.
 	// naturally, the final tx will have the latest nonce that should be set for the account.
 	lastTx := txs[len(txs)-1]
+	if lastTx == nil {
+		return nil, nil
+	}
 	r.nonces.Store(fromWallet.Address(), lastTx.Nonce()+1)
 	return txs, nil
 }

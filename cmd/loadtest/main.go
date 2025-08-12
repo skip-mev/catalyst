@@ -65,6 +65,11 @@ func main() {
 			logger.Fatal("failed to parse config file", zap.Error(err))
 		}
 
+		if err := spec.Validate(); err != nil {
+			saveConfigError("failed to validate config file", logger)
+			logger.Fatal("failed to validate config file", zap.Error(err))
+		}
+
 		ctx := context.Background()
 		test, err := ethereum.New(ctx, logger, spec)
 		if err != nil {

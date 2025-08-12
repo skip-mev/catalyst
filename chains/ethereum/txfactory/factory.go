@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -16,15 +18,18 @@ import (
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"go.uber.org/zap"
 )
 
 type TxFactory struct {
+	logger            *zap.Logger
 	wallets           []*ethwallet.InteractingWallet
 	contractAddresses []common.Address
+	mu                sync.Mutex
 }
 
-func NewTxFactory(wallets []*ethwallet.InteractingWallet) *TxFactory {
-	return &TxFactory{wallets: wallets}
+func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet) *TxFactory {
+	return &TxFactory{logger: logger.With(zap.String("module", "tx_factory")), wallets: wallets, mu: sync.Mutex{}}
 }
 
 func (f *TxFactory) BuildTxs(msgSpec loadtesttypes.LoadTestMsg, fromWallet *wallet.InteractingWallet, nonce uint64) ([]*types.Transaction, error) {
@@ -96,7 +101,33 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *wal
 	if err != nil {
 		return nil, fmt.Errorf("failed to create loader contract transaction: %w", err)
 	}
+	f.updateContractAddressesAsync(ctx, loaderDeployTx.Hash())
 	return append(targetDeployTxs, loaderDeployTx), nil
+}
+
+func (f *TxFactory) updateContractAddressesAsync(ctx context.Context, txHash common.Hash) {
+	go func() {
+		retires := 30
+		delay := 500 * time.Millisecond
+		client := f.wallets[0].GetClient()
+		for i := 0; i < retires; i++ {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			receipt, err := wallet.GetTxReceipt(ctx, client, txHash)
+			if err == nil {
+				f.logger.Debug("updating contract address for tx", zap.String("tx_hash", txHash.String()))
+				f.mu.Lock()
+				f.contractAddresses = append(f.contractAddresses, receipt.ContractAddress)
+				f.mu.Unlock()
+				break
+			}
+			time.Sleep(delay)
+		}
+		f.logger.Debug("unable to update contract addresses for tx", zap.String("tx_hash", txHash.String()))
+	}()
 }
 
 func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *wallet.InteractingWallet, iterations int, nonce uint64) (*types.Transaction, error) {
