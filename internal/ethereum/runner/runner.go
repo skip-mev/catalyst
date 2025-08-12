@@ -173,6 +173,9 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 			if err != nil {
 				return 0, fmt.Errorf("failed to build load: %w", err)
 			}
+			if len(load) == 0 {
+				continue
+			}
 			txs = append(txs, load...)
 		}
 	}
@@ -217,6 +220,9 @@ func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg) ([]*gethtypes.Tran
 	txs, err := r.txFactory.BuildTxs(msgSpec, fromWallet, nonce.(uint64))
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tx for %q: %w", msgSpec.Type, err)
+	}
+	if len(txs) == 0 {
+		return nil, nil
 	}
 
 	// some cases, like contract creation, will give us more than one tx to send.

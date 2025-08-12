@@ -105,7 +105,7 @@ func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *wallet.Int
 		iterations = 100
 	}
 	if len(f.contractAddresses) == 0 {
-		return nil, fmt.Errorf("no deployed contracts available for write operations")
+		return nil, nil
 	}
 
 	// Pick a random contract
@@ -130,7 +130,7 @@ func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *wallet.Int
 
 func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *wallet.InteractingWallet, dataSize int, nonce uint64) (*types.Transaction, error) {
 	if len(f.contractAddresses) == 0 {
-		return nil, fmt.Errorf("no deployed contracts available for calldata blast")
+		return nil, nil
 	}
 	// Pick a random contract
 	contractAddr := f.contractAddresses[rand.Intn(len(f.contractAddresses))]
@@ -167,7 +167,7 @@ func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *
 		iterations = 10
 	}
 	if len(f.contractAddresses) == 0 {
-		return nil, fmt.Errorf("no deployed contracts available for cross-contract calls")
+		return nil, nil
 	}
 
 	// Pick a random contract (this should be a Loader contract)
