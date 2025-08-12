@@ -118,11 +118,15 @@ func (f *TxFactory) updateContractAddressesAsync(ctx context.Context, txHash com
 			}
 			receipt, err := wallet.GetTxReceipt(ctx, client, txHash)
 			if err == nil {
-				f.logger.Debug("updating contract address for tx", zap.String("tx_hash", txHash.String()))
-				f.mu.Lock()
-				f.contractAddresses = append(f.contractAddresses, receipt.ContractAddress)
-				f.mu.Unlock()
-				break
+				if receipt.Status != types.ReceiptStatusSuccessful {
+					f.logger.Debug("unable to update contract address: tx failed", zap.String("tx_hash", txHash.String()))
+				} else {
+					f.logger.Debug("updating contract address for tx", zap.String("tx_hash", txHash.String()))
+					f.mu.Lock()
+					f.contractAddresses = append(f.contractAddresses, receipt.ContractAddress)
+					f.mu.Unlock()
+				}
+				return
 			}
 			time.Sleep(delay)
 		}
