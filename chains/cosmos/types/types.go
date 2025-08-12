@@ -10,7 +10,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	"github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
@@ -76,15 +75,14 @@ type SentTx struct {
 }
 
 type LoadTestSpec struct {
-	Name           string        `yaml:"name" json:"Name"`
-	Description    string        `yaml:"description" json:"Description"`
-	IsEvmChain     bool          `yaml:"is_evm_chain" json:"IsEvmChain"`
-	ChainID        string        `yaml:"chain_id" json:"ChainID"`
-	NumOfTxs       int           `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
-	NumOfBlocks    int           `yaml:"num_of_blocks" json:"NumOfBlocks"`
-	NodesAddresses []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
-	Mnemonics      []string      `yaml:"mnemonics" json:"Mnemonics"`
-	PrivateKeys    []types.PrivKey
+	Name           string                      `yaml:"name" json:"Name"`
+	Description    string                      `yaml:"description" json:"Description"`
+	IsEvmChain     bool                        `yaml:"is_evm_chain" json:"IsEvmChain"`
+	ChainID        string                      `yaml:"chain_id" json:"ChainID"`
+	NumOfTxs       int                         `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
+	NumOfBlocks    int                         `yaml:"num_of_blocks" json:"NumOfBlocks"`
+	NodesAddresses []NodeAddress               `yaml:"nodes_addresses" json:"NodesAddresses"`
+	Mnemonics      []string                    `yaml:"mnemonics" json:"Mnemonics"`
 	GasDenom       string                      `yaml:"gas_denom" json:"GasDenom"`
 	Bech32Prefix   string                      `yaml:"bech32_prefix" json:"Bech32Prefix"`
 	Msgs           []loadtesttypes.LoadTestMsg `yaml:"msgs" json:"Msgs"`
@@ -196,8 +194,8 @@ func (s *LoadTestSpec) Validate() error {
 		return fmt.Errorf("total message weights must add up to 1.0, got %f", totalWeight)
 	}
 
-	if len(s.Mnemonics) == 0 && len(s.PrivateKeys) == 0 {
-		return fmt.Errorf("either mnemonics or private keys must be provided")
+	if len(s.Mnemonics) == 0 {
+		return fmt.Errorf("mnemonics must be provided")
 	}
 
 	if s.GasDenom == "" {

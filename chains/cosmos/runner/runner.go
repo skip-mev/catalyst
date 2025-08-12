@@ -76,8 +76,8 @@ func NewRunner(ctx context.Context, spec inttypes.LoadTestSpec) (*Runner, error)
 		return nil, fmt.Errorf("no valid clients created")
 	}
 
+	var privKeys []types.PrivKey
 	if len(spec.Mnemonics) > 0 {
-		var privKeys []types.PrivKey
 		for _, mnemonic := range spec.Mnemonics {
 			derivedPrivKey, err := hd.Secp256k1.Derive()(
 				mnemonic,
@@ -89,15 +89,14 @@ func NewRunner(ctx context.Context, spec inttypes.LoadTestSpec) (*Runner, error)
 			}
 			privKeys = append(privKeys, &secp256k1.PrivKey{Key: derivedPrivKey})
 		}
-		spec.PrivateKeys = privKeys
 	}
 
-	if len(spec.PrivateKeys) == 0 {
+	if len(privKeys) == 0 {
 		return nil, fmt.Errorf("no private keys available: either provide mnemonics or private keys")
 	}
 
 	var wallets []*wallet.InteractingWallet
-	for i, privKey := range spec.PrivateKeys {
+	for i, privKey := range privKeys {
 		client := clients[i%len(clients)]
 		wallet := wallet.NewInteractingWallet(privKey, spec.Bech32Prefix, client)
 		wallets = append(wallets, wallet)
