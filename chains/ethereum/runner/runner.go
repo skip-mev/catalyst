@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,10 +55,16 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec types.LoadTestSpec)
 
 	wsClients := make([]*ethclient.Client, 0, len(spec.NodesAddresses))
 	for _, nodeAddress := range spec.NodesAddresses {
-		nodeAddress = "localhost:8546"
-		client, err := ethclient.DialContext(ctx, "ws://"+nodeAddress)
+		host, _, err := net.SplitHostPort(nodeAddress)
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect ws to node %s: %w", nodeAddress, err)
+			host = nodeAddress
+		}
+		// TODO: for now, we are hard coding the ws port. this is a hack for now, we will need to update the config later.
+		wsNodeAddress := net.JoinHostPort(host, "8546")
+
+		client, err := ethclient.DialContext(ctx, "ws://"+wsNodeAddress)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect ws to node %s: %w", wsNodeAddress, err)
 		}
 		wsClients = append(wsClients, client)
 	}
