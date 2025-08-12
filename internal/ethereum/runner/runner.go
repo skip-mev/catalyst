@@ -11,9 +11,10 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	inttypes "github.com/skip-mev/catalyst/internal/cosmos/types"
+	"github.com/skip-mev/catalyst/internal/ethereum/metrics"
 	"github.com/skip-mev/catalyst/internal/ethereum/txfactory"
 	"github.com/skip-mev/catalyst/internal/ethereum/types"
+	inttypes "github.com/skip-mev/catalyst/internal/ethereum/types"
 	"github.com/skip-mev/catalyst/internal/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/internal/types"
 	"go.uber.org/zap"
@@ -31,6 +32,7 @@ type Runner struct {
 	nonces        sync.Map
 	wallets       []*wallet.InteractingWallet
 	blockGasLimit int64
+	collector     metrics.MetricsCollector
 
 	mu              sync.Mutex
 	txFactory       *txfactory.TxFactory
@@ -77,12 +79,19 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec types.LoadTestSpec)
 		sentTxs:         make([]inttypes.SentTx, 0, 100),
 		blocksProcessed: new(atomic.Int64),
 		nonces:          nonces,
+		collector:       metrics.NewMetricsCollector(logger),
 	}
 
 	return r, nil
 }
 
+func (r *Runner) GetCollector() *metrics.MetricsCollector {
+	return &r.collector
+}
+
 func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
+	startTime := time.Now()
+
 	// TODO: the coordination of contexts and done signals is not correct here. a more straightforward method is needed.
 	subCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -139,10 +148,20 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 	case <-ctx.Done():
 		r.logger.Info("ctx done")
 		time.Sleep(30 * time.Second) // allow txs to finish
-		// TODO: collector stuff
-	}
 
-	return loadtesttypes.LoadTestResult{}, nil
+		collectorStartTime := time.Now()
+		clients := make([]wallet.Client, 0, len(r.wallets))
+		for _, wallet := range r.wallets {
+			clients = append(clients, wallet.GetClient())
+		}
+		r.collector.GroupSentTxs(ctx, r.sentTxs, clients, startTime)
+		collectorResults := r.collector.ProcessResults(r.blockGasLimit, int(r.spec.NumOfBlocks))
+		collectorEndTime := time.Now()
+		r.logger.Debug("collector running time",
+			zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))
+
+		return collectorResults, nil
+	}
 }
 
 func (r *Runner) submitLoad(ctx context.Context) (int, error) {
@@ -172,12 +191,11 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 				r.logger.Debug("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
 			}
 			sentTxs[i] = inttypes.SentTx{
-				TxHash:            tx.Hash().String(),
-				NodeAddress:       "", // TODO: figure out what to do here.
-				MsgType:           "",
-				Err:               err,
-				TxResponse:        nil,
-				InitialTxResponse: nil,
+				TxHash:      tx.Hash(),
+				NodeAddress: "", // TODO: figure out what to do here.
+				MsgType:     "",
+				Err:         err,
+				Tx:          tx,
 			}
 		}()
 	}

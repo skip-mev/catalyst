@@ -75,6 +75,15 @@ type MessageBlockStats struct {
 	GasUsed          int64
 }
 
+// BroadcastError represents errors during broadcasting transactions
+type BroadcastError struct {
+	BlockHeight int64   // Block height where the error occurred (0 indicates tx did not make it to a block)
+	TxHash      string  // Hash of the transaction that failed
+	Error       string  // Error message
+	MsgType     MsgType // Type of message that failed
+	NodeAddress string  // Address of the node that returned the error
+}
+
 type LoadTestMsg struct {
 	Weight          float64 `yaml:"weight"`
 	Type            MsgType `yaml:"type"`

@@ -4,6 +4,8 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	loadtesttypes "github.com/skip-mev/catalyst/internal/types"
 )
 
@@ -17,6 +19,15 @@ const (
 	// MsgCallDataBlast sends a bunch of calldata to the contract
 	MsgCallDataBlast loadtesttypes.MsgType = "MsgCallDataBlast"
 )
+
+type SentTx struct {
+	TxHash      common.Hash
+	NodeAddress string
+	MsgType     loadtesttypes.MsgType
+	Err         error
+	Tx          *gethtypes.Transaction
+	Receipt     *gethtypes.Receipt
+}
 
 type LoadTestSpec struct {
 	Name           string                      `yaml:"name" json:"Name"`
