@@ -28,7 +28,7 @@ const (
 )
 
 var (
-	loadTestTypes = []LoadTestType{LoadTestTypeCosmos, LoadTestTypeCosmos}
+	loadTestTypes = []LoadTestType{LoadTestTypeCosmos, LoadTestTypeEth}
 )
 
 func main() {

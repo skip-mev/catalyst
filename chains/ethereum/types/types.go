@@ -1,6 +1,7 @@
 package types
 
 import (
+	"errors"
 	"math/big"
 	"time"
 
@@ -38,6 +39,21 @@ type LoadTestSpec struct {
 	NodesAddresses []string                    `yaml:"nodes_addresses" json:"NodesAddresses"`
 	Msgs           []loadtesttypes.LoadTestMsg `yaml:"msgs" json:"Msgs"`
 	TxTimeout      time.Duration               `yaml:"tx_timeout,omitempty" json:"TxTimeout,omitempty"`
-	Mnemonics      []string                    `yaml:"mnemonics" json:"Mnemonics"`
 	PrivateKeys    []string                    `yaml:"private_keys" json:"PrivateKeys"`
+}
+
+func (spec LoadTestSpec) Validate() error {
+	if spec.ChainID.Int64() <= 0 {
+		return errors.New("ChainID must be positive")
+	}
+	if len(spec.NodesAddresses) <= 0 {
+		return errors.New("must have NodeAddresses")
+	}
+	if len(spec.Msgs) <= 0 {
+		return errors.New("must have Msgs")
+	}
+	if len(spec.PrivateKeys) <= 0 {
+		return errors.New("must have PrivateKeys")
+	}
+	return nil
 }
