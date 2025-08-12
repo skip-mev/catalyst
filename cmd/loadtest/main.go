@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/skip-mev/catalyst/internal/ethereum"
+	ethtypes "github.com/skip-mev/catalyst/internal/ethereum/types"
 	logging "github.com/skip-mev/catalyst/internal/log"
 	"github.com/skip-mev/catalyst/internal/types"
 	"golang.org/x/exp/slices"
@@ -57,7 +59,23 @@ func main() {
 
 	switch testType {
 	case LoadTestTypeEth:
-		panic("not supported yet")
+		var spec ethtypes.LoadTestSpec
+		if err := yaml.Unmarshal(configData, &spec); err != nil {
+			saveConfigError("failed to parse config file", logger)
+			logger.Fatal("failed to parse config file", zap.Error(err))
+		}
+
+		ctx := context.Background()
+		test, err := ethereum.New(ctx, logger, spec)
+		if err != nil {
+			saveConfigError(fmt.Sprintf("failed to create test. error: %s", err), logger)
+			logger.Fatal("failed to create test", zap.Error(err))
+		}
+
+		_, err = test.Run(ctx, logger)
+		if err != nil {
+			logger.Fatal("failed to run load test", zap.Error(err))
+		}
 	case LoadTestTypeCosmos:
 		var spec cosmostypes.LoadTestSpec
 		if err := yaml.Unmarshal(configData, &spec); err != nil {
