@@ -7,17 +7,17 @@ import (
 	"os"
 	"strings"
 
-	"github.com/skip-mev/catalyst/internal/ethereum"
-	ethtypes "github.com/skip-mev/catalyst/internal/ethereum/types"
-	logging "github.com/skip-mev/catalyst/internal/log"
-	"github.com/skip-mev/catalyst/internal/types"
+	"github.com/skip-mev/catalyst/chains/ethereum"
+	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
+	logging "github.com/skip-mev/catalyst/chains/log"
+	"github.com/skip-mev/catalyst/chains/types"
 	"golang.org/x/exp/slices"
 
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
-	"github.com/skip-mev/catalyst/internal/cosmos"
-	cosmostypes "github.com/skip-mev/catalyst/internal/cosmos/types"
+	"github.com/skip-mev/catalyst/chains/cosmos"
+	cosmostypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 )
 
 type LoadTestType = string
