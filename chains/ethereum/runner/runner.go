@@ -87,6 +87,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		blocksProcessed: new(atomic.Int64),
 		nonces:          nonces,
 		collector:       metrics.NewMetricsCollector(logger),
+		blockGasLimit:   30_000_000, // TODO: this is just the max of ethereum. the target is 15m. max is 30m.
 	}
 
 	return r, nil
