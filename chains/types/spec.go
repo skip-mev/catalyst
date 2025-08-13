@@ -43,6 +43,18 @@ func (s *LoadTestSpec) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
+func (s LoadTestSpec) MarshalYAML() (any, error) {
+	type Alias LoadTestSpec
+	out := struct {
+		Alias       `yaml:",inline"`
+		ChainConfig any `yaml:"chain_config,omitempty"`
+	}{
+		Alias:       Alias(s),
+		ChainConfig: s.ChainCfg, // concrete value behind the interface
+	}
+	return out, nil
+}
+
 // Validate validates the LoadTestSpec and returns an error if it's invalid
 func (s *LoadTestSpec) Validate() error {
 	if s.ChainID == "" {

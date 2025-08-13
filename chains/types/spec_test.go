@@ -1,10 +1,11 @@
 package types_test
 
 import (
-	"fmt"
-	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"testing"
 	"time"
+
+	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
+	"github.com/stretchr/testify/require"
 
 	cosmostypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
@@ -23,33 +24,7 @@ import (
 func TestLoadTestSpec_Marshal_Eth(t *testing.T) {
 	// Arrange: register cosmos chain config factory
 	ethtypes.Register()
-
-	// Sample YAML that targets the eth implementation.
-	yml := []byte(`
-name: worker
-description: eth load test
-kind: eth
-chain_id: "262144"
-num_of_blocks: 200
-mnemonics: ["seed phrase goes here"]
-chain_config:
-  nodes_addresses:
-    - rpc: "https://foobar:8545"
-      websocket: "ws://foobar:8546"
-msgs:
-  - weight: 0
-    type: MsgCreateContract
-    num_msgs: 20
-  - weight: 0
-    type: MsgWriteTo
-    num_msgs: 20
-  - weight: 0
-    type: MsgCrossContractCall
-    num_msgs: 20
-  - weight: 0
-    type: MsgCallDataBlast
-    num_msgs: 20
-`)
+	cosmostypes.Register()
 
 	var spec loadtesttypes.LoadTestSpec
 	spec.Name = "worker"
@@ -58,7 +33,7 @@ msgs:
 	spec.ChainID = "262144"
 	spec.NumOfBlocks = 200
 	spec.Mnemonics = []string{"seed phrase goes here"}
-	spec.ChainCfg = ethtypes.ChainConfig{NodesAddresses: []ethtypes.NodeAddress{
+	spec.ChainCfg = &ethtypes.ChainConfig{NodesAddresses: []ethtypes.NodeAddress{
 		{RPC: "https://foobar:8545", Websocket: "ws://foobar:8546"},
 	}}
 	spec.Msgs = []loadtesttypes.LoadTestMsg{
@@ -73,8 +48,11 @@ msgs:
 		t.Fatalf("yaml.Marshal failed: %v", err)
 	}
 
-	msgStr := string(msgBytes)
-	fmt.Println(msgStr)
+	var otherLoadtestSpec loadtesttypes.LoadTestSpec
+	err = yaml.Unmarshal(msgBytes, &otherLoadtestSpec)
+	require.NoError(t, err)
+
+	require.Equal(t, spec, otherLoadtestSpec)
 
 }
 
