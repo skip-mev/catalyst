@@ -37,6 +37,10 @@ type ChainConfig struct {
 	NodesAddresses []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
 }
 
+func init() {
+	Register()
+}
+
 func (s ChainConfig) Validate(_ loadtesttypes.LoadTestSpec) error {
 	if len(s.NodesAddresses) == 0 {
 		return fmt.Errorf("no node addresses provided")

@@ -9,14 +9,12 @@ import (
 
 	cosmos "github.com/skip-mev/catalyst/chains/cosmos"
 	eth "github.com/skip-mev/catalyst/chains/ethereum"
-	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	logging "github.com/skip-mev/catalyst/chains/log"
 	"github.com/skip-mev/catalyst/chains/types"
 
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
-	cosmostypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
@@ -35,11 +33,7 @@ func main() {
 		saveConfigError("config file path is required", logger)
 		logger.Fatal("config file path is required")
 	}
-
-	// register chain-specific subconfigs so the shared spec can decode chain_config.
-	cosmostypes.Register()
-	ethtypes.Register()
-
+	
 	data, err := os.ReadFile(*configPath)
 	if err != nil {
 		saveConfigError("failed to read config file", logger)

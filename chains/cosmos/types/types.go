@@ -139,6 +139,10 @@ func (s ChainConfig) Validate(mainCfg loadtesttypes.LoadTestSpec) error {
 
 func (ChainConfig) IsChainConfig() {}
 
+func init() {
+	Register()
+}
+
 func Register() {
 	loadtesttypes.Register("cosmos", func() loadtesttypes.ChainConfig { return &ChainConfig{} })
 }
