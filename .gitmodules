@@ -1,4 +1,4 @@
-[submodule "internal/ethereum/contracts/load/lib/forge-std"]
-	path = internal/ethereum/contracts/load/lib/forge-std
+[submodule "chains/ethereum/contracts/load/lib/forge-std"]
+	path = chains/ethereum/contracts/load/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
 
