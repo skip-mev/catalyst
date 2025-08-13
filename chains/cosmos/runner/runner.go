@@ -36,7 +36,7 @@ type MsgGasEstimation struct {
 
 // Runner represents a load test runner that executes a single LoadTestSpec
 type Runner struct {
-	spec               inttypes.LoadTestSpec
+	spec               loadtesttypes.LoadTestSpec
 	clients            []*client.Chain
 	wallets            []*wallet.InteractingWallet
 	blockGasLimit      int64
@@ -52,18 +52,21 @@ type Runner struct {
 	accountNumbers     map[string]uint64
 	walletNonces       map[string]uint64
 	walletNoncesMu     sync.Mutex
+
+	chainCfg inttypes.ChainConfig
 }
 
 // NewRunner creates a new load test runner for a given spec
-func NewRunner(ctx context.Context, spec inttypes.LoadTestSpec) (*Runner, error) {
+func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
 	logger, _ := zap.NewDevelopment()
+	chainCfg := spec.ChainCfg.(*inttypes.ChainConfig)
 
 	if err := spec.Validate(); err != nil {
 		return nil, err
 	}
 
 	var clients []*client.Chain
-	for _, node := range spec.NodesAddresses {
+	for _, node := range chainCfg.NodesAddresses {
 		client, err := client.NewClient(ctx, node.RPC, node.GRPC, spec.ChainID)
 		if err != nil {
 			logger.Warn("failed to create client for node", zap.String("rpc", node.RPC), zap.Error(err))
@@ -98,7 +101,7 @@ func NewRunner(ctx context.Context, spec inttypes.LoadTestSpec) (*Runner, error)
 	var wallets []*wallet.InteractingWallet
 	for i, privKey := range privKeys {
 		client := clients[i%len(clients)]
-		wallet := wallet.NewInteractingWallet(privKey, spec.Bech32Prefix, client)
+		wallet := wallet.NewInteractingWallet(privKey, chainCfg.Bech32Prefix, client)
 		wallets = append(wallets, wallet)
 	}
 
@@ -111,9 +114,10 @@ func NewRunner(ctx context.Context, spec inttypes.LoadTestSpec) (*Runner, error)
 		sentTxs:        make([]inttypes.SentTx, 0),
 		accountNumbers: make(map[string]uint64),
 		walletNonces:   make(map[string]uint64),
+		chainCfg:       *chainCfg,
 	}
 
-	runner.txFactory = txfactory.NewTxFactory(spec.GasDenom, wallets)
+	runner.txFactory = txfactory.NewTxFactory(chainCfg.GasDenom, wallets)
 
 	if err := runner.initGasEstimation(ctx); err != nil {
 		return nil, err
@@ -174,7 +178,7 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 
 		memo := RandomString(16)
 		tx, err := fromWallet.CreateSignedTx(ctx, client, 0, sdk.Coins{}, acc.GetSequence(), acc.GetAccountNumber(),
-			memo, r.spec.UnorderedTxs, r.spec.TxTimeout, msgs...)
+			memo, r.chainCfg.UnorderedTxs, r.spec.TxTimeout, msgs...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create transaction for simulation: %w", err)
 		}
@@ -445,12 +449,12 @@ func (r *Runner) createAndSendTransaction(
 	gasBufferFactor := 1.1
 	estimation := r.gasEstimations[mspSpec]
 	gasWithBuffer := int64(float64(estimation.gasUsed) * gasBufferFactor)
-	fees := sdk.NewCoins(sdk.NewCoin(r.spec.GasDenom, sdkmath.NewInt(gasWithBuffer)))
+	fees := sdk.NewCoins(sdk.NewCoin(r.chainCfg.GasDenom, sdkmath.NewInt(gasWithBuffer)))
 	accountNumber := r.accountNumbers[walletAddress]
 	memo := RandomString(16) // Avoid ErrTxInMempoolCache
 
 	tx, err := fromWallet.CreateSignedTx(ctx, client, uint64(gasWithBuffer), fees, nonce, accountNumber,
-		memo, r.spec.UnorderedTxs, r.spec.TxTimeout, msgs...)
+		memo, r.chainCfg.UnorderedTxs, r.spec.TxTimeout, msgs...)
 	if err != nil {
 		r.logger.Error("failed to create signed tx",
 			zap.Error(err),

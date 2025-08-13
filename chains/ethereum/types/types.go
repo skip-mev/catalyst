@@ -1,10 +1,7 @@
 package types
 
 import (
-	"errors"
-	"math/big"
-	"strings"
-	"time"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -31,35 +28,28 @@ type SentTx struct {
 	Receipt     *gethtypes.Receipt
 }
 
-type LoadTestSpec struct {
-	Name           string                      `yaml:"name" json:"Name"`
-	Description    string                      `yaml:"description" json:"Description"`
-	ChainID        big.Int                     `yaml:"chain_id" json:"ChainID"`
-	NumOfTxs       int                         `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
-	NumOfBlocks    int64                       `yaml:"num_of_blocks" json:"NumOfBlocks"`
-	NodesAddresses []string                    `yaml:"nodes_addresses" json:"NodesAddresses"`
-	Msgs           []loadtesttypes.LoadTestMsg `yaml:"msgs" json:"Msgs"`
-	TxTimeout      time.Duration               `yaml:"tx_timeout,omitempty" json:"TxTimeout,omitempty"`
-	PrivateKeys    []string                    `yaml:"private_keys" json:"PrivateKeys"`
+type NodeAddress struct {
+	RPC       string `yaml:"rpc"`
+	Websocket string `yaml:"websocket"`
 }
 
-func (spec *LoadTestSpec) Validate() error {
-	if spec.ChainID.Int64() <= 0 {
-		return errors.New("ChainID must be positive")
+type ChainConfig struct {
+	NodesAddresses []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
+}
+
+func (s ChainConfig) Validate(_ loadtesttypes.LoadTestSpec) error {
+	if len(s.NodesAddresses) == 0 {
+		return fmt.Errorf("no node addresses provided")
 	}
-	if len(spec.NodesAddresses) <= 0 {
-		return errors.New("must have NodeAddresses")
-	}
-	if len(spec.Msgs) <= 0 {
-		return errors.New("must have Msgs")
-	}
-	if len(spec.PrivateKeys) <= 0 {
-		return errors.New("must have PrivateKeys")
-	}
-	for i, pk := range spec.PrivateKeys {
-		if strings.HasPrefix(pk, "0x") {
-			spec.PrivateKeys[i] = pk[2:]
+	for i, nodeAddress := range s.NodesAddresses {
+		if nodeAddress.RPC == "" || nodeAddress.Websocket == "" {
+			return fmt.Errorf("invalid node address at index %d", i+1)
 		}
 	}
 	return nil
+}
+func (ChainConfig) IsChainConfig() {}
+
+func Register() {
+	loadtesttypes.Register("eth", func() loadtesttypes.ChainConfig { return &ChainConfig{} })
 }

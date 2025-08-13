@@ -8,11 +8,13 @@ import (
 	"path/filepath"
 
 	cosmosrunner "github.com/skip-mev/catalyst/chains/cosmos/runner"
-	"github.com/skip-mev/catalyst/chains/cosmos/types"
-
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 
 	"go.uber.org/zap"
+)
+
+const (
+	Kind = "cosmos"
 )
 
 // LoadTest represents a load test that can be executed
@@ -21,7 +23,7 @@ type LoadTest struct {
 }
 
 // New creates a new load test from a specification
-func New(ctx context.Context, spec types.LoadTestSpec) (*LoadTest, error) {
+func New(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*LoadTest, error) {
 	runner, err := cosmosrunner.NewRunner(ctx, spec)
 	if err != nil {
 		return nil, err

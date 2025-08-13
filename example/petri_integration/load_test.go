@@ -21,8 +21,9 @@ import (
 	"github.com/skip-mev/petri/cosmos/v3/node"
 	"go.uber.org/zap"
 
-	"github.com/skip-mev/catalyst/loadtest"
-	loadtesttypes "github.com/skip-mev/catalyst/pkg/types"
+	loadtest "github.com/skip-mev/catalyst/chains/cosmos"
+	cosmoslttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
 var (
@@ -97,7 +98,7 @@ func TestPetriDockerIntegration(t *testing.T) {
 	// Add a delay to ensure the node is fully ready
 	time.Sleep(5 * time.Second)
 
-	var nodeAddresses []loadtesttypes.NodeAddress
+	var nodeAddresses []cosmoslttypes.NodeAddress
 	for _, n := range c.GetValidators() {
 		grpcAddress, err := n.GetExternalAddress(ctx, "9090")
 		if err != nil {
@@ -110,7 +111,7 @@ func TestPetriDockerIntegration(t *testing.T) {
 		logger.Info("Node addresses",
 			zap.String("grpc", grpcAddress),
 			zap.String("rpc", rpcAddress))
-		nodeAddresses = append(nodeAddresses, loadtesttypes.NodeAddress{
+		nodeAddresses = append(nodeAddresses, cosmoslttypes.NodeAddress{
 			GRPC: grpcAddress,
 			RPC:  "http://" + rpcAddress,
 		})
@@ -176,20 +177,22 @@ func TestPetriDockerIntegration(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	msgs := []loadtesttypes.LoadTestMsg{
-		{Weight: 1, Type: loadtesttypes.MsgMultiSend},
-		//{Weight: 1, Type: loadtesttypes.MsgSend},
+		{Weight: 1, Type: cosmoslttypes.MsgMultiSend},
+		//{Weight: 1, Type: cosmoslttypes.MsgSend},
 	}
 
 	spec := loadtesttypes.LoadTestSpec{
-		ChainID:        defaultChainConfig.ChainId,
-		NumOfBlocks:    20,
-		NodesAddresses: nodeAddresses,
-		Mnemonics:      mnemonics,
-		GasDenom:       defaultChainConfig.Denom,
-		Bech32Prefix:   defaultChainConfig.Bech32Prefix,
-		Msgs:           msgs,
-		UnorderedTxs:   true,
-		TxTimeout:      time.Second * 20,
+		ChainID:     defaultChainConfig.ChainId,
+		NumOfBlocks: 20,
+		Mnemonics:   mnemonics,
+		Msgs:        msgs,
+		TxTimeout:   time.Second * 20,
+		ChainCfg: &cosmoslttypes.ChainConfig{
+			GasDenom:       defaultChainConfig.Denom,
+			Bech32Prefix:   defaultChainConfig.Bech32Prefix,
+			UnorderedTxs:   true,
+			NodesAddresses: nodeAddresses,
+		},
 	}
 
 	time.Sleep(10 * time.Second)
@@ -240,7 +243,7 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 	// Add a delay to ensure the node is fully ready
 	time.Sleep(5 * time.Second)
 
-	var nodeAddresses []loadtesttypes.NodeAddress
+	var nodeAddresses []cosmoslttypes.NodeAddress
 	for _, n := range c.GetValidators() {
 		grpcAddress, err := n.GetExternalAddress(ctx, "9090")
 		if err != nil {
@@ -253,7 +256,7 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 		logger.Info("Node addresses",
 			zap.String("grpc", grpcAddress),
 			zap.String("rpc", rpcAddress))
-		nodeAddresses = append(nodeAddresses, loadtesttypes.NodeAddress{
+		nodeAddresses = append(nodeAddresses, cosmoslttypes.NodeAddress{
 			GRPC: grpcAddress,
 			RPC:  "http://" + rpcAddress,
 		})
@@ -317,16 +320,18 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	msgs := []loadtesttypes.LoadTestMsg{
-		{Weight: 1, Type: loadtesttypes.MsgMultiSend},
+		{Weight: 1, Type: cosmoslttypes.MsgMultiSend},
 	}
 	spec := loadtesttypes.LoadTestSpec{
-		ChainID:        defaultChainConfig.ChainId,
-		NumOfBlocks:    20,
-		NodesAddresses: nodeAddresses,
-		Mnemonics:      mnemonics,
-		GasDenom:       defaultChainConfig.Denom,
-		Bech32Prefix:   defaultChainConfig.Bech32Prefix,
-		Msgs:           msgs,
+		ChainID:     defaultChainConfig.ChainId,
+		NumOfBlocks: 20,
+		Mnemonics:   mnemonics,
+		Msgs:        msgs,
+		ChainCfg: cosmoslttypes.ChainConfig{
+			GasDenom:       defaultChainConfig.Denom,
+			Bech32Prefix:   defaultChainConfig.Bech32Prefix,
+			NodesAddresses: nodeAddresses,
+		},
 	}
 
 	task, err := p.CreateTask(ctx, provider.TaskDefinition{

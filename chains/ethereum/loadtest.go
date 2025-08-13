@@ -9,9 +9,12 @@ import (
 	"time"
 
 	"github.com/skip-mev/catalyst/chains/ethereum/runner"
-	"github.com/skip-mev/catalyst/chains/ethereum/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"go.uber.org/zap"
+)
+
+const (
+	Kind = "eth"
 )
 
 // LoadTest represents a load test that can be executed
@@ -20,7 +23,7 @@ type LoadTest struct {
 }
 
 // New creates a new load test from a specification
-func New(ctx context.Context, logger *zap.Logger, spec types.LoadTestSpec) (*LoadTest, error) {
+func New(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*LoadTest, error) {
 	runner, err := runner.NewRunner(ctx, logger, spec)
 	if err != nil {
 		return nil, err

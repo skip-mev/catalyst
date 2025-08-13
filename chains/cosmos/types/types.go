@@ -74,92 +74,25 @@ type SentTx struct {
 	InitialTxResponse *sdk.TxResponse
 }
 
-type LoadTestSpec struct {
-	Name           string                      `yaml:"name" json:"Name"`
-	Description    string                      `yaml:"description" json:"Description"`
-	IsEvmChain     bool                        `yaml:"is_evm_chain" json:"IsEvmChain"`
-	ChainID        string                      `yaml:"chain_id" json:"ChainID"`
-	NumOfTxs       int                         `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
-	NumOfBlocks    int                         `yaml:"num_of_blocks" json:"NumOfBlocks"`
-	NodesAddresses []NodeAddress               `yaml:"nodes_addresses" json:"NodesAddresses"`
-	Mnemonics      []string                    `yaml:"mnemonics" json:"Mnemonics"`
-	GasDenom       string                      `yaml:"gas_denom" json:"GasDenom"`
-	Bech32Prefix   string                      `yaml:"bech32_prefix" json:"Bech32Prefix"`
-	Msgs           []loadtesttypes.LoadTestMsg `yaml:"msgs" json:"Msgs"`
-	UnorderedTxs   bool                        `yaml:"unordered_txs,omitempty" json:"UnorderedTxs,omitempty"`
-	TxTimeout      time.Duration               `yaml:"tx_timeout,omitempty" json:"TxTimeout,omitempty"`
+type ChainConfig struct {
+	GasDenom       string        `yaml:"gas_denom" json:"GasDenom"`
+	Bech32Prefix   string        `yaml:"bech32_prefix" json:"Bech32Prefix"`
+	UnorderedTxs   bool          `yaml:"unordered_txs,omitempty" json:"UnorderedTxs,omitempty"`
+	NodesAddresses []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
 }
 
-func (s *LoadTestSpec) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type LoadTestSpecAux struct {
-		Name           string                      `yaml:"name" json:"Name"`
-		Description    string                      `yaml:"description" json:"Description"`
-		ChainID        string                      `yaml:"chain_id" json:"ChainID"`
-		NumOfTxs       int                         `yaml:"num_of_txs,omitempty" json:"NumOfTxs,omitempty"`
-		NumOfBlocks    int                         `yaml:"num_of_blocks" json:"NumOfBlocks"`
-		NodesAddresses []NodeAddress               `yaml:"nodes_addresses" json:"NodesAddresses"`
-		Mnemonics      []string                    `yaml:"mnemonics" json:"Mnemonics"`
-		GasDenom       string                      `yaml:"gas_denom" json:"GasDenom"`
-		Bech32Prefix   string                      `yaml:"bech32_prefix" json:"Bech32Prefix"`
-		Msgs           []loadtesttypes.LoadTestMsg `yaml:"msgs" json:"Msgs"`
-		UnorderedTxs   bool                        `yaml:"unordered_txs,omitempty" json:"UnorderedTxs,omitempty"`
-		TxTimeout      time.Duration               `yaml:"tx_timeout,omitempty" json:"TxTimeout,omitempty"`
-	}
-
-	var aux LoadTestSpecAux
-	if err := unmarshal(&aux); err != nil {
-		return err
-	}
-
-	*s = LoadTestSpec{
-		Name:           aux.Name,
-		Description:    aux.Description,
-		ChainID:        aux.ChainID,
-		NumOfTxs:       aux.NumOfTxs,
-		NumOfBlocks:    aux.NumOfBlocks,
-		NodesAddresses: aux.NodesAddresses,
-		Mnemonics:      aux.Mnemonics,
-		GasDenom:       aux.GasDenom,
-		Bech32Prefix:   aux.Bech32Prefix,
-		Msgs:           aux.Msgs,
-		UnorderedTxs:   aux.UnorderedTxs,
-		TxTimeout:      aux.TxTimeout,
-	}
-
-	return nil
-}
-
-// Validate validates the LoadTestSpec and returns an error if it's invalid
-func (s *LoadTestSpec) Validate() error {
+func (s ChainConfig) Validate(mainCfg loadtesttypes.LoadTestSpec) error {
 	if len(s.NodesAddresses) == 0 {
 		return fmt.Errorf("no node addresses provided")
 	}
-
-	if s.UnorderedTxs == true && s.TxTimeout == 0 {
+	if s.UnorderedTxs == true && mainCfg.TxTimeout == 0 {
 		return fmt.Errorf("tx_timeout must be set if unordered txs is set to true")
 	}
-
-	if s.ChainID == "" {
-		return fmt.Errorf("chain ID must be specified")
-	}
-
-	if s.NumOfTxs <= 0 {
-		return fmt.Errorf("num_of_txs must be greater than 0")
-	}
-
-	if s.NumOfBlocks <= 0 {
-		return fmt.Errorf("num_of_blocks must be greater than 0")
-	}
-
-	if len(s.Msgs) == 0 {
-		return fmt.Errorf("no messages specified for load testing")
-	}
-
 	seenMsgTypes := make(map[loadtesttypes.MsgType]bool)
 	seenMsgArrTypes := make(map[loadtesttypes.MsgType]bool)
 
 	var totalWeight float64
-	for _, msg := range s.Msgs {
+	for _, msg := range mainCfg.Msgs {
 		if err := validateMsgType(msg); err != nil {
 			return err
 		}
@@ -179,7 +112,7 @@ func (s *LoadTestSpec) Validate() error {
 			}
 			seenMsgArrTypes[msg.ContainedType] = true
 		} else if msg.Type == MsgMultiSend {
-			if msg.NumOfRecipients > len(s.Mnemonics) {
+			if msg.NumOfRecipients > len(mainCfg.Mnemonics) {
 				return fmt.Errorf("number of recipients must be less than or equal to number of mneomnics available")
 			}
 		} else {
@@ -194,10 +127,6 @@ func (s *LoadTestSpec) Validate() error {
 		return fmt.Errorf("total message weights must add up to 1.0, got %f", totalWeight)
 	}
 
-	if len(s.Mnemonics) == 0 {
-		return fmt.Errorf("mnemonics must be provided")
-	}
-
 	if s.GasDenom == "" {
 		return fmt.Errorf("gas denomination must be specified")
 	}
@@ -205,8 +134,13 @@ func (s *LoadTestSpec) Validate() error {
 	if s.Bech32Prefix == "" {
 		return fmt.Errorf("bech32 prefix must be specified")
 	}
-
 	return nil
+}
+
+func (ChainConfig) IsChainConfig() {}
+
+func Register() {
+	loadtesttypes.Register("cosmos", func() loadtesttypes.ChainConfig { return &ChainConfig{} })
 }
 
 func validateMsgType(msg loadtesttypes.LoadTestMsg) error {

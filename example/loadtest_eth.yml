@@ -1,22 +1,25 @@
 # Example load test configuration
 name: "eth_loadtest"
 description: "testing"
-chain_id: 4231
-num_of_txs: 100     # transactions per block
-num_of_blocks: 100  # Process 100 blocks
-nodes_addresses:
-  - "localhost:8545"
-private_keys:
-  - "0x88cbead91aee890d27bf06e003ade3d4e952427e88f88d31d61d3ef5e5d54305"
-  - "0x741de4f8988ea941d3ff0287911ca4074e62b7d45c991a51186455366f10b544"
-  - "0x3b7955d25189c99a7468192fcbc6429205c158834053ebe3f78f4512ab432db9"
-  - "0x8a36c69d940a92fcea94b36d0f2928c7a0ee19a90073eda769693298dfa9603b"
+kind: "eth"
+chain_id: "262144"
+num_of_txs: 50     # transactions per block
+num_of_blocks: 50  # Process 100 blocks
+mnemonics:
+  - "copper push brief egg scan entry inform record adjust fossil boss egg comic alien upon aspect dry avoid interest fury window hint race symptom"
+  - "maximum display century economy unlock van census kite error heart snow filter midnight usage egg venture cash kick motor survey drastic edge muffin visual"
+  - "will wear settle write dance topic tape sea glory hotel oppose rebel client problem era video gossip glide during yard balance cancel file rose"
+  - "doll midnight silk carpet brush boring pluck office gown inquiry duck chief aim exit gain never tennis crime fragile ship cloud surface exotic patch"
 msgs:
   - type: "MsgCreateContract"
-    NumMsgs: 20
+    num_msgs: 20
   - type: "MsgWriteTo"
-    NumMsgs: 20
+    num_msgs: 20
   - type: "MsgCrossContractCall"
-    NumMsgs: 20
+    num_msgs: 20
   - type: "MsgCallDataBlast"
-    NumMsgs: 20
+    num_msgs: 20
+chain_config:
+  node_addresses:
+    - rpc: "http://localhost:8545"
+      websocket: "ws://localhost:8546"

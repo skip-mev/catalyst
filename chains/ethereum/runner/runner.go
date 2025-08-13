@@ -3,18 +3,19 @@ package runner
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"math/rand"
-	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	ethhd "github.com/cosmos/evm/crypto/hd"
+	"github.com/ethereum/go-ethereum/accounts"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
-	"github.com/skip-mev/catalyst/chains/ethereum/types"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
@@ -31,7 +32,7 @@ type Runner struct {
 
 	wsClients []*ethclient.Client
 
-	spec          types.LoadTestSpec
+	spec          loadtesttypes.LoadTestSpec
 	nonces        sync.Map
 	wallets       []*wallet.InteractingWallet
 	blockGasLimit int64
@@ -43,39 +44,44 @@ type Runner struct {
 	blocksProcessed *atomic.Int64
 }
 
-func NewRunner(ctx context.Context, logger *zap.Logger, spec types.LoadTestSpec) (*Runner, error) {
-	clients := make([]*ethclient.Client, 0, len(spec.NodesAddresses))
-	for _, nodeAddress := range spec.NodesAddresses {
-		client, err := ethclient.DialContext(ctx, "http://"+nodeAddress)
+func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
+	chainCfg := spec.ChainCfg.(*inttypes.ChainConfig)
+	clients := make([]*ethclient.Client, 0, len(chainCfg.NodesAddresses))
+	wsClients := make([]*ethclient.Client, 0, len(chainCfg.NodesAddresses))
+	for _, nodeAddress := range chainCfg.NodesAddresses {
+		client, err := ethclient.DialContext(ctx, nodeAddress.RPC)
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to node %s: %w", nodeAddress, err)
 		}
 		clients = append(clients, client)
+
+		wsClient, err := ethclient.DialContext(ctx, nodeAddress.Websocket)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to ws node %s: %w", nodeAddress, err)
+		}
+		wsClients = append(wsClients, wsClient)
 	}
 
-	wsClients := make([]*ethclient.Client, 0, len(spec.NodesAddresses))
-	for _, nodeAddress := range spec.NodesAddresses {
-		host, _, err := net.SplitHostPort(nodeAddress)
+	wallets := make([]*wallet.InteractingWallet, 0, len(spec.Mnemonics))
+	for i, mnemonic := range spec.Mnemonics {
+		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(
+			mnemonic,
+			"",
+			accounts.DefaultRootDerivationPath.String(),
+		)
 		if err != nil {
-			host = nodeAddress
+			return nil, fmt.Errorf("failed to derive private key from mnemonic: %w", err)
 		}
-		// TODO: for now, we are hard coding the ws port. this is a hack for now, we will need to update the config later.
-		wsNodeAddress := net.JoinHostPort(host, "8546")
-
-		client, err := ethclient.DialContext(ctx, "ws://"+wsNodeAddress)
+		pk, err := crypto.ToECDSA(derivedPrivKey)
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect ws to node %s: %w", wsNodeAddress, err)
-		}
-		wsClients = append(wsClients, client)
-	}
-	wallets := make([]*wallet.InteractingWallet, 0, len(spec.PrivateKeys))
-	for i, privKey := range spec.PrivateKeys {
-		pk, err := crypto.HexToECDSA(privKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert hex private key: %w", err)
+			return nil, fmt.Errorf("failed to convert private key to ECDSA: %w", err)
 		}
 		client := clients[i%len(clients)]
-		wallet := wallet.NewInteractingWallet(pk, &spec.ChainID, client)
+		chainID, ok := new(big.Int).SetString(spec.ChainID, 10)
+		if !ok {
+			return nil, fmt.Errorf("failed to parse chain id from spec.ChainID: %s", spec.ChainID)
+		}
+		wallet := wallet.NewInteractingWallet(pk, chainID, client)
 		wallets = append(wallets, wallet)
 	}
 
@@ -151,7 +157,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 				r.logger.Debug("submitted transactions", zap.Uint64("height", block.Number.Uint64()), zap.Int("num_submitted", numTxsSubmitted))
 
 				r.logger.Info("processed block", zap.Uint64("height", block.Number.Uint64()))
-				if r.blocksProcessed.Load() >= r.spec.NumOfBlocks {
+				if r.blocksProcessed.Load() >= int64(r.spec.NumOfBlocks) {
 					r.logger.Info("load test completed - number of blocks desired reached",
 						zap.Int64("blocks", r.blocksProcessed.Load()))
 					subscription.Unsubscribe()

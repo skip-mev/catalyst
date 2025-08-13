@@ -13,16 +13,18 @@ import (
 	"github.com/skip-mev/catalyst/chains/ethereum/contracts/load/target"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestCreateContract_SuccessfulTxs(t *testing.T) {
 	// since the createContract involves some randomness, we do this test a few times.
+	logger := zaptest.NewLogger(t)
 	for range 10 {
 		sim, wallet := setupTest(t)
 		ctx := context.Background()
-		f := NewTxFactory([]*ethwallet.InteractingWallet{wallet})
+		f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet})
 
-		txs, err := f.createMsgCreateContract(ctx, wallet, nil)
+		txs, err := f.createMsgCreateContract(ctx, wallet, nil, 1)
 		require.NoError(t, err)
 
 		for _, tx := range txs {
@@ -41,12 +43,14 @@ func TestCreateContract_SuccessfulTxs(t *testing.T) {
 }
 
 func TestCreateMsgWriteTo(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
 	sim, wallet := setupTest(t)
 	ctx := context.Background()
-	f := NewTxFactory([]*ethwallet.InteractingWallet{wallet})
+	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet})
 	deployContract(t, sim, f)
 
-	tx, err := f.createMsgWriteTo(ctx, wallet, 100)
+	tx, err := f.createMsgWriteTo(ctx, wallet, 100, 1)
 	require.NoError(t, err)
 	err = wallet.SendTransaction(ctx, tx)
 	require.NoError(t, err)
@@ -66,11 +70,12 @@ func TestCreateMsgWriteTo(t *testing.T) {
 }
 
 func TestCallDataBlast(t *testing.T) {
+	logger := zaptest.NewLogger(t)
 	sim, wallet := setupTest(t)
 	ctx := context.Background()
-	f := NewTxFactory([]*ethwallet.InteractingWallet{wallet})
+	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet})
 	deployContract(t, sim, f)
-	tx, err := f.createMsgCallDataBlast(ctx, wallet, 1024)
+	tx, err := f.createMsgCallDataBlast(ctx, wallet, 1024, 1)
 	require.NoError(t, err)
 	err = wallet.SendTransaction(ctx, tx)
 	require.NoError(t, err)
@@ -81,12 +86,13 @@ func TestCallDataBlast(t *testing.T) {
 }
 
 func TestCrossContractCall(t *testing.T) {
+	logger := zaptest.NewLogger(t)
 	sim, wallet := setupTest(t)
 	ctx := context.Background()
-	f := NewTxFactory([]*ethwallet.InteractingWallet{wallet})
+	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet})
 	deployContract(t, sim, f)
 
-	tx, err := f.createMsgCrossContractCall(ctx, wallet, 15)
+	tx, err := f.createMsgCrossContractCall(ctx, wallet, 15, 1)
 	require.NoError(t, err)
 	err = wallet.SendTransaction(ctx, tx)
 	require.NoError(t, err)
@@ -112,7 +118,7 @@ func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory) {
 	ctx := context.Background()
 	numContracts := 1
 	wallet := f.wallets[0]
-	txs, err := f.createMsgCreateContract(ctx, wallet, &numContracts)
+	txs, err := f.createMsgCreateContract(ctx, wallet, &numContracts, 1)
 	require.NoError(t, err)
 	for _, tx := range txs {
 		err = wallet.SendTransaction(ctx, tx)
