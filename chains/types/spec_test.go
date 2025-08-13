@@ -1,6 +1,8 @@
 package types_test
 
 import (
+	"fmt"
+	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"testing"
 	"time"
 
@@ -17,6 +19,131 @@ import (
 //   type ChainConfig struct { ... }
 //   func (ChainConfig) IsChainConfig() {}
 //   func Register() { loadtesttypes.Register("cosmos", func() loadtesttypes.ChainConfig { return &ChainConfig{} }) }
+
+func TestLoadTestSpec_Marshal_Eth(t *testing.T) {
+	// Arrange: register cosmos chain config factory
+	ethtypes.Register()
+
+	// Sample YAML that targets the eth implementation.
+	yml := []byte(`
+name: worker
+description: eth load test
+kind: eth
+chain_id: "262144"
+num_of_blocks: 200
+mnemonics: ["seed phrase goes here"]
+chain_config:
+  nodes_addresses:
+    - rpc: "https://foobar:8545"
+      websocket: "ws://foobar:8546"
+msgs:
+  - weight: 0
+    type: MsgCreateContract
+    num_msgs: 20
+  - weight: 0
+    type: MsgWriteTo
+    num_msgs: 20
+  - weight: 0
+    type: MsgCrossContractCall
+    num_msgs: 20
+  - weight: 0
+    type: MsgCallDataBlast
+    num_msgs: 20
+`)
+
+	var spec loadtesttypes.LoadTestSpec
+	spec.Name = "worker"
+	spec.Description = "eth load test"
+	spec.Kind = "eth"
+	spec.ChainID = "262144"
+	spec.NumOfBlocks = 200
+	spec.Mnemonics = []string{"seed phrase goes here"}
+	spec.ChainCfg = ethtypes.ChainConfig{NodesAddresses: []ethtypes.NodeAddress{
+		{RPC: "https://foobar:8545", Websocket: "ws://foobar:8546"},
+	}}
+	spec.Msgs = []loadtesttypes.LoadTestMsg{
+		{Weight: 0, NumMsgs: 20, Type: ethtypes.MsgCreateContract},
+		{Weight: 0, NumMsgs: 20, Type: ethtypes.MsgWriteTo},
+		{Weight: 0, NumMsgs: 20, Type: ethtypes.MsgCrossContractCall},
+		{Weight: 0, NumMsgs: 20, Type: ethtypes.MsgCallDataBlast},
+	}
+
+	msgBytes, err := yaml.Marshal(&spec)
+	if err != nil {
+		t.Fatalf("yaml.Marshal failed: %v", err)
+	}
+
+	msgStr := string(msgBytes)
+	fmt.Println(msgStr)
+
+}
+
+func TestLoadTestSpec_Unmarshal_Eth(t *testing.T) {
+	// Arrange: register cosmos chain config factory
+	ethtypes.Register()
+
+	// Sample YAML that targets the eth implementation.
+	yml := []byte(`
+name: worker
+description: eth load test
+kind: eth
+chain_id: "262144"
+num_of_blocks: 200
+mnemonics: ["seed phrase goes here"]
+chain_config:
+  nodes_addresses:
+    - rpc: "https://foobar:8545"
+      websocket: "ws://foobar:8546"
+msgs: 
+  - weight: 0
+    type: MsgCreateContract
+    num_msgs: 20
+  - weight: 0
+    type: MsgWriteTo
+    num_msgs: 20
+  - weight: 0
+    type: MsgCrossContractCall
+    num_msgs: 20
+  - weight: 0
+    type: MsgCallDataBlast
+    num_msgs: 20
+`)
+
+	var spec loadtesttypes.LoadTestSpec
+
+	// Act: unmarshal into the shared spec
+	if err := yaml.Unmarshal(yml, &spec); err != nil {
+		t.Fatalf("yaml.Unmarshal failed: %v", err)
+	}
+
+	// Assert: top-level fields decoded
+	if spec.Name != "worker" {
+		t.Errorf("Name = %q, want %q", spec.Name, "worker")
+	}
+	if spec.Kind != "eth" {
+		t.Errorf("Kind = %q, want %q", spec.Kind, "cosmos")
+	}
+	if spec.ChainID != "262144" {
+		t.Errorf("ChainID = %q, want %q", spec.ChainID, "262144")
+	}
+	if spec.NumOfBlocks != 200 {
+		t.Errorf("NumOfBlocks = %d, want %d", spec.NumOfBlocks, 200)
+	}
+
+	// Assert: chain_config is the concrete eth type
+	cfg, ok := spec.ChainCfg.(*ethtypes.ChainConfig)
+	if !ok {
+		t.Fatalf("ChainCfg type = %T, want *eth.ChainConfig", spec.ChainCfg)
+	}
+
+	// Assert: eth fields decoded correctly
+	if cfg.NodesAddresses == nil {
+		t.Errorf("NodesAddresses = nil")
+	}
+	if len(cfg.NodesAddresses) != 1 {
+		t.Errorf("NodesAddresses len != 1")
+	}
+}
 
 func TestLoadTestSpec_Unmarshal_Cosmos(t *testing.T) {
 	// Arrange: register cosmos chain config factory
