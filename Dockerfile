@@ -13,7 +13,6 @@ RUN go env -w GOMODCACHE=/root/.cache/go-build
 
 COPY go.mod go.sum Makefile ./
 RUN --mount=type=cache,target=/root/.cache/go-build make deps
-RUN echo "foobar"
 
 COPY . .
 
