@@ -28,19 +28,19 @@ import (
 type Runner struct {
 	logger *zap.Logger
 
-	clients []*ethclient.Client
-
+	clients   []*ethclient.Client
 	wsClients []*ethclient.Client
 
-	spec          loadtesttypes.LoadTestSpec
-	nonces        sync.Map
-	wallets       []*wallet.InteractingWallet
+	spec    loadtesttypes.LoadTestSpec
+	nonces  sync.Map
+	wallets []*wallet.InteractingWallet
+	// TODO: this is not updated at all.
 	blockGasLimit int64
 	collector     metrics.MetricsCollector
 
-	mu              sync.Mutex
-	txFactory       *txfactory.TxFactory
-	sentTxs         []inttypes.SentTx
+	txFactory *txfactory.TxFactory
+	sentTxs   []inttypes.SentTx
+	// TODO: this might not need to be atomic.
 	blocksProcessed *atomic.Int64
 }
 
@@ -100,7 +100,6 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		wsClients:       wsClients,
 		spec:            spec,
 		wallets:         wallets,
-		mu:              sync.Mutex{},
 		txFactory:       txf,
 		sentTxs:         make([]inttypes.SentTx, 0, 100),
 		blocksProcessed: new(atomic.Int64),
