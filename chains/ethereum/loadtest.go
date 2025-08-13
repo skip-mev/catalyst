@@ -43,7 +43,7 @@ func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (loadtesttypes.
 	}
 	logger.Info("runner results", zap.Any("results", results))
 
-	lt.runner.GetCollector().PrintResults(results)
+	lt.runner.PrintResults(results)
 
 	logger.Info("load test run completed, saving results")
 

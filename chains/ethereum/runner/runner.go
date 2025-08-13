@@ -61,7 +61,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		}
 		wsClients = append(wsClients, wsClient)
 	}
-	
+
 	wallets, err := buildWallets(spec, clients)
 	if err != nil {
 		return nil, err
@@ -135,16 +135,14 @@ func buildWallets(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) 
 	return ws, nil
 }
 
-func (r *Runner) GetCollector() *metrics.MetricsCollector {
-	return &r.collector
+func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
+	r.collector.PrintResults(result)
 }
 
 func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
 	startTime := time.Now()
 
-	// TODO: the coordination of contexts and done signals is not correct here. a more straightforward method is needed.
-	subCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancel(ctx)
 
 	blockCh := make(chan *gethtypes.Header, 1)
 	subscription, err := r.wsClients[0].SubscribeNewHead(ctx, blockCh)
@@ -153,18 +151,27 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 	}
 
 	defer subscription.Unsubscribe()
-	defer close(blockCh)
+	done := make(chan struct{}, 1)
+	defer close(done)
 
 	go func() {
 		for {
 			select {
-			case <-subCtx.Done():
-				r.logger.Debug("sub cancelled")
-				return
 			case <-ctx.Done():
 				r.logger.Debug("ctx cancelled")
 				return
-			case block := <-blockCh:
+			case err := <-subscription.Err():
+				if err != nil {
+					r.logger.Error("subscription error", zap.Error(err))
+				}
+				cancel()
+				return
+			case block, ok := <-blockCh:
+				if !ok {
+					r.logger.Error("block header channel closed")
+					cancel()
+					return
+				}
 				r.blocksProcessed.Add(1)
 				r.logger.Debug(
 					"processing block",
@@ -184,20 +191,29 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 				if r.blocksProcessed.Load() >= int64(r.spec.NumOfBlocks) {
 					r.logger.Info("load test completed - number of blocks desired reached",
 						zap.Int64("blocks", r.blocksProcessed.Load()))
-					subscription.Unsubscribe()
-					cancel()
+					done <- struct{}{}
+					return
 				}
 			}
 		}
 	}()
 
 	select {
-	case <-subCtx.Done():
-		r.logger.Info("load test interrupted")
-		return loadtesttypes.LoadTestResult{}, subCtx.Err()
 	case <-ctx.Done():
-		r.logger.Info("ctx done")
-		time.Sleep(30 * time.Second) // allow txs to finish
+		r.logger.Info("ctx cancelled")
+		return loadtesttypes.LoadTestResult{}, ctx.Err()
+	case <-done:
+		r.logger.Info("load test completed. sleeping 30s for final txs to complete")
+
+		// wait for in-flight txs but still respect ctx completion
+		timer := time.NewTimer(30 * time.Second)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			r.logger.Info("ctx cancelled during post-completion sleep")
+			return loadtesttypes.LoadTestResult{}, ctx.Err()
+		}
 
 		collectorStartTime := time.Now()
 		clients := make([]wallet.Client, 0, len(r.wallets))
@@ -248,7 +264,7 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 			sentTxs[i] = inttypes.SentTx{
 				TxHash:      tx.Hash(),
 				NodeAddress: "", // TODO: figure out what to do here.
-				MsgType:     "",
+				MsgType:     "", // TODO: this is also not obvious...
 				Err:         err,
 				Tx:          tx,
 			}

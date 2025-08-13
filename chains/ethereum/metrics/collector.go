@@ -243,13 +243,7 @@ func (m *MetricsCollector) processNodeStats(result *loadtesttypes.LoadTestResult
 // processBlockStats processes statistics for each block
 func (m *MetricsCollector) processBlockStats(result *loadtesttypes.LoadTestResult, gasLimit int64,
 	numberOfBlocksRequested int) {
-	var results []loadtesttypes.BlockStat
-	result.ByBlock = results
-
-	var totalGasUtilization float64
-
 	var blockHeights []int64
-
 	for height := range m.txsByBlock {
 		blockHeights = append(blockHeights, height)
 	}
@@ -265,6 +259,8 @@ func (m *MetricsCollector) processBlockStats(result *loadtesttypes.LoadTestResul
 		blockHeights = blockHeights[:numberOfBlocksRequested]
 	}
 
+	result.ByBlock = make([]loadtesttypes.BlockStat, 0, len(blockHeights))
+	var totalGasUtilization float64
 	for _, height := range blockHeights {
 		txs := m.txsByBlock[height]
 		msgStats := make(map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats)
