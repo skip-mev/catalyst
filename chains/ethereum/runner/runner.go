@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	ethhd "github.com/cosmos/evm/crypto/hd"
-	"github.com/ethereum/go-ethereum/accounts"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -61,28 +61,10 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		}
 		wsClients = append(wsClients, wsClient)
 	}
-
-	wallets := make([]*wallet.InteractingWallet, 0, len(spec.Mnemonics))
-	for i, mnemonic := range spec.Mnemonics {
-		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(
-			mnemonic,
-			"",
-			accounts.DefaultRootDerivationPath.String(),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to derive private key from mnemonic: %w", err)
-		}
-		pk, err := crypto.ToECDSA(derivedPrivKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert private key to ECDSA: %w", err)
-		}
-		client := clients[i%len(clients)]
-		chainID, ok := new(big.Int).SetString(spec.ChainID, 10)
-		if !ok {
-			return nil, fmt.Errorf("failed to parse chain id from spec.ChainID: %s", spec.ChainID)
-		}
-		wallet := wallet.NewInteractingWallet(pk, chainID, client)
-		wallets = append(wallets, wallet)
+	
+	wallets, err := buildWallets(spec, clients)
+	if err != nil {
+		return nil, err
 	}
 
 	txf := txfactory.NewTxFactory(logger, wallets)
@@ -108,6 +90,49 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 	}
 
 	return r, nil
+}
+
+func buildWallets(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) ([]*wallet.InteractingWallet, error) {
+	if len(clients) == 0 {
+		return nil, fmt.Errorf("no clients provided")
+	}
+
+	chainIDStr := strings.TrimSpace(spec.ChainID)
+	chainID, ok := new(big.Int).SetString(chainIDStr, 0) // allow "9001" or "0x2329"
+	if !ok {
+		return nil, fmt.Errorf("failed to parse chain id: %q", spec.ChainID)
+	}
+
+	// EXACT path used by 'eth_secp256k1' default account in Ethermint-based chains.
+	const evmDerivationPath = "m/44'/60'/0'/0/0"
+
+	ws := make([]*wallet.InteractingWallet, len(spec.Mnemonics))
+	for i, m := range spec.Mnemonics {
+		m = strings.TrimSpace(m)
+		if m == "" {
+			return nil, fmt.Errorf("mnemonic at index %d is empty", i)
+		}
+
+		// Derive raw 32-byte private key from mnemonic at ETH path .../0
+		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, "", evmDerivationPath)
+		if err != nil {
+			return nil, fmt.Errorf("mnemonic[%d]: derive failed: %w", i, err)
+		}
+
+		pk, err := crypto.ToECDSA(derivedPrivKey)
+		// Zero the temporary key material ASAP.
+		for j := range derivedPrivKey {
+			derivedPrivKey[j] = 0
+		}
+		if err != nil {
+			return nil, fmt.Errorf("mnemonic[%d]: invalid ECDSA key: %w", i, err)
+		}
+
+		c := clients[i%len(clients)]
+		w := wallet.NewInteractingWallet(pk, chainID, c)
+		ws[i] = w
+	}
+	return ws, nil
 }
 
 func (r *Runner) GetCollector() *metrics.MetricsCollector {
@@ -155,7 +180,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 
 				r.logger.Debug("submitted transactions", zap.Uint64("height", block.Number.Uint64()), zap.Int("num_submitted", numTxsSubmitted))
 
-				r.logger.Info("processed block", zap.Uint64("height", block.Number.Uint64()))
+				r.logger.Info("processed block", zap.Uint64("height", block.Number.Uint64()), zap.Int64("num_blocks_processed", r.blocksProcessed.Load()))
 				if r.blocksProcessed.Load() >= int64(r.spec.NumOfBlocks) {
 					r.logger.Info("load test completed - number of blocks desired reached",
 						zap.Int64("blocks", r.blocksProcessed.Load()))

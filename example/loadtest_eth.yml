@@ -20,6 +20,6 @@ msgs:
   - type: "MsgCallDataBlast"
     num_msgs: 20
 chain_config:
-  node_addresses:
+  nodes_addresses:
     - rpc: "http://localhost:8545"
       websocket: "ws://localhost:8546"
