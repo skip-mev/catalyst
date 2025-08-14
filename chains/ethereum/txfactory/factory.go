@@ -25,11 +25,17 @@ type TxFactory struct {
 	logger            *zap.Logger
 	wallets           []*ethwallet.InteractingWallet
 	contractAddresses []common.Address
+	maxContracts      uint64
 	mu                sync.Mutex
 }
 
-func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet) *TxFactory {
-	return &TxFactory{logger: logger.With(zap.String("module", "tx_factory")), wallets: wallets, mu: sync.Mutex{}}
+var defaultMaxContracts = uint64(10)
+
+func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet, maxContracts uint64) *TxFactory {
+	if maxContracts <= 0 {
+		maxContracts = defaultMaxContracts
+	}
+	return &TxFactory{logger: logger.With(zap.String("module", "tx_factory")), wallets: wallets, mu: sync.Mutex{}, maxContracts: maxContracts}
 }
 
 func (f *TxFactory) BuildTxs(msgSpec loadtesttypes.LoadTestMsg, fromWallet *wallet.InteractingWallet, nonce uint64) ([]*types.Transaction, error) {
@@ -101,7 +107,11 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *wal
 	if err != nil {
 		return nil, fmt.Errorf("failed to create loader contract transaction: %w", err)
 	}
-	f.updateContractAddressesAsync(ctx, loaderDeployTx.Hash())
+
+	// we dont need that many contracts in memory.
+	if uint64(len(f.contractAddresses)) < f.maxContracts {
+		f.updateContractAddressesAsync(ctx, loaderDeployTx.Hash())
+	}
 	return append(targetDeployTxs, loaderDeployTx), nil
 }
 

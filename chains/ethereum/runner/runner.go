@@ -34,7 +34,7 @@ type Runner struct {
 	spec    loadtesttypes.LoadTestSpec
 	nonces  sync.Map
 	wallets []*wallet.InteractingWallet
-	// TODO: this is not updated at all.
+	// TODO: this is hardcoded to 30m for now.
 	blockGasLimit int64
 	collector     metrics.MetricsCollector
 
@@ -67,7 +67,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		return nil, err
 	}
 
-	txf := txfactory.NewTxFactory(logger, wallets)
+	txf := txfactory.NewTxFactory(logger, wallets, chainCfg.MaxContracts)
 	nonces := sync.Map{}
 	for _, wallet := range wallets {
 		nonce, err := wallet.GetNonce(ctx)
@@ -76,6 +76,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		}
 		nonces.Store(wallet.Address(), nonce)
 	}
+
 	r := &Runner{
 		logger:          logger,
 		clients:         clients,
@@ -262,10 +263,17 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 			if err != nil {
 				r.logger.Debug("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
 			}
+
+			// TODO: for now its just easier to differ based on contract creation. ethereum txs dont really have
+			// obvious "msgtypes" inside the tx object itself. we would have to map txhash to the spec that built the tx.
+			txType := "contract_call"
+			if tx.To() == nil {
+				txType = "contract_creation"
+			}
 			sentTxs[i] = inttypes.SentTx{
 				TxHash:      tx.Hash(),
 				NodeAddress: "", // TODO: figure out what to do here.
-				MsgType:     "", // TODO: this is also not obvious...
+				MsgType:     loadtesttypes.MsgType(txType),
 				Err:         err,
 				Tx:          tx,
 			}

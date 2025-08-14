@@ -35,6 +35,9 @@ type NodeAddress struct {
 
 type ChainConfig struct {
 	NodesAddresses []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
+	// MaxContracts is the maximum number of contracts that the loadtest runner will hold in memory.
+	// The contracts in memory are used for the other load test message types to interact with.
+	MaxContracts uint64 `yaml:"max_contracts" json:"MaxContracts"`
 }
 
 func init() {
