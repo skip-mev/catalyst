@@ -2,7 +2,6 @@ package types
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -123,9 +122,7 @@ func SaveResults(results LoadTestResult, logger *zap.Logger) error {
 		return err
 	}
 
-	// Generate timestamp in YYYYMMDD_HHMMSS format (filename-safe)
-	timestamp := time.Now().Format("20060102_150405")
-	fileName := fmt.Sprintf("load_test_%s.json", timestamp)
+	fileName := "load_test.json"
 	filePath := filepath.Join(dir, fileName)
 
 	if err := os.WriteFile(filePath, jsonData, 0644); err != nil {
