@@ -258,7 +258,6 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 		go func() {
 			defer wg.Done()
 			fromWallet := r.wallets[rand.Intn(len(r.wallets))]
-			r.logger.Debug("sending transaction", zap.String("tx_hash", tx.Hash().String()))
 			err := fromWallet.SendTransaction(ctx, tx)
 			if err != nil {
 				r.logger.Debug("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
