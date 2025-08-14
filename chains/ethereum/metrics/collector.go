@@ -3,13 +3,17 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"maps"
+	"math/big"
 	"math/rand"
 	"runtime"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
@@ -18,6 +22,7 @@ import (
 
 // MetricsCollector collects and processes metrics for load tests
 type MetricsCollector struct {
+	clients           []*ethclient.Client
 	startTime         time.Time
 	endTime           time.Time
 	blocksProcessed   int
@@ -30,13 +35,14 @@ type MetricsCollector struct {
 }
 
 // NewMetricsCollector creates a new metrics collector
-func NewMetricsCollector(logger *zap.Logger) MetricsCollector {
+func NewMetricsCollector(logger *zap.Logger, clients []*ethclient.Client) MetricsCollector {
 	return MetricsCollector{
 		txsByBlock:        make(map[int64][]types.SentTx),
 		txsByNode:         make(map[string][]types.SentTx),
 		txsByMsgType:      make(map[loadtesttypes.MsgType][]types.SentTx),
 		gasUsageByMsgType: make(map[loadtesttypes.MsgType][]int64),
 		logger:            logger.With(zap.String("module", "eth_metrics_collector")),
+		clients:           clients,
 	}
 }
 
@@ -58,7 +64,7 @@ func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.Sen
 	var mu sync.Mutex
 	var txNotFoundCount int
 
-	for w := 0; w < maxWorkers; w++ {
+	for range maxWorkers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -241,16 +247,10 @@ func (m *MetricsCollector) processNodeStats(result *loadtesttypes.LoadTestResult
 }
 
 // processBlockStats processes statistics for each block
-func (m *MetricsCollector) processBlockStats(result *loadtesttypes.LoadTestResult, gasLimit int64,
-	numberOfBlocksRequested int) {
-	var blockHeights []int64
-	for height := range m.txsByBlock {
-		blockHeights = append(blockHeights, height)
-	}
-	sort.Slice(blockHeights, func(i, j int) bool {
-		return blockHeights[i] < blockHeights[j]
-	})
+func (m *MetricsCollector) processBlockStats(result *loadtesttypes.LoadTestResult, gasLimit int64, numberOfBlocksRequested int) {
+	blockHeights := slices.Sorted(maps.Keys(m.txsByBlock))
 	// ignore any extra blocks where txs landed in block
+	// will just take heights[start->start+requested]
 	if len(blockHeights) > numberOfBlocksRequested {
 		m.logger.Info("found extra blocks, excluding from gas utilization stats",
 			zap.Int("number_of_blocks_requested", numberOfBlocksRequested),
@@ -259,9 +259,19 @@ func (m *MetricsCollector) processBlockStats(result *loadtesttypes.LoadTestResul
 		blockHeights = blockHeights[:numberOfBlocksRequested]
 	}
 
+	ctx := context.Background()
+
 	result.ByBlock = make([]loadtesttypes.BlockStat, 0, len(blockHeights))
 	var totalGasUtilization float64
 	for _, height := range blockHeights {
+		var timestamp time.Time
+		blk, err := m.clients[0].BlockByNumber(ctx, big.NewInt(height))
+		if err == nil {
+			timestamp = time.Unix(int64(blk.Time()), 0)
+			gasLimit = int64(blk.GasLimit())
+		} else {
+			m.logger.Error("failed to query block by height", zap.Int64("height", height), zap.Error(err))
+		}
 		txs := m.txsByBlock[height]
 		msgStats := make(map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats)
 		var blockGasUsed int64
@@ -270,16 +280,19 @@ func (m *MetricsCollector) processBlockStats(result *loadtesttypes.LoadTestResul
 			stats := msgStats[tx.MsgType]
 			stats.TransactionsSent++
 
-			if tx.Err != nil {
-				stats.FailedTxs++
-				if tx.Receipt != nil && tx.Receipt.GasUsed > 0 {
-					stats.GasUsed += int64(tx.Receipt.GasUsed)
-					blockGasUsed += int64(tx.Receipt.GasUsed)
+			switch {
+			case tx.Receipt != nil:
+				gasUsed := int64(tx.Receipt.GasUsed)
+				stats.GasUsed += gasUsed
+				blockGasUsed += gasUsed
+
+				if tx.Receipt.Status == gethtypes.ReceiptStatusSuccessful {
+					stats.SuccessfulTxs++
+				} else {
+					stats.FailedTxs++
 				}
-			} else if tx.Receipt != nil {
-				stats.SuccessfulTxs++
-				stats.GasUsed += int64(tx.Receipt.GasUsed)
-				blockGasUsed += int64(tx.Receipt.GasUsed)
+			case tx.Err != nil:
+				stats.FailedTxs++
 			}
 
 			msgStats[tx.MsgType] = stats
@@ -289,22 +302,12 @@ func (m *MetricsCollector) processBlockStats(result *loadtesttypes.LoadTestResul
 
 		blockStats := loadtesttypes.BlockStat{
 			BlockHeight:    height,
+			Timestamp:      timestamp,
 			MessageStats:   msgStats,
 			TotalGasUsed:   blockGasUsed,
 			GasLimit:       gasLimit,
 			GasUtilization: gasUtilization,
 		}
-
-		// Get block timestamp from any transaction in the block
-		// TODO: do we need this? idk. receipt doesnt include time. we would need to query the block.
-		//if len(txs) > 0 {
-		//	timestamp, err := time.Parse(time.RFC3339, txs[0].Receipt)
-		//	if err != nil {
-		//		m.logger.Error("failed to parse tx timestamp", zap.String("tx_hash", txs[0].TxHash),
-		//			zap.String("timestamp", txs[0].TxResponse.Timestamp), zap.Error(err))
-		//	}
-		//	blockStats.Timestamp = timestamp
-		//}
 
 		result.ByBlock = append(result.ByBlock, blockStats)
 		totalGasUtilization += gasUtilization
@@ -421,12 +424,6 @@ func (m *MetricsCollector) PrintResults(result loadtesttypes.LoadTestResult) {
 		fmt.Printf("    Min: %d\n", stats.Gas.Min)
 		fmt.Printf("    Max: %d\n", stats.Gas.Max)
 		fmt.Printf("    Total: %d\n", stats.Gas.Total)
-		//if len(stats.Errors.BroadcastErrors) > 0 {
-		//	fmt.Printf("  Errors:\n")
-		//	for errType, count := range stats.Errors.ErrorCounts {
-		//		fmt.Printf("    %s: %d occurrences\n", errType, count)
-		//	}
-		//}
 	}
 
 	fmt.Println("\n🖥️  Node Statistics:")
