@@ -3,6 +3,7 @@ package petri_integration
 import (
 	"context"
 	"fmt"
+	"github.com/skip-mev/catalyst/chains"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -21,7 +22,6 @@ import (
 	"github.com/skip-mev/petri/cosmos/v3/node"
 	"go.uber.org/zap"
 
-	loadtest "github.com/skip-mev/catalyst/chains/cosmos"
 	cosmoslttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
@@ -196,7 +196,7 @@ func TestPetriDockerIntegration(t *testing.T) {
 	}
 
 	time.Sleep(10 * time.Second)
-	test, err := loadtest.New(ctx, spec)
+	test, err := chains.NewLoadTest(ctx, logger, spec)
 	if err != nil {
 		t.Fatal("Failed to create test", zap.Error(err))
 	}
@@ -366,7 +366,7 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 	}
 
 	time.Sleep(360 * time.Second)
-	test, err := loadtest.New(ctx, spec)
+	test, err := chains.NewLoadTest(ctx, logger, spec)
 	if err != nil {
 		t.Fatal("Failed to create test", zap.Error(err))
 	}
