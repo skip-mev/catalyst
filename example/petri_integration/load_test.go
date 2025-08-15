@@ -3,6 +3,7 @@ package petri_integration
 import (
 	"context"
 	"fmt"
+	"github.com/skip-mev/catalyst/chains"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -21,7 +22,6 @@ import (
 	"github.com/skip-mev/petri/cosmos/v3/node"
 	"go.uber.org/zap"
 
-	loadtest "github.com/skip-mev/catalyst/chains/cosmos"
 	cosmoslttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
@@ -30,7 +30,7 @@ var (
 	defaultChainConfig = petritypes.ChainConfig{
 		Denom:         "stake",
 		Decimals:      6,
-		NumValidators: 4,
+		NumValidators: 1,
 		NumNodes:      0,
 		BinaryName:    "/usr/bin/simd",
 		Image: provider.ImageDefinition{
@@ -134,7 +134,6 @@ func TestPetriDockerIntegration(t *testing.T) {
 				logger.Error("Failed to create wallet", zap.Error(err))
 				return
 			}
-			logger.Debug("Successfully created load test wallet", zap.Any("address", w.FormattedAddress()))
 
 			walletsMutex.Lock()
 			wallets = append(wallets, w)
@@ -183,20 +182,22 @@ func TestPetriDockerIntegration(t *testing.T) {
 
 	spec := loadtesttypes.LoadTestSpec{
 		ChainID:     defaultChainConfig.ChainId,
-		NumOfBlocks: 20,
+		NumOfBlocks: 5,
 		Mnemonics:   mnemonics,
 		Msgs:        msgs,
 		TxTimeout:   time.Second * 20,
 		ChainCfg: &cosmoslttypes.ChainConfig{
 			GasDenom:       defaultChainConfig.Denom,
 			Bech32Prefix:   defaultChainConfig.Bech32Prefix,
-			UnorderedTxs:   true,
+			UnorderedTxs:   false,
 			NodesAddresses: nodeAddresses,
 		},
+		NumOfTxs: 10,
+		Kind:     chains.CosmosKind,
 	}
 
 	time.Sleep(10 * time.Second)
-	test, err := loadtest.New(ctx, spec)
+	test, err := chains.NewLoadTest(ctx, logger, spec)
 	if err != nil {
 		t.Fatal("Failed to create test", zap.Error(err))
 	}
@@ -327,6 +328,8 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 		NumOfBlocks: 20,
 		Mnemonics:   mnemonics,
 		Msgs:        msgs,
+		NumOfTxs:    10,
+		Kind:        chains.CosmosKind,
 		ChainCfg: cosmoslttypes.ChainConfig{
 			GasDenom:       defaultChainConfig.Denom,
 			Bech32Prefix:   defaultChainConfig.Bech32Prefix,
@@ -366,7 +369,7 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 	}
 
 	time.Sleep(360 * time.Second)
-	test, err := loadtest.New(ctx, spec)
+	test, err := chains.NewLoadTest(ctx, logger, spec)
 	if err != nil {
 		t.Fatal("Failed to create test", zap.Error(err))
 	}
