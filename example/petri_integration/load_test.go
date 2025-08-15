@@ -268,7 +268,8 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 	faucetWallet := c.GetFaucetWallet()
 	node := c.GetValidators()[0]
 
-	for i := 0; i < 2; i++ {
+	numWallets := 2
+	for range numWallets {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -279,6 +280,7 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 			}
 
 			walletsMutex.Lock()
+			mnemonics = append(mnemonics, w.Mnemonic())
 			wallets = append(wallets, w)
 			walletsMutex.Unlock()
 		}()
@@ -327,7 +329,7 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 		Msgs:        msgs,
 		NumOfTxs:    10,
 		Kind:        chains.CosmosKind,
-		ChainCfg: cosmoslttypes.ChainConfig{
+		ChainCfg: &cosmoslttypes.ChainConfig{
 			GasDenom:       defaultChainConfig.Denom,
 			Bech32Prefix:   defaultChainConfig.Bech32Prefix,
 			NodesAddresses: nodeAddresses,
