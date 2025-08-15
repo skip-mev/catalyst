@@ -22,7 +22,7 @@ func TestCreateContract_SuccessfulTxs(t *testing.T) {
 	for range 10 {
 		sim, wallet := setupTest(t)
 		ctx := context.Background()
-		f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, -1)
+		f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, 0)
 
 		txs, err := f.createMsgCreateContract(ctx, wallet, nil, 1)
 		require.NoError(t, err)
@@ -47,7 +47,7 @@ func TestCreateMsgWriteTo(t *testing.T) {
 
 	sim, wallet := setupTest(t)
 	ctx := context.Background()
-	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, -1)
+	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, 0)
 	deployContract(t, sim, f)
 
 	tx, err := f.createMsgWriteTo(ctx, wallet, 100, 1)
@@ -73,7 +73,7 @@ func TestCallDataBlast(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	sim, wallet := setupTest(t)
 	ctx := context.Background()
-	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, -1)
+	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, 0)
 	deployContract(t, sim, f)
 	tx, err := f.createMsgCallDataBlast(ctx, wallet, 1024, 1)
 	require.NoError(t, err)
@@ -89,7 +89,7 @@ func TestCrossContractCall(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	sim, wallet := setupTest(t)
 	ctx := context.Background()
-	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, -1)
+	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, 0)
 	deployContract(t, sim, f)
 
 	tx, err := f.createMsgCrossContractCall(ctx, wallet, 15, 1)
