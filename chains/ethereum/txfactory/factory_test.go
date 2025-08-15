@@ -66,7 +66,6 @@ func TestCreateMsgWriteTo(t *testing.T) {
 	require.NoError(t, err)
 	// the storage just stores i * 2.
 	require.Equal(t, slot5.Int64(), int64(5))
-
 }
 
 func TestCallDataBlast(t *testing.T) {

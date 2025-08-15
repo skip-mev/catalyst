@@ -9,16 +9,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/skip-mev/catalyst/chains/cosmos/types"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-
-	logging "github.com/skip-mev/catalyst/chains/log"
-
-	"go.uber.org/zap"
-
-	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
-
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
+	"github.com/skip-mev/catalyst/chains/cosmos/types"
+	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
+	logging "github.com/skip-mev/catalyst/chains/log"
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"go.uber.org/zap"
 )
 
 // MetricsCollector collects and processes metrics for load tests
@@ -198,10 +194,10 @@ func (m *MetricsCollector) processMessageTypeStats(result *loadtesttypes.LoadTes
 				Failed:     failed,
 			},
 			Gas: m.calculateGasStats(m.gasUsageByMsgType[msgType]),
-			//Errors: types.ErrorStats{
+			// Errors: types.ErrorStats{
 			//	ErrorCounts:     errorCounts,
 			//	BroadcastErrors: broadcastErrors,
-			//},
+			// },
 		}
 
 		result.ByMessage[msgType] = stats
@@ -256,7 +252,8 @@ func (m *MetricsCollector) processNodeStats(result *loadtesttypes.LoadTestResult
 
 // processBlockStats processes statistics for each block
 func (m *MetricsCollector) processBlockStats(result *loadtesttypes.LoadTestResult, gasLimit int64,
-	numberOfBlocksRequested int) {
+	numberOfBlocksRequested int,
+) {
 	var results []loadtesttypes.BlockStat
 	result.ByBlock = results
 
@@ -438,7 +435,7 @@ func (m *MetricsCollector) PrintResults(result loadtesttypes.LoadTestResult) {
 		fmt.Printf("    Min: %d\n", stats.Gas.Min)
 		fmt.Printf("    Max: %d\n", stats.Gas.Max)
 		fmt.Printf("    Total: %d\n", stats.Gas.Total)
-		//if len(stats.Errors.BroadcastErrors) > 0 {
+		// if len(stats.Errors.BroadcastErrors) > 0 {
 		//	fmt.Printf("  Errors:\n")
 		//	for errType, count := range stats.Errors.ErrorCounts {
 		//		fmt.Printf("    %s: %d occurrences\n", errType, count)

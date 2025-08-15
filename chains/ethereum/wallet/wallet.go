@@ -80,8 +80,8 @@ func (w *InteractingWallet) SignerFnLegacy() bind.SignerFn {
 
 // CreateSignedTransaction creates and signs an Ethereum transaction
 func (w *InteractingWallet) CreateSignedTransaction(ctx context.Context, to *common.Address, value *big.Int,
-	gasLimit uint64, gasPrice *big.Int, data []byte, nonce *uint64) (*types.Transaction, error) {
-
+	gasLimit uint64, gasPrice *big.Int, data []byte, nonce *uint64,
+) (*types.Transaction, error) {
 	// Get nonce if not provided
 	txNonce, err := w.getNonce(ctx, nonce)
 	if err != nil {
@@ -132,8 +132,8 @@ func (w *InteractingWallet) CreateSignedTransaction(ctx context.Context, to *com
 
 // CreateSignedDynamicFeeTx creates and signs an EIP-1559 transaction with dynamic fees
 func (w *InteractingWallet) CreateSignedDynamicFeeTx(ctx context.Context, to *common.Address, value *big.Int,
-	gasLimit uint64, gasFeeCap, gasTipCap *big.Int, data []byte, nonce *uint64) (*types.Transaction, error) {
-
+	gasLimit uint64, gasFeeCap, gasTipCap *big.Int, data []byte, nonce *uint64,
+) (*types.Transaction, error) {
 	// Get nonce if not provided
 	txNonce, err := w.getNonce(ctx, nonce)
 	if err != nil {
@@ -196,8 +196,8 @@ func (w *InteractingWallet) SendTransaction(ctx context.Context, signedTx *types
 
 // CreateAndSendTransaction creates, signs, and sends a transaction in one call
 func (w *InteractingWallet) CreateAndSendTransaction(ctx context.Context, to *common.Address, value *big.Int,
-	gasLimit uint64, gasPrice *big.Int, data []byte, nonce *uint64) (common.Hash, error) {
-
+	gasLimit uint64, gasPrice *big.Int, data []byte, nonce *uint64,
+) (common.Hash, error) {
 	signedTx, err := w.CreateSignedTransaction(ctx, to, value, gasLimit, gasPrice, data, nonce)
 	if err != nil {
 		return common.Hash{}, err
@@ -213,8 +213,8 @@ func (w *InteractingWallet) CreateAndSendTransaction(ctx context.Context, to *co
 
 // CreateAndSendDynamicFeeTx creates, signs, and sends an EIP-1559 transaction in one call
 func (w *InteractingWallet) CreateAndSendDynamicFeeTx(ctx context.Context, to *common.Address, value *big.Int,
-	gasLimit uint64, gasFeeCap, gasTipCap *big.Int, data []byte, nonce *uint64) (common.Hash, error) {
-
+	gasLimit uint64, gasFeeCap, gasTipCap *big.Int, data []byte, nonce *uint64,
+) (common.Hash, error) {
 	signedTx, err := w.CreateSignedDynamicFeeTx(ctx, to, value, gasLimit, gasFeeCap, gasTipCap, data, nonce)
 	if err != nil {
 		return common.Hash{}, err

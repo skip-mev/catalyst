@@ -13,7 +13,7 @@ type Factory func() ChainConfig
 var registry = map[string]Factory{}
 
 func Register(kind string, fn Factory) {
-	//if _, exists := registry[kind]; exists {
+	// if _, exists := registry[kind]; exists {
 	//	panic("duplicate ChainConfig kind: " + kind)
 	//}
 	// overwriting is fine...

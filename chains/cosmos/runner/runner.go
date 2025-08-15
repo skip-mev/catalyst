@@ -10,21 +10,19 @@ import (
 	"sync"
 	"time"
 
+	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
-
-	sdkmath "cosmossdk.io/math"
-
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
 	"github.com/skip-mev/catalyst/chains/cosmos/metrics"
 	"github.com/skip-mev/catalyst/chains/cosmos/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
 	logging "github.com/skip-mev/catalyst/chains/log"
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"go.uber.org/zap"
 )
 
 // MsgGasEstimation stores gas estimation for a specific message type
@@ -320,7 +318,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) {
 	var sentTxs []inttypes.SentTx
 	var sentTxsMu sync.Mutex
 
-	r.logger.Info(fmt.Sprintf("starting to send transactions for block"), zap.Int("block_number", r.numBlocksProcessed), zap.Int("expected_txs", r.totalTxsPerBlock))
+	r.logger.Info("starting to send transactions for block", zap.Int("block_number", r.numBlocksProcessed), zap.Int("expected_txs", r.totalTxsPerBlock))
 
 	getLatestNonce := func(walletAddr string, client *client.Chain) uint64 {
 		r.walletNoncesMu.Lock()
@@ -487,7 +485,6 @@ func (r *Runner) broadcastAndHandleResponse(
 	msgs []sdk.Msg,
 ) (inttypes.SentTx, bool) {
 	res, err := client.BroadcastTx(ctx, txBytes)
-
 	if err != nil {
 		if res != nil && res.Code == 32 && strings.Contains(res.RawLog, "account sequence mismatch") {
 			r.handleNonceMismatch(walletAddress, nonce, res.RawLog)
@@ -546,7 +543,7 @@ func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
 }
 
 func RandomString(n int) string {
-	var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	letterRunes := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 	b := make([]rune, n)
 	for i := range b {

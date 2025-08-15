@@ -8,9 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap/zapcore"
-
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 type loggerContextKey struct{}
@@ -22,7 +21,7 @@ var (
 
 func ensureLogDirectory() error {
 	logDir := "/tmp/catalyst"
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 	return nil
@@ -38,7 +37,7 @@ func getLogFile() (*os.File, error) {
 		timestamp := time.Now().Format("2006-01-02-15-04-05")
 		logPath := filepath.Join("/tmp/catalyst", fmt.Sprintf("catalyst-%s.log", timestamp))
 
-		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
 			err = fmt.Errorf("failed to open log file: %w", err)
 			return
@@ -48,7 +47,7 @@ func getLogFile() (*os.File, error) {
 			c := make(chan os.Signal, 1)
 			<-c
 			if logFile != nil {
-				logFile.Sync()
+				_ = logFile.Sync()
 				logFile.Close()
 			}
 			os.Exit(0)
@@ -60,7 +59,7 @@ func getLogFile() (*os.File, error) {
 
 func CloseLogFile() {
 	if logFile != nil {
-		logFile.Sync()
+		_ = logFile.Sync()
 		logFile.Close()
 	}
 }
@@ -81,7 +80,6 @@ func DefaultLogger(options ...zap.Option) (*zap.Logger, error) {
 
 	logFile, err := getLogFile()
 	if err != nil {
-
 		return zap.NewDevelopment(options...)
 	}
 

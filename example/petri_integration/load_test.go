@@ -3,27 +3,24 @@ package petri_integration
 import (
 	"context"
 	"fmt"
-	"github.com/skip-mev/catalyst/chains"
 	"os/signal"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
-	"github.com/skip-mev/petri/core/v3/util"
-
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"github.com/skip-mev/catalyst/chains"
+	cosmoslttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"github.com/skip-mev/petri/core/v3/provider"
 	"github.com/skip-mev/petri/core/v3/provider/docker"
 	petritypes "github.com/skip-mev/petri/core/v3/types"
+	"github.com/skip-mev/petri/core/v3/util"
 	"github.com/skip-mev/petri/cosmos/v3/chain"
 	"github.com/skip-mev/petri/cosmos/v3/node"
 	"go.uber.org/zap"
-
-	cosmoslttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -177,7 +174,7 @@ func TestPetriDockerIntegration(t *testing.T) {
 
 	msgs := []loadtesttypes.LoadTestMsg{
 		{Weight: 1, Type: cosmoslttypes.MsgMultiSend},
-		//{Weight: 1, Type: cosmoslttypes.MsgSend},
+		// {Weight: 1, Type: cosmoslttypes.MsgSend},
 	}
 
 	spec := loadtesttypes.LoadTestSpec{
