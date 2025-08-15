@@ -97,7 +97,7 @@ func SaveResults(results loadtesttypes.LoadTestResult, logger *zap.Logger) error
 	}
 
 	filePath := filepath.Join(dir, "load_test.json")
-	if err := os.WriteFile(filePath, jsonData, 0o644); err != nil {
+	if err := os.WriteFile(filePath, jsonData, 0o600); err != nil {
 		logger.Error("failed to write results to file",
 			zap.String("path", filePath),
 			zap.Error(err))

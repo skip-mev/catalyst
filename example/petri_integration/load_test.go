@@ -1,4 +1,4 @@
-package petri_integration
+package petriintegration
 
 import (
 	"context"
@@ -350,6 +350,9 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 		Command: []string{"/tmp/catalyst/loadtest.yml"},
 		DataDir: "/tmp/catalyst",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	configBytes, err := yaml.Marshal(&spec)
 	if err != nil {

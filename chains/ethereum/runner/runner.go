@@ -31,11 +31,11 @@ type Runner struct {
 	wsClients []*ethclient.Client
 
 	spec    loadtesttypes.LoadTestSpec
-	nonces  sync.Map
+	nonces  *sync.Map
 	wallets []*wallet.InteractingWallet
 	// TODO: this is hardcoded to 30m for now.
 	blockGasLimit int64
-	collector     metrics.MetricsCollector
+	collector     metrics.Collector
 
 	txFactory       *txfactory.TxFactory
 	sentTxs         []inttypes.SentTx
@@ -84,8 +84,8 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		txFactory:       txf,
 		sentTxs:         make([]inttypes.SentTx, 0, 100),
 		blocksProcessed: 0,
-		nonces:          nonces,
-		collector:       metrics.NewMetricsCollector(logger, clients),
+		nonces:          &nonces,
+		collector:       metrics.NewCollector(logger, clients),
 		blockGasLimit:   30_000_000, // TODO: this is just the max of ethereum. the target is 15m. max is 30m.
 	}
 
@@ -139,6 +139,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 	startTime := time.Now()
 
 	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // Ensure cancel is always called
 
 	blockCh := make(chan *gethtypes.Header, 1)
 	subscription, err := r.wsClients[0].SubscribeNewHead(ctx, blockCh)
@@ -184,7 +185,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 				r.logger.Debug("submitted transactions", zap.Uint64("height", block.Number.Uint64()), zap.Int("num_submitted", numTxsSubmitted))
 
 				r.logger.Info("processed block", zap.Uint64("height", block.Number.Uint64()), zap.Uint64("num_blocks_processed", r.blocksProcessed))
-				if r.blocksProcessed >= uint64(r.spec.NumOfBlocks) {
+				if r.blocksProcessed >= uint64(r.spec.NumOfBlocks) { //nolint:gosec // G115: overflow unlikely in practice
 					r.logger.Info("load test completed - number of blocks desired reached",
 						zap.Uint64("blocks", r.blocksProcessed))
 					done <- struct{}{}
@@ -217,7 +218,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 			clients = append(clients, wallet.GetClient())
 		}
 		r.collector.GroupSentTxs(ctx, r.sentTxs, clients, startTime)
-		collectorResults := r.collector.ProcessResults(r.blockGasLimit, int(r.spec.NumOfBlocks))
+		collectorResults := r.collector.ProcessResults(r.blockGasLimit, r.spec.NumOfBlocks)
 		collectorEndTime := time.Now()
 		r.logger.Debug("collector running time",
 			zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))

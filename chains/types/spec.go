@@ -77,9 +77,5 @@ func (s *LoadTestSpec) Validate() error {
 		return fmt.Errorf("mnemonics must be provided")
 	}
 
-	if err := s.ChainCfg.Validate(*s); err != nil {
-		return err
-	}
-
-	return nil
+	return s.ChainCfg.Validate(*s)
 }

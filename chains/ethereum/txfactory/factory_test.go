@@ -114,6 +114,7 @@ func TestCrossContractCall(t *testing.T) {
 }
 
 func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory) {
+	t.Helper()
 	ctx := context.Background()
 	numContracts := 1
 	wallet := f.wallets[0]
@@ -135,6 +136,7 @@ func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory) {
 }
 
 func setupTest(t *testing.T) (*simulated.Backend, *ethwallet.InteractingWallet) {
+	t.Helper()
 	genesisBalance := big.NewInt(12000000000000000)
 	key, err := crypto.GenerateKey()
 	require.NoError(t, err)

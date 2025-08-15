@@ -52,7 +52,7 @@ func NewClient(ctx context.Context, rpcAddress, grpcAddress, chainID string) (*C
 		return nil, fmt.Errorf("failed to start rpc client: %w", err)
 	}
 
-	grpcConn, err := grpc.Dial(
+	grpcConn, err := grpc.NewClient(
 		grpcAddress,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
@@ -117,7 +117,7 @@ func (c *Chain) processBlockEvents(ctx context.Context, eventCh <-chan coretypes
 	}
 }
 
-func (c *Chain) handleBlockEvent(ctx context.Context, event coretypes.ResultEvent, maxGasLimit int64, handler types.BlockHandler) error {
+func (c *Chain) handleBlockEvent(_ context.Context, event coretypes.ResultEvent, maxGasLimit int64, handler types.BlockHandler) error {
 	newBlockEvent, ok := event.Data.(tmtypes.EventDataNewBlock)
 	if !ok {
 		c.logger.Error("unexpected event type", zap.Any("Event data received", event.Data))
@@ -234,10 +234,6 @@ func (c *Chain) GetChainID() string {
 
 func (c *Chain) getAuthClient() authtypes.QueryClient {
 	return authtypes.NewQueryClient(c.gRPCConn)
-}
-
-func (c *Chain) getBankClient() banktypes.QueryClient {
-	return banktypes.NewQueryClient(c.gRPCConn)
 }
 
 func (c *Chain) getTxClient() txtypes.ServiceClient {
