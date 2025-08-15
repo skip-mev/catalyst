@@ -7,8 +7,7 @@ import (
 	"os"
 	"strings"
 
-	cosmos "github.com/skip-mev/catalyst/chains/cosmos"
-	eth "github.com/skip-mev/catalyst/chains/ethereum"
+	"github.com/skip-mev/catalyst/chains"
 	logging "github.com/skip-mev/catalyst/chains/log"
 	"github.com/skip-mev/catalyst/chains/types"
 
@@ -16,10 +15,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-)
-
-var (
-	validKinds = []string{eth.Kind, cosmos.Kind}
 )
 
 func main() {
@@ -33,7 +28,7 @@ func main() {
 		saveConfigError("config file path is required", logger)
 		logger.Fatal("config file path is required")
 	}
-	
+
 	data, err := os.ReadFile(*configPath)
 	if err != nil {
 		saveConfigError("failed to read config file", logger)
@@ -60,30 +55,14 @@ func main() {
 
 	ctx := context.Background()
 
-	switch kind {
-	case eth.Kind:
-		test, err := eth.New(ctx, logger, spec)
-		if err != nil {
-			saveConfigError(fmt.Sprintf("failed to create eth test. error: %s", err), logger)
-			logger.Fatal("failed to create eth test", zap.Error(err))
-		}
-		if _, err = test.Run(ctx, logger); err != nil {
-			logger.Fatal("failed to run eth load test", zap.Error(err))
-		}
+	test, err := chains.NewLoadTest(ctx, logger, spec)
+	if err != nil {
+		saveConfigError(fmt.Sprintf("failed to create %s test. error: %s", kind, err), logger)
+		logger.Fatal("failed to create load test", zap.Error(err))
+	}
 
-	case cosmos.Kind:
-		test, err := cosmos.New(ctx, spec)
-		if err != nil {
-			saveConfigError(fmt.Sprintf("failed to create cosmos test. error: %s", err), logger)
-			logger.Fatal("failed to create cosmos test", zap.Error(err))
-		}
-		if _, err = test.Run(ctx, logger); err != nil {
-			logger.Fatal("failed to run cosmos load test", zap.Error(err))
-		}
-
-	default:
-		saveConfigError(fmt.Sprintf("invalid kind: must be one of %s", strings.Join(validKinds, ",")), logger)
-		logger.Fatal(fmt.Sprintf("invalid kind: must be one of %s", strings.Join(validKinds, ",")))
+	if _, err = test.Run(ctx, logger); err != nil {
+		logger.Fatal("failed to run load test", zap.Error(err))
 	}
 }
 

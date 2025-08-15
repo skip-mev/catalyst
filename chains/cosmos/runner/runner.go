@@ -541,6 +541,10 @@ func (r *Runner) GetCollector() *metrics.MetricsCollector {
 	return &r.collector
 }
 
+func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
+	r.collector.PrintResults(result)
+}
+
 func RandomString(n int) string {
 	var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
