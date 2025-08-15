@@ -23,8 +23,9 @@ func TestCreateContract_SuccessfulTxs(t *testing.T) {
 		sim, wallet := setupTest(t)
 		ctx := context.Background()
 		f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, 0)
-
-		txs, err := f.createMsgCreateContract(ctx, wallet, nil, 1)
+		nonce, err := wallet.GetNonce(ctx)
+		require.NoError(t, err)
+		txs, err := f.createMsgCreateContract(ctx, wallet, nil, nonce)
 		require.NoError(t, err)
 
 		for _, tx := range txs {
@@ -50,7 +51,9 @@ func TestCreateMsgWriteTo(t *testing.T) {
 	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, 0)
 	deployContract(t, sim, f)
 
-	tx, err := f.createMsgWriteTo(ctx, wallet, 100, 1)
+	nonce, err := wallet.GetNonce(ctx)
+	require.NoError(t, err)
+	tx, err := f.createMsgWriteTo(ctx, wallet, 100, nonce)
 	require.NoError(t, err)
 	err = wallet.SendTransaction(ctx, tx)
 	require.NoError(t, err)
@@ -65,7 +68,8 @@ func TestCreateMsgWriteTo(t *testing.T) {
 	slot5, err := loader.Storage1(&bind.CallOpts{}, big.NewInt(5))
 	require.NoError(t, err)
 	// the storage just stores i * 2.
-	require.Equal(t, slot5.Int64(), int64(5))
+	require.Equal(t, slot5.Int64(), int64(10))
+
 }
 
 func TestCallDataBlast(t *testing.T) {
@@ -74,7 +78,10 @@ func TestCallDataBlast(t *testing.T) {
 	ctx := context.Background()
 	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, 0)
 	deployContract(t, sim, f)
-	tx, err := f.createMsgCallDataBlast(ctx, wallet, 1024, 1)
+
+	nonce, err := wallet.GetNonce(ctx)
+	require.NoError(t, err)
+	tx, err := f.createMsgCallDataBlast(ctx, wallet, 1024, nonce)
 	require.NoError(t, err)
 	err = wallet.SendTransaction(ctx, tx)
 	require.NoError(t, err)
@@ -91,7 +98,9 @@ func TestCrossContractCall(t *testing.T) {
 	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, 0)
 	deployContract(t, sim, f)
 
-	tx, err := f.createMsgCrossContractCall(ctx, wallet, 15, 1)
+	nonce, err := wallet.GetNonce(ctx)
+	require.NoError(t, err)
+	tx, err := f.createMsgCrossContractCall(ctx, wallet, 15, nonce)
 	require.NoError(t, err)
 	err = wallet.SendTransaction(ctx, tx)
 	require.NoError(t, err)
@@ -114,11 +123,12 @@ func TestCrossContractCall(t *testing.T) {
 }
 
 func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory) {
-	t.Helper()
 	ctx := context.Background()
 	numContracts := 1
 	wallet := f.wallets[0]
-	txs, err := f.createMsgCreateContract(ctx, wallet, &numContracts, 1)
+	nonce, err := wallet.GetNonce(ctx)
+	require.NoError(t, err)
+	txs, err := f.createMsgCreateContract(ctx, wallet, &numContracts, nonce)
 	require.NoError(t, err)
 	for _, tx := range txs {
 		err = wallet.SendTransaction(ctx, tx)
@@ -136,7 +146,6 @@ func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory) {
 }
 
 func setupTest(t *testing.T) (*simulated.Backend, *ethwallet.InteractingWallet) {
-	t.Helper()
 	genesisBalance := big.NewInt(12000000000000000)
 	key, err := crypto.GenerateKey()
 	require.NoError(t, err)
