@@ -7,26 +7,14 @@ import (
 	"os"
 	"strings"
 
-	logging "github.com/skip-mev/catalyst/internal/log"
-	"github.com/skip-mev/catalyst/internal/types"
-	"golang.org/x/exp/slices"
+	"github.com/skip-mev/catalyst/chains"
+	logging "github.com/skip-mev/catalyst/chains/log"
+	"github.com/skip-mev/catalyst/chains/types"
 
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
-	"github.com/skip-mev/catalyst/internal/cosmos"
-	cosmostypes "github.com/skip-mev/catalyst/internal/cosmos/types"
-)
-
-type LoadTestType = string
-
-const (
-	LoadTestTypeEth    LoadTestType = "eth"
-	LoadTestTypeCosmos LoadTestType = "cosmos"
-)
-
-var (
-	loadTestTypes = []LoadTestType{LoadTestTypeCosmos, LoadTestTypeCosmos}
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
 func main() {
@@ -34,7 +22,6 @@ func main() {
 	defer logging.CloseLogFile()
 
 	configPath := flag.String("config", "", "Path to load test configuration file")
-	loadtestType := flag.String("type", LoadTestTypeCosmos, fmt.Sprintf("Load test type to use (%s)", strings.Join(loadTestTypes, ","))
 	flag.Parse()
 
 	if *configPath == "" {
@@ -42,46 +29,45 @@ func main() {
 		logger.Fatal("config file path is required")
 	}
 
-	testType := LoadTestType(*loadtestType)
-
-	if !slices.Contains(loadTestTypes, testType) {
-		saveConfigError(fmt.Sprintf("loadtest type must be one of: %s", strings.Join(loadTestTypes, ",")), logger)
-		logger.Fatal(fmt.Sprintf("loadtest type must be one of: %s", strings.Join(loadTestTypes, ",")))
-	}
-
-	configData, err := os.ReadFile(*configPath)
+	data, err := os.ReadFile(*configPath)
 	if err != nil {
 		saveConfigError("failed to read config file", logger)
 		logger.Fatal("failed to read config file", zap.Error(err))
 	}
 
-	switch testType {
-	case LoadTestTypeEth:
-		panic("not supported yet")
-	case LoadTestTypeCosmos:
-		var spec cosmostypes.LoadTestSpec
-		if err := yaml.Unmarshal(configData, &spec); err != nil {
-			saveConfigError("failed to parse config file", logger)
-			logger.Fatal("failed to parse config file", zap.Error(err))
-		}
-
-		ctx := context.Background()
-		test, err := cosmos.New(ctx, spec)
-		if err != nil {
-			saveConfigError(fmt.Sprintf("failed to create test. error: %s", err), logger)
-			logger.Fatal("failed to create test", zap.Error(err))
-		}
-
-		_, err = test.Run(ctx, logger)
-		if err != nil {
-			logger.Fatal("failed to run load test", zap.Error(err))
-		}
+	// unmarshal into the single shared spec (with custom UnmarshalYAML).
+	var spec loadtesttypes.LoadTestSpec
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		saveConfigError("failed to parse config file", logger)
+		logger.Fatal("failed to parse config file", zap.Error(err))
 	}
 
+	if err := spec.Validate(); err != nil {
+		saveConfigError("failed to validate config file", logger)
+		logger.Fatal("failed to validate config file", zap.Error(err))
+	}
+
+	kind := strings.ToLower(strings.TrimSpace(spec.Kind))
+	if kind == "" {
+		saveConfigError("config is missing required field 'kind'", logger)
+		logger.Fatal("config is missing required field 'kind'")
+	}
+
+	ctx := context.Background()
+
+	test, err := chains.NewLoadTest(ctx, logger, spec)
+	if err != nil {
+		saveConfigError(fmt.Sprintf("failed to create %s test. error: %s", kind, err), logger)
+		logger.Fatal("failed to create load test", zap.Error(err))
+	}
+
+	if _, err = test.Run(ctx, logger); err != nil {
+		logger.Fatal("failed to run load test", zap.Error(err))
+	}
 }
 
 func saveConfigError(err string, logger *zap.Logger) {
-	if saveErr := cosmos.SaveResults(types.LoadTestResult{
+	if saveErr := chains.SaveResults(types.LoadTestResult{
 		Error: err,
 	}, logger); saveErr != nil {
 		logger.Fatal("failed to save results", zap.Error(saveErr))
