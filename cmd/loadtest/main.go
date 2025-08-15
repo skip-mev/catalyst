@@ -67,7 +67,7 @@ func main() {
 }
 
 func saveConfigError(err string, logger *zap.Logger) {
-	if saveErr := types.SaveResults(types.LoadTestResult{
+	if saveErr := chains.SaveResults(types.LoadTestResult{
 		Error: err,
 	}, logger); saveErr != nil {
 		logger.Fatal("failed to save results", zap.Error(saveErr))

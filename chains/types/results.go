@@ -1,12 +1,7 @@
 package types
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"time"
-
-	"go.uber.org/zap"
 )
 
 // LoadTestResult represents the results of a load test
@@ -103,37 +98,4 @@ type MsgType string
 
 func (m MsgType) String() string {
 	return string(m)
-}
-
-// SaveResults saves the load test results to /catalyst/load_test_YYYYMMDD_HHMMSS.json
-func SaveResults(results LoadTestResult, logger *zap.Logger) error {
-	dir := "/tmp/catalyst"
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		logger.Error("failed to create results directory",
-			zap.String("dir", dir),
-			zap.Error(err))
-		return err
-	}
-
-	jsonData, err := json.MarshalIndent(results, "", "  ")
-	if err != nil {
-		logger.Error("failed to marshal results to JSON",
-			zap.Error(err))
-		return err
-	}
-
-	fileName := "load_test.json"
-	filePath := filepath.Join(dir, fileName)
-
-	if err := os.WriteFile(filePath, jsonData, 0644); err != nil {
-		logger.Error("failed to write results to file",
-			zap.String("path", filePath),
-			zap.Error(err))
-		return err
-	}
-
-	logger.Debug("successfully saved load test results",
-		zap.String("path", filePath))
-
-	return nil
 }
