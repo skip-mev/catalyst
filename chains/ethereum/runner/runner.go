@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	ethhd "github.com/cosmos/evm/crypto/hd"
@@ -38,10 +37,9 @@ type Runner struct {
 	blockGasLimit int64
 	collector     metrics.MetricsCollector
 
-	txFactory *txfactory.TxFactory
-	sentTxs   []inttypes.SentTx
-	// TODO: this might not need to be atomic.
-	blocksProcessed *atomic.Int64
+	txFactory       *txfactory.TxFactory
+	sentTxs         []inttypes.SentTx
+	blocksProcessed uint64
 }
 
 func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
@@ -85,7 +83,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		wallets:         wallets,
 		txFactory:       txf,
 		sentTxs:         make([]inttypes.SentTx, 0, 100),
-		blocksProcessed: new(atomic.Int64),
+		blocksProcessed: 0,
 		nonces:          nonces,
 		collector:       metrics.NewMetricsCollector(logger, clients),
 		blockGasLimit:   30_000_000, // TODO: this is just the max of ethereum. the target is 15m. max is 30m.
@@ -174,7 +172,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 					cancel()
 					return
 				}
-				r.blocksProcessed.Add(1)
+				r.blocksProcessed++
 				r.logger.Debug(
 					"processing block",
 					zap.Uint64("height", block.Number.Uint64()),
@@ -189,10 +187,10 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 
 				r.logger.Debug("submitted transactions", zap.Uint64("height", block.Number.Uint64()), zap.Int("num_submitted", numTxsSubmitted))
 
-				r.logger.Info("processed block", zap.Uint64("height", block.Number.Uint64()), zap.Int64("num_blocks_processed", r.blocksProcessed.Load()))
-				if r.blocksProcessed.Load() >= int64(r.spec.NumOfBlocks) {
+				r.logger.Info("processed block", zap.Uint64("height", block.Number.Uint64()), zap.Uint64("num_blocks_processed", r.blocksProcessed))
+				if r.blocksProcessed >= uint64(r.spec.NumOfBlocks) {
 					r.logger.Info("load test completed - number of blocks desired reached",
-						zap.Int64("blocks", r.blocksProcessed.Load()))
+						zap.Uint64("blocks", r.blocksProcessed))
 					done <- struct{}{}
 					return
 				}
