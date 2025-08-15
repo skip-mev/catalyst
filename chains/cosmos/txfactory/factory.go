@@ -37,7 +37,7 @@ func (f *TxFactory) CreateMsg(msgSpec loadtesttypes.LoadTestMsg, fromWallet *wal
 	case types.MsgMultiSend:
 		return f.createMsgMultiSend(fromWallet, msgSpec.NumOfRecipients)
 	case types.MsgArr:
-		return nil, fmt.Errorf("MsgArr requires using CreateMsgs instead of BuildTxs")
+		return nil, fmt.Errorf("MsgArr requires using CreateMsgs instead of CreateMsg")
 	default:
 		return nil, fmt.Errorf("unsupported message type: %v", msgSpec.Type)
 	}
