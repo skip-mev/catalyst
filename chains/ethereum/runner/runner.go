@@ -113,17 +113,13 @@ func buildWallets(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) 
 			return nil, fmt.Errorf("mnemonic at index %d is empty", i)
 		}
 
-		// Derive raw 32-byte private key from mnemonic at ETH path .../0
+		// derive raw 32-byte private key from mnemonic at ETH path .../0
 		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, "", evmDerivationPath)
 		if err != nil {
 			return nil, fmt.Errorf("mnemonic[%d]: derive failed: %w", i, err)
 		}
 
 		pk, err := crypto.ToECDSA(derivedPrivKey)
-		// Zero the temporary key material ASAP.
-		for j := range derivedPrivKey {
-			derivedPrivKey[j] = 0
-		}
 		if err != nil {
 			return nil, fmt.Errorf("mnemonic[%d]: invalid ECDSA key: %w", i, err)
 		}
