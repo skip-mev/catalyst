@@ -69,7 +69,6 @@ func TestCreateMsgWriteTo(t *testing.T) {
 	require.NoError(t, err)
 	// the storage just stores i * 2.
 	require.Equal(t, slot5.Int64(), int64(10))
-
 }
 
 func TestCallDataBlast(t *testing.T) {
@@ -123,6 +122,7 @@ func TestCrossContractCall(t *testing.T) {
 }
 
 func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory) {
+	t.Helper()
 	ctx := context.Background()
 	numContracts := 1
 	wallet := f.wallets[0]
@@ -146,6 +146,7 @@ func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory) {
 }
 
 func setupTest(t *testing.T) (*simulated.Backend, *ethwallet.InteractingWallet) {
+	t.Helper()
 	genesisBalance := big.NewInt(12000000000000000)
 	key, err := crypto.GenerateKey()
 	require.NoError(t, err)
