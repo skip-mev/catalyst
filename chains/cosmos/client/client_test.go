@@ -1,6 +1,6 @@
 package client
 
-//import (
+// import (
 //	"context"
 //	"github.com/skip-mev/catalyst/internal/node"
 //	"testing"
@@ -10,12 +10,12 @@ package client
 //	"github.com/stretchr/testify/require"
 //)
 //
-//const (
+// const (
 //	rpcAddress  = "https://cosmos-rpc.publicnode.com:443"
 //	grpcAddress = "cosmos-grpc.publicnode.com:443"
 //)
 //
-//func TestNewClient(t *testing.T) {
+// func TestNewClient(t *testing.T) {
 //	ctx := context.Background()
 //	client, err := node.NewClient(ctx, rpcAddress, grpcAddress)
 //	require.NoError(t, err)
@@ -23,7 +23,7 @@ package client
 //	defer client.Close()
 //}
 //
-//func TestGetLatestBlockHeight(t *testing.T) {
+// func TestGetLatestBlockHeight(t *testing.T) {
 //	ctx := context.Background()
 //	client, err := node.NewClient(ctx, rpcAddress, grpcAddress)
 //	require.NoError(t, err)
@@ -34,7 +34,7 @@ package client
 //	assert.Greater(t, height, int64(0))
 //}
 //
-//func TestGetGasLimit(t *testing.T) {
+// func TestGetGasLimit(t *testing.T) {
 //	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 //	defer cancel()
 //
@@ -47,7 +47,7 @@ package client
 //	assert.Greater(t, gasLimit, 0)
 //}
 //
-//func TestSubscribeToBlocks(t *testing.T) {
+// func TestSubscribeToBlocks(t *testing.T) {
 //	ctx := context.Background()
 //
 //	client, err := node.NewClient(ctx, rpcAddress, grpcAddress)

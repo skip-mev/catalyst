@@ -4,6 +4,15 @@ GO_DEPS=go.mod go.sum
 
 
 ###############################################################################
+###                                 Tests                                   ###
+###############################################################################
+
+test:
+	go test ./... -v
+.PHONY: test
+
+
+###############################################################################
 ###                                 Builds                                  ###
 ###############################################################################
 
@@ -40,13 +49,17 @@ format:
 ###                                Linting                                  ###
 ###############################################################################
 
-lint: tidy
-	@echo "--> Running linter"
-	@go run github.com/golangci/golangci-lint/cmd/golangci-lint run --out-format=tab
+golangci_lint_cmd=golangci-lint
+golangci_version=v2.2.2
 
-lint-fix: tidy
+lint:
 	@echo "--> Running linter"
-	@go run github.com/golangci/golangci-lint/cmd/golangci-lint run --fix --out-format=tab --issues-exit-code=0
+	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(golangci_version)
+	@$(golangci_lint_cmd) run --timeout=15m
+
+lint-fix:
+	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(golangci_version)
+	@$(golangci_lint_cmd) run --timeout=15m --fix
 
 lint-markdown: tidy
 	@echo "--> Running markdown linter"

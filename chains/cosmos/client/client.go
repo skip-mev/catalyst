@@ -5,26 +5,22 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/skip-mev/catalyst/chains/cosmos/types"
-
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
-
-	logging "github.com/skip-mev/catalyst/chains/log"
-
+	"github.com/cometbft/cometbft/rpc/jsonrpc/client"
+	tmtypes "github.com/cometbft/cometbft/types"
 	sdkClient "github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/std"
-	"github.com/cosmos/cosmos-sdk/types/tx/signing"
-	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
-
-	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
-	"github.com/cometbft/cometbft/rpc/jsonrpc/client"
-	tmtypes "github.com/cometbft/cometbft/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
+	"github.com/cosmos/cosmos-sdk/types/tx/signing"
+	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	"github.com/skip-mev/catalyst/chains/cosmos/types"
+	logging "github.com/skip-mev/catalyst/chains/log"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -56,7 +52,7 @@ func NewClient(ctx context.Context, rpcAddress, grpcAddress, chainID string) (*C
 		return nil, fmt.Errorf("failed to start rpc client: %w", err)
 	}
 
-	grpcConn, err := grpc.Dial(
+	grpcConn, err := grpc.NewClient(
 		grpcAddress,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
@@ -121,7 +117,7 @@ func (c *Chain) processBlockEvents(ctx context.Context, eventCh <-chan coretypes
 	}
 }
 
-func (c *Chain) handleBlockEvent(ctx context.Context, event coretypes.ResultEvent, maxGasLimit int64, handler types.BlockHandler) error {
+func (c *Chain) handleBlockEvent(_ context.Context, event coretypes.ResultEvent, maxGasLimit int64, handler types.BlockHandler) error {
 	newBlockEvent, ok := event.Data.(tmtypes.EventDataNewBlock)
 	if !ok {
 		c.logger.Error("unexpected event type", zap.Any("Event data received", event.Data))
@@ -238,10 +234,6 @@ func (c *Chain) GetChainID() string {
 
 func (c *Chain) getAuthClient() authtypes.QueryClient {
 	return authtypes.NewQueryClient(c.gRPCConn)
-}
-
-func (c *Chain) getBankClient() banktypes.QueryClient {
-	return banktypes.NewQueryClient(c.gRPCConn)
 }
 
 func (c *Chain) getTxClient() txtypes.ServiceClient {

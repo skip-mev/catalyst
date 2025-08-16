@@ -9,20 +9,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/skip-mev/catalyst/chains/cosmos/types"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-
-	logging "github.com/skip-mev/catalyst/chains/log"
-
-	"go.uber.org/zap"
-
-	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
-
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
+	"github.com/skip-mev/catalyst/chains/cosmos/types"
+	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
+	logging "github.com/skip-mev/catalyst/chains/log"
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"go.uber.org/zap"
 )
 
-// MetricsCollector collects and processes metrics for load tests
-type MetricsCollector struct {
+// Collector collects and processes metrics for load tests
+type Collector struct {
 	startTime         time.Time
 	endTime           time.Time
 	blocksProcessed   int
@@ -34,10 +30,10 @@ type MetricsCollector struct {
 	logger            *zap.Logger
 }
 
-// NewMetricsCollector creates a new metrics collector
-func NewMetricsCollector() MetricsCollector {
+// NewCollector creates a new metrics collector
+func NewCollector() Collector {
 	logger, _ := logging.DefaultLogger()
-	return MetricsCollector{
+	return Collector{
 		txsByBlock:        make(map[int64][]types.SentTx),
 		txsByNode:         make(map[string][]types.SentTx),
 		txsByMsgType:      make(map[loadtesttypes.MsgType][]types.SentTx),
@@ -47,7 +43,7 @@ func NewMetricsCollector() MetricsCollector {
 }
 
 // GroupSentTxs groups sent txs by block, node, and message type
-func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, clients []*client.Chain, startTime time.Time) {
+func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, clients []*client.Chain, startTime time.Time) {
 	m.startTime = startTime
 	m.endTime = time.Now()
 
@@ -131,35 +127,31 @@ func (m *MetricsCollector) GroupSentTxs(ctx context.Context, sentTxs []types.Sen
 }
 
 // calculateGasStats calculates gas statistics for a slice of gas values
-func (m *MetricsCollector) calculateGasStats(gasUsage []int64) loadtesttypes.GasStats {
+func (m *Collector) calculateGasStats(gasUsage []int64) loadtesttypes.GasStats {
 	if len(gasUsage) == 0 {
 		return loadtesttypes.GasStats{}
 	}
 
 	var total int64
-	min := gasUsage[0]
-	max := gasUsage[0]
+	minGas := gasUsage[0]
+	maxGas := gasUsage[0]
 
 	for _, gas := range gasUsage {
 		total += gas
-		if gas < min {
-			min = gas
-		}
-		if gas > max {
-			max = gas
-		}
+		minGas = min(gas, minGas)
+		maxGas = max(gas, maxGas)
 	}
 
 	return loadtesttypes.GasStats{
 		Average: total / int64(len(gasUsage)),
-		Min:     min,
-		Max:     max,
+		Min:     minGas,
+		Max:     maxGas,
 		Total:   total,
 	}
 }
 
 // processMessageTypeStats processes statistics for each message type and returns overall totals
-func (m *MetricsCollector) processMessageTypeStats(result *loadtesttypes.LoadTestResult) (int, int, int, int64) {
+func (m *Collector) processMessageTypeStats(result *loadtesttypes.LoadTestResult) (int, int, int, int64) {
 	var totalTxs, successfulTxs, failedTxs int
 	var totalGasUsed int64
 
@@ -169,23 +161,11 @@ func (m *MetricsCollector) processMessageTypeStats(result *loadtesttypes.LoadTes
 		successful := 0
 		failed := 0
 		errorCounts := make(map[string]int)
-		broadcastErrors := make([]types.BroadcastError, 0)
-
 		for _, tx := range txs {
 			if tx.Err != nil {
 				failed++
 				errMsg := tx.Err.Error()
 				errorCounts[errMsg]++
-				broadcastError := types.BroadcastError{
-					TxHash:      tx.TxHash,
-					Error:       errMsg,
-					MsgType:     msgType,
-					NodeAddress: tx.NodeAddress,
-				}
-				if tx.TxResponse != nil {
-					broadcastError.BlockHeight = tx.TxResponse.Height
-				}
-				broadcastErrors = append(broadcastErrors, broadcastError)
 			} else {
 				successful++
 			}
@@ -198,10 +178,6 @@ func (m *MetricsCollector) processMessageTypeStats(result *loadtesttypes.LoadTes
 				Failed:     failed,
 			},
 			Gas: m.calculateGasStats(m.gasUsageByMsgType[msgType]),
-			//Errors: types.ErrorStats{
-			//	ErrorCounts:     errorCounts,
-			//	BroadcastErrors: broadcastErrors,
-			//},
 		}
 
 		result.ByMessage[msgType] = stats
@@ -215,7 +191,7 @@ func (m *MetricsCollector) processMessageTypeStats(result *loadtesttypes.LoadTes
 }
 
 // processNodeStats processes statistics for each node
-func (m *MetricsCollector) processNodeStats(result *loadtesttypes.LoadTestResult) {
+func (m *Collector) processNodeStats(result *loadtesttypes.LoadTestResult) {
 	result.ByNode = make(map[string]loadtesttypes.NodeStats, len(m.txsByNode))
 
 	for nodeAddr, txs := range m.txsByNode {
@@ -255,8 +231,9 @@ func (m *MetricsCollector) processNodeStats(result *loadtesttypes.LoadTestResult
 }
 
 // processBlockStats processes statistics for each block
-func (m *MetricsCollector) processBlockStats(result *loadtesttypes.LoadTestResult, gasLimit int64,
-	numberOfBlocksRequested int) {
+func (m *Collector) processBlockStats(result *loadtesttypes.LoadTestResult, gasLimit int64,
+	numberOfBlocksRequested int,
+) {
 	var results []loadtesttypes.BlockStat
 	result.ByBlock = results
 
@@ -333,7 +310,7 @@ func (m *MetricsCollector) processBlockStats(result *loadtesttypes.LoadTestResul
 }
 
 // ProcessResults returns the final load test results
-func (m *MetricsCollector) ProcessResults(gasLimit int64, numOfBlocksRequested int) loadtesttypes.LoadTestResult {
+func (m *Collector) ProcessResults(gasLimit int64, numOfBlocksRequested int) loadtesttypes.LoadTestResult {
 	result := loadtesttypes.LoadTestResult{
 		Overall: loadtesttypes.OverallStats{
 			StartTime:       m.startTime,
@@ -384,7 +361,7 @@ func (m *MetricsCollector) ProcessResults(gasLimit int64, numOfBlocksRequested i
 }
 
 // calculateTPS calculates transactions per second based on block timestamps
-func (m *MetricsCollector) calculateTPS(blocks []loadtesttypes.BlockStat, successfulTxs int) (float64, float64, int64, int64) {
+func (m *Collector) calculateTPS(blocks []loadtesttypes.BlockStat, successfulTxs int) (float64, float64, int64, int64) {
 	if len(blocks) == 0 {
 		return 0, 0, 0, 0
 	}
@@ -406,7 +383,7 @@ func (m *MetricsCollector) calculateTPS(blocks []loadtesttypes.BlockStat, succes
 }
 
 // PrintResults prints the load test results in a clean, formatted way
-func (m *MetricsCollector) PrintResults(result loadtesttypes.LoadTestResult) {
+func (m *Collector) PrintResults(result loadtesttypes.LoadTestResult) {
 	fmt.Println("\n=== Load Test Results ===")
 
 	fmt.Println("\n🎯 Overall Statistics:")
@@ -438,7 +415,7 @@ func (m *MetricsCollector) PrintResults(result loadtesttypes.LoadTestResult) {
 		fmt.Printf("    Min: %d\n", stats.Gas.Min)
 		fmt.Printf("    Max: %d\n", stats.Gas.Max)
 		fmt.Printf("    Total: %d\n", stats.Gas.Total)
-		//if len(stats.Errors.BroadcastErrors) > 0 {
+		// if len(stats.Errors.BroadcastErrors) > 0 {
 		//	fmt.Printf("  Errors:\n")
 		//	for errType, count := range stats.Errors.ErrorCounts {
 		//		fmt.Printf("    %s: %d occurrences\n", errType, count)

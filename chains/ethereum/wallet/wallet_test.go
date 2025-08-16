@@ -343,6 +343,7 @@ func TestCreateSignedDynamicFeeTx(t *testing.T) {
 }
 
 func getRandomAddr(t *testing.T) common.Address {
+	t.Helper()
 	key, err := crypto.GenerateKey()
 	require.NoError(t, err)
 	addr := crypto.PubkeyToAddress(key.PublicKey)

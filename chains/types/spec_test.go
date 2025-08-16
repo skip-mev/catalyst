@@ -4,11 +4,10 @@ import (
 	"testing"
 	"time"
 
-	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
-	"github.com/stretchr/testify/require"
-
 	cosmostypes "github.com/skip-mev/catalyst/chains/cosmos/types"
+	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 

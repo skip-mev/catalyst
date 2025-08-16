@@ -9,12 +9,9 @@ import (
 
 	"github.com/skip-mev/catalyst/chains"
 	logging "github.com/skip-mev/catalyst/chains/log"
-	"github.com/skip-mev/catalyst/chains/types"
-
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
-
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
 func main() {
@@ -67,7 +64,7 @@ func main() {
 }
 
 func saveConfigError(err string, logger *zap.Logger) {
-	if saveErr := chains.SaveResults(types.LoadTestResult{
+	if saveErr := chains.SaveResults(loadtesttypes.LoadTestResult{
 		Error: err,
 	}, logger); saveErr != nil {
 		logger.Fatal("failed to save results", zap.Error(saveErr))

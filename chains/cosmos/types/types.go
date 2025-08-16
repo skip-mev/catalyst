@@ -85,7 +85,7 @@ func (s ChainConfig) Validate(mainCfg loadtesttypes.LoadTestSpec) error {
 	if len(s.NodesAddresses) == 0 {
 		return fmt.Errorf("no node addresses provided")
 	}
-	if s.UnorderedTxs == true && mainCfg.TxTimeout == 0 {
+	if s.UnorderedTxs && mainCfg.TxTimeout == 0 {
 		return fmt.Errorf("tx_timeout must be set if unordered txs is set to true")
 	}
 	seenMsgTypes := make(map[loadtesttypes.MsgType]bool)
@@ -98,7 +98,8 @@ func (s ChainConfig) Validate(mainCfg loadtesttypes.LoadTestSpec) error {
 		}
 		totalWeight += msg.Weight
 
-		if msg.Type == MsgArr {
+		switch msg.Type {
+		case MsgArr:
 			if msg.ContainedType == "" {
 				return fmt.Errorf("contained_type must be specified for MsgArr")
 			}
@@ -111,11 +112,11 @@ func (s ChainConfig) Validate(mainCfg loadtesttypes.LoadTestSpec) error {
 				return fmt.Errorf("duplicate MsgArr with contained_type %s", msg.ContainedType)
 			}
 			seenMsgArrTypes[msg.ContainedType] = true
-		} else if msg.Type == MsgMultiSend {
+		case MsgMultiSend:
 			if msg.NumOfRecipients > len(mainCfg.Mnemonics) {
 				return fmt.Errorf("number of recipients must be less than or equal to number of mneomnics available")
 			}
-		} else {
+		default:
 			if seenMsgTypes[msg.Type] {
 				return fmt.Errorf("duplicate message type: %s", msg.Type)
 			}

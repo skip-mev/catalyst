@@ -1,29 +1,26 @@
-package petri_integration
+package petriintegration
 
 import (
 	"context"
 	"fmt"
-	"github.com/skip-mev/catalyst/chains"
 	"os/signal"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
-	"github.com/skip-mev/petri/core/v3/util"
-
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"github.com/skip-mev/catalyst/chains"
+	cosmoslttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"github.com/skip-mev/petri/core/v3/provider"
 	"github.com/skip-mev/petri/core/v3/provider/docker"
 	petritypes "github.com/skip-mev/petri/core/v3/types"
+	"github.com/skip-mev/petri/core/v3/util"
 	"github.com/skip-mev/petri/cosmos/v3/chain"
 	"github.com/skip-mev/petri/cosmos/v3/node"
 	"go.uber.org/zap"
-
-	cosmoslttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -177,7 +174,7 @@ func TestPetriDockerIntegration(t *testing.T) {
 
 	msgs := []loadtesttypes.LoadTestMsg{
 		{Weight: 1, Type: cosmoslttypes.MsgMultiSend},
-		//{Weight: 1, Type: cosmoslttypes.MsgSend},
+		// {Weight: 1, Type: cosmoslttypes.MsgSend},
 	}
 
 	spec := loadtesttypes.LoadTestSpec{
@@ -271,7 +268,8 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 	faucetWallet := c.GetFaucetWallet()
 	node := c.GetValidators()[0]
 
-	for i := 0; i < 2; i++ {
+	numWallets := 2
+	for range numWallets {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -282,6 +280,7 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 			}
 
 			walletsMutex.Lock()
+			mnemonics = append(mnemonics, w.Mnemonic())
 			wallets = append(wallets, w)
 			walletsMutex.Unlock()
 		}()
@@ -330,7 +329,7 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 		Msgs:        msgs,
 		NumOfTxs:    10,
 		Kind:        chains.CosmosKind,
-		ChainCfg: cosmoslttypes.ChainConfig{
+		ChainCfg: &cosmoslttypes.ChainConfig{
 			GasDenom:       defaultChainConfig.Denom,
 			Bech32Prefix:   defaultChainConfig.Bech32Prefix,
 			NodesAddresses: nodeAddresses,
@@ -353,6 +352,9 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 		Command: []string{"/tmp/catalyst/loadtest.yml"},
 		DataDir: "/tmp/catalyst",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	configBytes, err := yaml.Marshal(&spec)
 	if err != nil {
