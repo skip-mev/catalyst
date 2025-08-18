@@ -30,10 +30,9 @@ type Runner struct {
 	clients   []*ethclient.Client
 	wsClients []*ethclient.Client
 
-	spec    loadtesttypes.LoadTestSpec
-	nonces  *sync.Map
-	wallets []*wallet.InteractingWallet
-	// TODO: this is hardcoded to 30m for now.
+	spec          loadtesttypes.LoadTestSpec
+	nonces        *sync.Map
+	wallets       []*wallet.InteractingWallet
 	blockGasLimit int64
 	collector     metrics.Collector
 

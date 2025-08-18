@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -62,7 +63,7 @@ func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, cl
 	var wg sync.WaitGroup
 
 	var mu sync.Mutex
-	var txNotFoundCount int
+	txNotFoundCount := atomic.Uint64{}
 
 	for range maxWorkers {
 		wg.Add(1)
@@ -78,13 +79,13 @@ func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, cl
 
 				if tx.Err == nil {
 					randomClient := clients[rand.Intn(len(clients))]
-					txReceipt, err := wallet.GetTxReceipt(ctx, randomClient, tx.TxHash)
+					subCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+					txReceipt, err := wallet.GetTxReceipt(subCtx, randomClient, tx.TxHash)
+					cancel()
 					if err != nil {
 						m.logger.Error("tx not found", zap.Error(err), zap.String("tx_hash", tx.TxHash.String()))
 						tx.Err = err
-						mu.Lock()
-						txNotFoundCount++
-						mu.Unlock()
+						txNotFoundCount.Add(1)
 						continue
 					}
 
@@ -114,8 +115,8 @@ func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, cl
 	close(workChan)
 	wg.Wait()
 
-	m.txNotFoundCount = txNotFoundCount
-	m.logger.Info("Completed processing transactions", zap.Int("tx_not_found_count", txNotFoundCount))
+	m.txNotFoundCount = int(txNotFoundCount.Load()) //nolint:gosec // G115: rare that this would overflow.
+	m.logger.Info("Completed processing transactions", zap.Int("tx_not_found_count", m.txNotFoundCount))
 
 	for i := range sentTxs {
 		tx := &sentTxs[i]
