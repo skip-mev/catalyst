@@ -146,7 +146,7 @@ func (f *TxFactory) updateContractAddressesAsync(ctx context.Context, txHash com
 func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.InteractingWallet, iterations int, nonce uint64) (*types.Transaction, error) {
 	// Default to 100 iterations if not specified
 	if iterations <= 0 {
-		iterations = 100
+		iterations = rand.Intn(3) + 1
 	}
 	if len(f.contractAddresses) == 0 {
 		return nil, nil
