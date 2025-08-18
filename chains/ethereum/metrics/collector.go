@@ -79,8 +79,9 @@ func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, cl
 
 				if tx.Err == nil {
 					randomClient := clients[rand.Intn(len(clients))]
-					subCtx, _ := context.WithTimeout(ctx, 3*time.Second)
+					subCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 					txReceipt, err := wallet.GetTxReceipt(subCtx, randomClient, tx.TxHash)
+					cancel()
 					if err != nil {
 						m.logger.Error("tx not found", zap.Error(err), zap.String("tx_hash", tx.TxHash.String()))
 						tx.Err = err
@@ -114,7 +115,7 @@ func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, cl
 	close(workChan)
 	wg.Wait()
 
-	m.txNotFoundCount = int(txNotFoundCount.Load())
+	m.txNotFoundCount = int(txNotFoundCount.Load()) //nolint:gosec // G115: rare that this would overflow.
 	m.logger.Info("Completed processing transactions", zap.Int("tx_not_found_count", m.txNotFoundCount))
 
 	for i := range sentTxs {
