@@ -64,7 +64,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		return nil, err
 	}
 
-	txf := txfactory.NewTxFactory(logger, wallets, chainCfg.MaxContracts)
+	txf := txfactory.NewTxFactory(logger, wallets, chainCfg.MaxContracts, chainCfg.TxOpts)
 	nonces := sync.Map{}
 	for _, wallet := range wallets {
 		nonce, err := wallet.GetNonce(ctx)
@@ -165,7 +165,7 @@ func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction,
 	r.logger.Info("Building load...", zap.Int("num_batches", r.spec.NumBatches))
 	batchLoads := make([][]*gethtypes.Transaction, 0, 100)
 	total := 0
-	for range r.spec.NumBatches {
+	for i := range r.spec.NumBatches {
 		batch := make([]*gethtypes.Transaction, 0)
 		for _, msgSpec := range r.spec.Msgs {
 			select {
@@ -182,6 +182,7 @@ func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction,
 				total += len(txs)
 			}
 		}
+		r.logger.Info(fmt.Sprintf("built batch %d/%d", i+1, r.spec.NumBatches))
 		batchLoads = append(batchLoads, batch)
 	}
 	r.logger.Info("Load built, starting loadtest", zap.Int("total_txs", total))

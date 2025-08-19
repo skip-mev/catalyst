@@ -2,6 +2,7 @@ package types
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -33,11 +34,19 @@ type NodeAddress struct {
 	Websocket string `yaml:"websocket"`
 }
 
+type TxOpts struct {
+	GasPrice  *big.Int `yaml:"gas_price" json:"gas_price"`
+	GasFeeCap *big.Int `yaml:"gas_fee_cap" json:"gas_fee_cap"`
+	GasTipCap *big.Int `yaml:"gas_tip_cap" json:"gas_tip_cap"`
+}
+
 type ChainConfig struct {
 	NodesAddresses []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
 	// MaxContracts is the maximum number of contracts that the loadtest runner will hold in memory.
 	// The contracts in memory are used for the other load test message types to interact with.
 	MaxContracts uint64 `yaml:"max_contracts" json:"MaxContracts"`
+
+	TxOpts TxOpts `yaml:"tx_opts" json:"TxOpts"`
 }
 
 func init() {

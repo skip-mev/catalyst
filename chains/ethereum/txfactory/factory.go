@@ -26,15 +26,16 @@ type TxFactory struct {
 	contractAddresses []common.Address
 	maxContracts      uint64
 	mu                sync.Mutex
+	txOpts            ethtypes.TxOpts
 }
 
 var defaultMaxContracts = uint64(10)
 
-func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet, maxContracts uint64) *TxFactory {
+func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet, maxContracts uint64, txOpts ethtypes.TxOpts) *TxFactory {
 	if maxContracts <= 0 {
 		maxContracts = defaultMaxContracts
 	}
-	return &TxFactory{logger: logger.With(zap.String("module", "tx_factory")), wallets: wallets, mu: sync.Mutex{}, maxContracts: maxContracts}
+	return &TxFactory{logger: logger.With(zap.String("module", "tx_factory")), wallets: wallets, mu: sync.Mutex{}, maxContracts: maxContracts, txOpts: txOpts}
 }
 
 func (f *TxFactory) BuildTxs(msgSpec loadtesttypes.LoadTestMsg, fromWallet *ethwallet.InteractingWallet, nonce uint64) ([]*types.Transaction, error) {
@@ -86,8 +87,9 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 			From:      fromWallet.Address(),
 			Signer:    fromWallet.SignerFnLegacy(),
 			Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
-			GasTipCap: big.NewInt(1000 * 1e9),
-			GasFeeCap: big.NewInt(1000 * 1e9),
+			GasTipCap: f.txOpts.GasTipCap,
+			GasFeeCap: f.txOpts.GasFeeCap,
+			GasPrice:  f.txOpts.GasPrice,
 			Context:   ctx,
 			NoSend:    true,
 		}, fromWallet.GetClient())
@@ -102,8 +104,9 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 		From:      fromWallet.Address(),
 		Signer:    fromWallet.SignerFnLegacy(),
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
-		GasTipCap: big.NewInt(1000 * 1e9),
-		GasFeeCap: big.NewInt(1000 * 1e9),
+		GasTipCap: f.txOpts.GasTipCap,
+		GasFeeCap: f.txOpts.GasFeeCap,
+		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
 	}, fromWallet.GetClient(), targetContractAddrs)
@@ -167,8 +170,9 @@ func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.
 		From:      fromWallet.Address(),
 		Signer:    fromWallet.SignerFnLegacy(),
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
-		GasTipCap: big.NewInt(1000 * 1e9),
-		GasFeeCap: big.NewInt(1000 * 1e9),
+		GasTipCap: f.txOpts.GasTipCap,
+		GasFeeCap: f.txOpts.GasFeeCap,
+		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
 	}, big.NewInt(int64(iterations)))
@@ -201,10 +205,11 @@ func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *ethw
 	tx, err := loaderInstance.TestLargeCalldata(&bind.TransactOpts{
 		From:      fromWallet.Address(),
 		Signer:    fromWallet.SignerFnLegacy(),
-		Context:   ctx,
-		GasTipCap: big.NewInt(1000 * 1e9),
-		GasFeeCap: big.NewInt(1000 * 1e9),
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
+		GasTipCap: f.txOpts.GasTipCap,
+		GasFeeCap: f.txOpts.GasFeeCap,
+		GasPrice:  f.txOpts.GasPrice,
+		Context:   ctx,
 		NoSend:    true,
 	}, randomBytes)
 	if err != nil {
@@ -232,9 +237,10 @@ func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *
 	tx, err := loaderInstance.TestCrossContractCalls(&bind.TransactOpts{
 		From:      fromWallet.Address(),
 		Signer:    fromWallet.SignerFnLegacy(),
-		GasTipCap: big.NewInt(1000 * 1e9),
-		GasFeeCap: big.NewInt(1000 * 1e9),
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
+		GasTipCap: f.txOpts.GasTipCap,
+		GasFeeCap: f.txOpts.GasFeeCap,
+		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
 	}, big.NewInt(int64(iterations)))

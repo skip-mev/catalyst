@@ -63,14 +63,6 @@ func (s *LoadTestSpec) Validate() error {
 		return fmt.Errorf("chain ID must be specified")
 	}
 
-	if s.NumOfTxs <= 0 {
-		return fmt.Errorf("num_of_txs must be greater than 0")
-	}
-
-	if s.NumOfBlocks <= 0 {
-		return fmt.Errorf("num_of_blocks must be greater than 0")
-	}
-
 	if len(s.Msgs) == 0 {
 		return fmt.Errorf("no messages specified for load testing")
 	}
