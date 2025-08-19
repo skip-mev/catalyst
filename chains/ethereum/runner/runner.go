@@ -205,7 +205,6 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	if err := r.deployInitialContract(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
-	r.logger.Info("Building load...", zap.Int("num_batches", r.spec.NumBatches))
 	// we build the full load upfront. that is, num_batches * [msg * msg spec amount].
 	batchLoads, err := r.buildFullLoad(ctx)
 	if err != nil {
@@ -269,7 +268,6 @@ loop:
 				}()
 			}
 
-			r.logger.Info("Load sent")
 			loadIndex++
 			if loadIndex >= len(batchLoads) {
 				// exit the loadtest loop. we have finished.
@@ -280,8 +278,10 @@ loop:
 		}
 	}
 
+	r.logger.Info("All transactions sent. Waiting for go routines to finish")
 	wg.Wait()
 	close(collectionChannel)
+	r.logger.Info("go routines have completed", zap.Int("total_txs", len(sentTxs)))
 	r.sentTxs = sentTxs
 
 	// sleep for the txs to complete.
