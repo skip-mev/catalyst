@@ -282,13 +282,13 @@ loop:
 
 	wg.Wait()
 	close(collectionChannel)
-
 	r.sentTxs = sentTxs
 
-	// finish. sleep for the txs to complete.
+	// sleep for the txs to complete.
+	// it is possible many txs are still in the mempool.
+	// we dont want the collector to start looking for receipts until we have given the EVM time to process. (it is a very emotional state machine)
 	waitDuration := 1 * time.Minute
 	r.logger.Info("Loadtest complete. Sleeping for all txs to complete...", zap.Duration("wait_duration", waitDuration))
-	// wait for in-flight txs but still respect ctx completion
 	timer := time.NewTimer(waitDuration)
 	select {
 	case <-timer.C:
