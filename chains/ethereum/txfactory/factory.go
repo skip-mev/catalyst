@@ -83,11 +83,13 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 	targetContractAddrs := make([]common.Address, 0, numTargets)
 	for i := 0; i < numTargets; i++ {
 		addr, tx, _, err := target.DeployTarget(&bind.TransactOpts{
-			From:    fromWallet.Address(),
-			Signer:  fromWallet.SignerFnLegacy(),
-			Nonce:   big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
-			Context: ctx,
-			NoSend:  true,
+			From:      fromWallet.Address(),
+			Signer:    fromWallet.SignerFnLegacy(),
+			Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
+			GasTipCap: big.NewInt(1000 * 1e9),
+			GasFeeCap: big.NewInt(1000 * 1e9),
+			Context:   ctx,
+			NoSend:    true,
 		}, fromWallet.GetClient())
 		if err != nil {
 			return nil, fmt.Errorf("failed to create target contract transaction: %w", err)
@@ -97,11 +99,13 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 		nonce++
 	}
 	_, loaderDeployTx, _, err := loader.DeployLoader(&bind.TransactOpts{
-		From:    fromWallet.Address(),
-		Signer:  fromWallet.SignerFnLegacy(),
-		Nonce:   big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
-		Context: ctx,
-		NoSend:  true,
+		From:      fromWallet.Address(),
+		Signer:    fromWallet.SignerFnLegacy(),
+		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
+		GasTipCap: big.NewInt(1000 * 1e9),
+		GasFeeCap: big.NewInt(1000 * 1e9),
+		Context:   ctx,
+		NoSend:    true,
 	}, fromWallet.GetClient(), targetContractAddrs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create loader contract transaction: %w", err)
@@ -160,11 +164,13 @@ func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.
 		return nil, fmt.Errorf("failed to get loader contract instance at %s: %w", contractAddr.String(), err)
 	}
 	tx, err := loaderInstance.TestStorageWrites(&bind.TransactOpts{
-		From:    fromWallet.Address(),
-		Signer:  fromWallet.SignerFnLegacy(),
-		Nonce:   big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
-		Context: ctx,
-		NoSend:  true,
+		From:      fromWallet.Address(),
+		Signer:    fromWallet.SignerFnLegacy(),
+		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
+		GasTipCap: big.NewInt(1000 * 1e9),
+		GasFeeCap: big.NewInt(1000 * 1e9),
+		Context:   ctx,
+		NoSend:    true,
 	}, big.NewInt(int64(iterations)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tx for writeTo function at %s: %w", contractAddr.String(), err)
@@ -193,11 +199,13 @@ func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *ethw
 		return nil, fmt.Errorf("failed to get loader contract instance at %s: %w", contractAddr.String(), err)
 	}
 	tx, err := loaderInstance.TestLargeCalldata(&bind.TransactOpts{
-		From:    fromWallet.Address(),
-		Signer:  fromWallet.SignerFnLegacy(),
-		Context: ctx,
-		Nonce:   big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
-		NoSend:  true,
+		From:      fromWallet.Address(),
+		Signer:    fromWallet.SignerFnLegacy(),
+		Context:   ctx,
+		GasTipCap: big.NewInt(1000 * 1e9),
+		GasFeeCap: big.NewInt(1000 * 1e9),
+		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
+		NoSend:    true,
 	}, randomBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tx for testLargeCallData function at %s: %w", contractAddr.String(), err)
@@ -222,11 +230,13 @@ func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *
 		return nil, fmt.Errorf("failed to get loader contract instance at %s: %w", contractAddr.String(), err)
 	}
 	tx, err := loaderInstance.TestCrossContractCalls(&bind.TransactOpts{
-		From:    fromWallet.Address(),
-		Signer:  fromWallet.SignerFnLegacy(),
-		Nonce:   big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
-		Context: ctx,
-		NoSend:  true,
+		From:      fromWallet.Address(),
+		Signer:    fromWallet.SignerFnLegacy(),
+		GasTipCap: big.NewInt(1000 * 1e9),
+		GasFeeCap: big.NewInt(1000 * 1e9),
+		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
+		Context:   ctx,
+		NoSend:    true,
 	}, big.NewInt(int64(iterations)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tx for writeTo function at %s: %w", contractAddr.String(), err)

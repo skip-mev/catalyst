@@ -8,16 +8,18 @@ import (
 )
 
 type LoadTestSpec struct {
-	Name        string        `yaml:"name" json:"name"`
-	Description string        `yaml:"description" json:"description"`
-	Kind        string        `yaml:"kind" json:"kind"` // "cosmos" | "evm" (discriminator)
-	ChainID     string        `yaml:"chain_id" json:"chain_id"`
-	NumOfTxs    int           `yaml:"num_of_txs,omitempty" json:"num_of_txs,omitempty"`
-	NumOfBlocks int           `yaml:"num_of_blocks" json:"num_of_blocks"`
-	Mnemonics   []string      `yaml:"mnemonics" json:"mnemonics"`
-	Msgs        []LoadTestMsg `yaml:"msgs" json:"msgs"`
-	TxTimeout   time.Duration `yaml:"tx_timeout,omitempty" json:"tx_timeout,omitempty"`
-	ChainCfg    ChainConfig   `yaml:"-" json:"-"` // decoded via custom UnmarshalYAML
+	Name         string        `yaml:"name" json:"name"`
+	Description  string        `yaml:"description" json:"description"`
+	Kind         string        `yaml:"kind" json:"kind"` // "cosmos" | "evm" (discriminator)
+	ChainID      string        `yaml:"chain_id" json:"chain_id"`
+	NumOfTxs     int           `yaml:"num_of_txs,omitempty" json:"num_of_txs,omitempty"`
+	NumOfBlocks  int           `yaml:"num_of_blocks" json:"num_of_blocks"`
+	SendInterval time.Duration `yaml:"send_interval" json:"send_interval"`
+	NumBatches   int           `yaml:"num_batches" json:"num_batches"`
+	Mnemonics    []string      `yaml:"mnemonics" json:"mnemonics"`
+	Msgs         []LoadTestMsg `yaml:"msgs" json:"msgs"`
+	TxTimeout    time.Duration `yaml:"tx_timeout,omitempty" json:"tx_timeout,omitempty"`
+	ChainCfg     ChainConfig   `yaml:"-" json:"-"` // decoded via custom UnmarshalYAML
 }
 
 type loadTestSpecAlias LoadTestSpec
