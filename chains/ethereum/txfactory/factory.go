@@ -76,7 +76,7 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 		numTargets = *targets
 	} else {
 		// add 1 so we never get 0. can be 1-3.
-		numTargets = rand.Intn(3) + 1
+		numTargets = 2
 	}
 
 	// Deploy target contracts first
@@ -151,11 +151,11 @@ func (f *TxFactory) updateContractAddressesAsync(ctx context.Context, txHash com
 }
 
 func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.InteractingWallet, iterations int, nonce uint64) (*types.Transaction, error) {
-	// Default to 100 iterations if not specified
 	if iterations <= 0 {
-		iterations = rand.Intn(3) + 1
+		iterations = 3
 	}
 	if len(f.contractAddresses) == 0 {
+		f.logger.Debug("no contract addresses for tx")
 		return nil, nil
 	}
 
