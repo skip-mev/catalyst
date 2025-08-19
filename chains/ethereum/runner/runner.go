@@ -281,6 +281,7 @@ loop:
 	}
 
 	wg.Wait()
+	close(collectionChannel)
 
 	r.sentTxs = sentTxs
 
