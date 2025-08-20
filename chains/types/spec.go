@@ -11,12 +11,12 @@ type LoadTestSpec struct {
 	Name        string        `yaml:"name" json:"name"`
 	Description string        `yaml:"description" json:"description"`
 	Kind        string        `yaml:"kind" json:"kind"` // "cosmos" | "evm" (discriminator)
-	ChainID     string        `yaml:"chain_id" json:"chain_id"`
-	NumOfTxs    int           `yaml:"num_of_txs,omitempty" json:"num_of_txs,omitempty"`
-	NumOfBlocks int           `yaml:"num_of_blocks" json:"num_of_blocks"`
+	ChainID     string        `yaml:"chain_id" json:"chainId"`
+	NumOfTxs    int           `yaml:"num_of_txs,omitempty" json:"numOfTxs,omitempty"`
+	NumOfBlocks int           `yaml:"num_of_blocks" json:"numOfBlocks"`
 	Mnemonics   []string      `yaml:"mnemonics" json:"mnemonics"`
 	Msgs        []LoadTestMsg `yaml:"msgs" json:"msgs"`
-	TxTimeout   time.Duration `yaml:"tx_timeout,omitempty" json:"tx_timeout,omitempty"`
+	TxTimeout   time.Duration `yaml:"tx_timeout,omitempty" json:"txTimeout,omitempty"`
 	ChainCfg    ChainConfig   `yaml:"-" json:"-"` // decoded via custom UnmarshalYAML
 }
 
