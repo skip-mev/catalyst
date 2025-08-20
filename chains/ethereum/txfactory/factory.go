@@ -7,7 +7,6 @@ import (
 	"math/big"
 	"math/rand"
 	"sync"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -24,39 +23,81 @@ type TxFactory struct {
 	logger            *zap.Logger
 	wallets           []*ethwallet.InteractingWallet
 	contractAddresses []common.Address
-	maxContracts      uint64
 	mu                sync.Mutex
 	txOpts            ethtypes.TxOpts
+
+	// baseLines are baseline transactions for a given message type. This is useful for upfront load building.
+	// Instead of using the client to make gas estimations over and over again for the same tx, we can just re-use these initial values.
+	// Be sure to call txFactory.SetBaseLines before using this.
+	baseLines map[loadtesttypes.MsgType][]*types.Transaction
 }
 
-var defaultMaxContracts = uint64(10)
+func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet, txOpts ethtypes.TxOpts) *TxFactory {
+	return &TxFactory{logger: logger.With(zap.String("module", "tx_factory")), wallets: wallets, mu: sync.Mutex{}, txOpts: txOpts, baseLines: map[loadtesttypes.MsgType][]*types.Transaction{}}
+}
 
-func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet, maxContracts uint64, txOpts ethtypes.TxOpts) *TxFactory {
-	if maxContracts <= 0 {
-		maxContracts = defaultMaxContracts
+// SetBaselines sets the baseline transaction for each message type.
+func (f *TxFactory) SetBaselines(ctx context.Context) error {
+	f.logger.Info("Setting baselines for transactions...")
+	for _, msg := range ethtypes.ValidMessages {
+		wallet := f.wallets[rand.Intn(len(f.wallets))]
+		nonce, err := wallet.GetNonce(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get nonce of %s: %w", wallet.FormattedAddress(), err)
+		}
+		spec := loadtesttypes.LoadTestMsg{
+			Type:    msg,
+			NumMsgs: 1,
+		}
+		txs, err := f.BuildTxs(spec, wallet, nonce, false)
+		if err != nil {
+			return fmt.Errorf("failed to build txs: %w", err)
+		}
+		f.baseLines[msg] = txs
 	}
-	return &TxFactory{logger: logger.With(zap.String("module", "tx_factory")), wallets: wallets, mu: sync.Mutex{}, maxContracts: maxContracts, txOpts: txOpts}
+	return nil
 }
 
-func (f *TxFactory) BuildTxs(msgSpec loadtesttypes.LoadTestMsg, fromWallet *ethwallet.InteractingWallet, nonce uint64) ([]*types.Transaction, error) {
+// applyBaselinesToTxOpts applies baseline transaction values to transact options, while respecting
+// the static gas values set by the user in the spec..
+func applyBaselinesToTxOpts(baselineTx *types.Transaction, txOpts *bind.TransactOpts) {
+	if txOpts.GasPrice != nil {
+		txOpts.GasPrice = baselineTx.GasPrice()
+	}
+	if txOpts.GasTipCap != nil {
+		txOpts.GasTipCap = baselineTx.GasTipCap()
+	}
+	if txOpts.GasFeeCap != nil {
+		txOpts.GasFeeCap = baselineTx.GasFeeCap()
+	}
+	txOpts.GasLimit = baselineTx.Gas()
+}
+
+// BuildTxs builds the transactions for the message.
+// NOTE: This function does NOT return NumMsgs amount of transactions. This logic is delegated one level above, in runner,
+// to allow for easier nonce/wallet management.
+// UseBaseline can be specified if you want the tx to use the baseline gas values instead of estimating via network client.
+// This is useful for the runOnInterval loadtest, which builds all of its load up front. For heavy loads,
+// building with baselines speeds up load building by an extremely large order of magnitude.
+func (f *TxFactory) BuildTxs(msgSpec loadtesttypes.LoadTestMsg, fromWallet *ethwallet.InteractingWallet, nonce uint64, useBaseline bool) ([]*types.Transaction, error) {
 	ctx := context.Background()
 	switch msgSpec.Type {
 	case ethtypes.MsgCreateContract:
-		return f.createMsgCreateContract(ctx, fromWallet, nil, nonce)
+		return f.createMsgCreateContract(ctx, fromWallet, nil, nonce, useBaseline)
 	case ethtypes.MsgWriteTo:
-		tx, err := f.createMsgWriteTo(ctx, fromWallet, msgSpec.NumOfIterations, nonce)
+		tx, err := f.createMsgWriteTo(ctx, fromWallet, msgSpec.NumOfIterations, nonce, useBaseline)
 		if err != nil {
 			return nil, err
 		}
 		return []*types.Transaction{tx}, nil
 	case ethtypes.MsgCallDataBlast:
-		tx, err := f.createMsgCallDataBlast(ctx, fromWallet, msgSpec.CalldataSize, nonce)
+		tx, err := f.createMsgCallDataBlast(ctx, fromWallet, msgSpec.CalldataSize, nonce, useBaseline)
 		if err != nil {
 			return nil, err
 		}
 		return []*types.Transaction{tx}, nil
 	case ethtypes.MsgCrossContractCall:
-		tx, err := f.createMsgCrossContractCall(ctx, fromWallet, msgSpec.NumOfIterations, nonce)
+		tx, err := f.createMsgCrossContractCall(ctx, fromWallet, msgSpec.NumOfIterations, nonce, useBaseline)
 		if err != nil {
 			return nil, err
 		}
@@ -70,7 +111,7 @@ func (f *TxFactory) SetContractAddrs(addrs ...common.Address) {
 	f.contractAddresses = append(f.contractAddresses, addrs...)
 }
 
-func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *ethwallet.InteractingWallet, targets *int, nonce uint64) ([]*types.Transaction, error) {
+func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *ethwallet.InteractingWallet, targets *int, nonce uint64, useBaseline bool) ([]*types.Transaction, error) {
 	var numTargets int
 	if targets != nil {
 		numTargets = *targets
@@ -82,25 +123,7 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 	// Deploy target contracts first
 	targetDeployTxs := make([]*types.Transaction, 0, numTargets)
 	targetContractAddrs := make([]common.Address, 0, numTargets)
-	for i := 0; i < numTargets; i++ {
-		addr, tx, _, err := target.DeployTarget(&bind.TransactOpts{
-			From:      fromWallet.Address(),
-			Signer:    fromWallet.SignerFnLegacy(),
-			Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
-			GasTipCap: f.txOpts.GasTipCap,
-			GasFeeCap: f.txOpts.GasFeeCap,
-			GasPrice:  f.txOpts.GasPrice,
-			Context:   ctx,
-			NoSend:    true,
-		}, fromWallet.GetClient())
-		if err != nil {
-			return nil, fmt.Errorf("failed to create target contract transaction: %w", err)
-		}
-		targetContractAddrs = append(targetContractAddrs, addr)
-		targetDeployTxs = append(targetDeployTxs, tx)
-		nonce++
-	}
-	_, loaderDeployTx, _, err := loader.DeployLoader(&bind.TransactOpts{
+	txOpts := &bind.TransactOpts{
 		From:      fromWallet.Address(),
 		Signer:    fromWallet.SignerFnLegacy(),
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
@@ -109,48 +132,39 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
-	}, fromWallet.GetClient(), targetContractAddrs)
+	}
+	if useBaseline {
+		// CreateContract creates n>2 contracts. The first n contracts are embedded, the last is the loader.
+		baseLineTx := f.baseLines[ethtypes.MsgCreateContract][0]
+		applyBaselinesToTxOpts(baseLineTx, txOpts)
+	}
+
+	for range numTargets {
+		txOpts.Nonce = big.NewInt(int64(nonce)) //nolint:gosec // G115: overflow unlikely in practice
+		addr, tx, _, err := target.DeployTarget(txOpts, fromWallet.GetClient())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create target contract transaction: %w", err)
+		}
+		targetContractAddrs = append(targetContractAddrs, addr)
+		targetDeployTxs = append(targetDeployTxs, tx)
+		nonce++
+	}
+
+	if useBaseline {
+		txs := f.baseLines[ethtypes.MsgCreateContract]
+		baselineTx := f.baseLines[ethtypes.MsgCreateContract][len(txs)-1]
+		applyBaselinesToTxOpts(baselineTx, txOpts)
+	}
+	txOpts.Nonce = big.NewInt(int64(nonce)) //nolint:gosec // G115: overflow unlikely in practice
+	_, loaderDeployTx, _, err := loader.DeployLoader(txOpts, fromWallet.GetClient(), targetContractAddrs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create loader contract transaction: %w", err)
 	}
 
-	// we dont need that many contracts in memory.
-	if uint64(len(f.contractAddresses)) < f.maxContracts {
-		f.updateContractAddressesAsync(ctx, loaderDeployTx.Hash())
-	}
 	return append(targetDeployTxs, loaderDeployTx), nil
 }
 
-func (f *TxFactory) updateContractAddressesAsync(ctx context.Context, txHash common.Hash) {
-	go func() {
-		retires := 30
-		delay := 500 * time.Millisecond
-		client := f.wallets[0].GetClient()
-		for i := 0; i < retires; i++ {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-			receipt, err := ethwallet.GetTxReceipt(ctx, client, txHash)
-			if err == nil {
-				if receipt.Status != types.ReceiptStatusSuccessful {
-					f.logger.Debug("unable to update contract address: tx failed", zap.String("tx_hash", txHash.String()))
-				} else {
-					f.logger.Debug("updating contract address for tx", zap.String("tx_hash", txHash.String()))
-					f.mu.Lock()
-					f.contractAddresses = append(f.contractAddresses, receipt.ContractAddress)
-					f.mu.Unlock()
-				}
-				return
-			}
-			time.Sleep(delay)
-		}
-		f.logger.Debug("unable to update contract addresses for tx", zap.String("tx_hash", txHash.String()))
-	}()
-}
-
-func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.InteractingWallet, iterations int, nonce uint64) (*types.Transaction, error) {
+func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.InteractingWallet, iterations int, nonce uint64, useBaseline bool) (*types.Transaction, error) {
 	if iterations <= 0 {
 		iterations = 3
 	}
@@ -166,7 +180,7 @@ func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.
 	if err != nil {
 		return nil, fmt.Errorf("failed to get loader contract instance at %s: %w", contractAddr.String(), err)
 	}
-	tx, err := loaderInstance.TestStorageWrites(&bind.TransactOpts{
+	txOpts := &bind.TransactOpts{
 		From:      fromWallet.Address(),
 		Signer:    fromWallet.SignerFnLegacy(),
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
@@ -175,14 +189,19 @@ func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.
 		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
-	}, big.NewInt(int64(iterations)))
+	}
+	if useBaseline {
+		baseLineTx := f.baseLines[ethtypes.MsgWriteTo][0]
+		applyBaselinesToTxOpts(baseLineTx, txOpts)
+	}
+	tx, err := loaderInstance.TestStorageWrites(txOpts, big.NewInt(int64(iterations)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tx for writeTo function at %s: %w", contractAddr.String(), err)
 	}
 	return tx, nil
 }
 
-func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *ethwallet.InteractingWallet, dataSize int, nonce uint64) (*types.Transaction, error) {
+func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *ethwallet.InteractingWallet, dataSize int, nonce uint64, useBaseline bool) (*types.Transaction, error) {
 	if len(f.contractAddresses) == 0 {
 		return nil, nil
 	}
@@ -202,7 +221,7 @@ func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *ethw
 	if err != nil {
 		return nil, fmt.Errorf("failed to get loader contract instance at %s: %w", contractAddr.String(), err)
 	}
-	tx, err := loaderInstance.TestLargeCalldata(&bind.TransactOpts{
+	txOpts := &bind.TransactOpts{
 		From:      fromWallet.Address(),
 		Signer:    fromWallet.SignerFnLegacy(),
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
@@ -211,14 +230,19 @@ func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *ethw
 		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
-	}, randomBytes)
+	}
+	if useBaseline {
+		baseLineTx := f.baseLines[ethtypes.MsgCallDataBlast][0]
+		applyBaselinesToTxOpts(baseLineTx, txOpts)
+	}
+	tx, err := loaderInstance.TestLargeCalldata(txOpts, randomBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tx for testLargeCallData function at %s: %w", contractAddr.String(), err)
 	}
 	return tx, nil
 }
 
-func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *ethwallet.InteractingWallet, iterations int, nonce uint64) (*types.Transaction, error) {
+func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *ethwallet.InteractingWallet, iterations int, nonce uint64, useBaseline bool) (*types.Transaction, error) {
 	// Default to 10 iterations if not specified
 	if iterations <= 0 {
 		iterations = 10
@@ -234,7 +258,7 @@ func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *
 	if err != nil {
 		return nil, fmt.Errorf("failed to get loader contract instance at %s: %w", contractAddr.String(), err)
 	}
-	tx, err := loaderInstance.TestCrossContractCalls(&bind.TransactOpts{
+	txOpts := &bind.TransactOpts{
 		From:      fromWallet.Address(),
 		Signer:    fromWallet.SignerFnLegacy(),
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
@@ -243,7 +267,12 @@ func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *
 		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
-	}, big.NewInt(int64(iterations)))
+	}
+	if useBaseline {
+		baseLineTx := f.baseLines[ethtypes.MsgCrossContractCall][0]
+		applyBaselinesToTxOpts(baseLineTx, txOpts)
+	}
+	tx, err := loaderInstance.TestCrossContractCalls(txOpts, big.NewInt(int64(iterations)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tx for writeTo function at %s: %w", contractAddr.String(), err)
 	}

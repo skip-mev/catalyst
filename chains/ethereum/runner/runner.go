@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ethhd "github.com/cosmos/evm/crypto/hd"
+	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -30,10 +31,11 @@ type Runner struct {
 	clients   []*ethclient.Client
 	wsClients []*ethclient.Client
 
-	spec      loadtesttypes.LoadTestSpec
-	nonces    *sync.Map
-	wallets   []*wallet.InteractingWallet
-	collector metrics.Collector
+	spec        loadtesttypes.LoadTestSpec
+	chainConfig inttypes.ChainConfig
+	nonces      *sync.Map
+	wallets     []*wallet.InteractingWallet
+	collector   metrics.Collector
 
 	txFactory *txfactory.TxFactory
 
@@ -64,7 +66,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		return nil, err
 	}
 
-	txf := txfactory.NewTxFactory(logger, wallets, chainCfg.MaxContracts, chainCfg.TxOpts)
+	txf := txfactory.NewTxFactory(logger, wallets, chainCfg.TxOpts)
 	nonces := sync.Map{}
 	for _, wallet := range wallets {
 		nonce, err := wallet.GetNonce(ctx)
@@ -79,6 +81,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		clients:         clients,
 		wsClients:       wsClients,
 		spec:            spec,
+		chainConfig:     *chainCfg,
 		wallets:         wallets,
 		txFactory:       txf,
 		sentTxs:         make([]*inttypes.SentTx, 0, 100),
@@ -133,35 +136,60 @@ func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
 	r.collector.PrintResults(result)
 }
 
-// deployInitialContract deploys an initial contract, so that messages that rely on a deployed contract can run.
-func (r *Runner) deployInitialContract(ctx context.Context) error {
-	contractDeploy := loadtesttypes.LoadTestMsg{
-		Type:    inttypes.MsgCreateContract,
-		NumMsgs: 1,
+// deployInitialContracts deploys an initial contract, so that messages that rely on a deployed contract can run.
+func (r *Runner) deployInitialContracts(ctx context.Context) error {
+	numInitialDeploy := r.chainConfig.NumInitialContracts
+	if numInitialDeploy == 0 {
+		numInitialDeploy = 5
+	}
+	contractDeploy := loadtesttypes.LoadTestMsg{Type: inttypes.MsgCreateContract}
+
+	loaderDeployTxs := make([]*gethtypes.Transaction, 0)
+	for range numInitialDeploy {
+		txs, err := r.buildLoad(contractDeploy, false)
+		if err != nil {
+			return fmt.Errorf("failed to deploy contracts in PreRun: %w", err)
+		}
+		for _, tx := range txs {
+			if err := r.wallets[0].SendTransaction(ctx, tx); err != nil {
+				return fmt.Errorf("failed to send transaction in PreRun: %w", err)
+			}
+		}
+		// the loader contract embeds multiple contracts inside it to support cross-contract call
+		// load test messages. the loader contract itself is always the last tx in the group.
+		// the first txs are for the subcontracts.
+		loaderDeployTx := txs[len(txs)-1]
+		loaderDeployTxs = append(loaderDeployTxs, loaderDeployTx)
 	}
 
-	txs, err := r.buildLoad(contractDeploy)
-	if err != nil {
-		return fmt.Errorf("failed to deploy contracts in PreRun: %w", err)
+	loaderAddrs := make([]common.Address, len(loaderDeployTxs))
+	wg := sync.WaitGroup{}
+	for i, tx := range loaderDeployTxs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rec, err := r.wallets[rand.Intn(len(r.wallets))].WaitForTxReceipt(ctx, tx.Hash(), 5*time.Second)
+			if err == nil {
+				loaderAddrs[i] = rec.ContractAddress
+			} else {
+				r.logger.Error("failed to find receipt for initial contract tx", zap.Error(err))
+			}
+		}()
 	}
-	for _, tx := range txs {
-		if err := r.wallets[0].SendTransaction(ctx, tx); err != nil {
-			return fmt.Errorf("failed to send transaction in PreRun: %w", err)
+	wg.Wait()
+	for _, addr := range loaderAddrs {
+		if addr.Cmp(common.Address{}) != 0 {
+			r.txFactory.SetContractAddrs(addr)
 		}
 	}
-	// the loader contract embeds multiple contracts inside it to support cross-contract call
-	// load test messages. the loader contract itself is always the last tx in the group.
-	// the first txs are for the subcontracts.
-	loaderDeployTx := txs[len(txs)-1]
-	rec, err := r.wallets[0].WaitForTxReceipt(ctx, loaderDeployTx.Hash(), 10*time.Second)
-	if err != nil {
-		return fmt.Errorf("failed to get receipt for transaction in PreRun: %w", err)
-	}
-	r.txFactory.SetContractAddrs(rec.ContractAddress)
 	return nil
 }
 
 func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction, error) {
+	if err := r.txFactory.SetBaselines(ctx); err != nil {
+		return nil, fmt.Errorf("failed to set Baseline txs: %w", err)
+	}
+
 	r.logger.Info("Building load...", zap.Int("num_batches", r.spec.NumBatches))
 	batchLoads := make([][]*gethtypes.Transaction, 0, 100)
 	total := 0
@@ -174,7 +202,7 @@ func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction,
 			default:
 			}
 			for range msgSpec.NumMsgs {
-				txs, err := r.buildLoad(msgSpec)
+				txs, err := r.buildLoad(msgSpec, true)
 				if err != nil {
 					return nil, fmt.Errorf("failed to build load for %s: %w", msgSpec.Type, err)
 				}
@@ -203,7 +231,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
 	// deploy an initial contract. this is needed so that messages that rely on contract calls have something
 	// to call.
-	if err := r.deployInitialContract(ctx); err != nil {
+	if err := r.deployInitialContracts(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
 	// we build the full load upfront. that is, num_batches * [msg * msg spec amount].
@@ -330,8 +358,10 @@ func getTxType(tx *gethtypes.Transaction) string {
 // runOnBlocks runs the loadtest via block signal.
 // It sets up a subscription to block headers, then builds and deploys the load when it receives a header.
 func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
+	if err := r.deployInitialContracts(ctx); err != nil {
+		return loadtesttypes.LoadTestResult{}, err
+	}
 	startTime := time.Now()
-
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel() // Ensure cancel is always called
 
@@ -427,7 +457,7 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 	txs := make([]*gethtypes.Transaction, 0, len(r.spec.Msgs))
 	for _, msgSpec := range r.spec.Msgs {
 		for i := 0; i < msgSpec.NumMsgs; i++ {
-			load, err := r.buildLoad(msgSpec)
+			load, err := r.buildLoad(msgSpec, false)
 			if err != nil {
 				return 0, fmt.Errorf("failed to build load: %w", err)
 			}
@@ -473,7 +503,7 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 	return len(sentTxs), nil
 }
 
-func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg) ([]*gethtypes.Transaction, error) {
+func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
 	fromWallet := r.wallets[rand.Intn(len(r.wallets))]
 
 	nonce, ok := r.nonces.Load(fromWallet.Address())
@@ -481,7 +511,7 @@ func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg) ([]*gethtypes.Tran
 		// this really should not happen ever. better safe than sorry.
 		return nil, fmt.Errorf("nonce for wallet %s not found", fromWallet.Address())
 	}
-	txs, err := r.txFactory.BuildTxs(msgSpec, fromWallet, nonce.(uint64))
+	txs, err := r.txFactory.BuildTxs(msgSpec, fromWallet, nonce.(uint64), useBaseline)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tx for %q: %w", msgSpec.Type, err)
 	}
