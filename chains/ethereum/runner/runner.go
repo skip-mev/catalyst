@@ -10,6 +10,7 @@ import (
 	"time"
 
 	ethhd "github.com/cosmos/evm/crypto/hd"
+	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -30,14 +31,15 @@ type Runner struct {
 	clients   []*ethclient.Client
 	wsClients []*ethclient.Client
 
-	spec          loadtesttypes.LoadTestSpec
-	nonces        *sync.Map
-	wallets       []*wallet.InteractingWallet
-	blockGasLimit int64
-	collector     metrics.Collector
+	spec        loadtesttypes.LoadTestSpec
+	chainConfig inttypes.ChainConfig
+	nonces      *sync.Map
+	wallets     []*wallet.InteractingWallet
+	collector   metrics.Collector
 
-	txFactory       *txfactory.TxFactory
-	sentTxs         []inttypes.SentTx
+	txFactory *txfactory.TxFactory
+
+	sentTxs         []*inttypes.SentTx
 	blocksProcessed uint64
 }
 
@@ -64,7 +66,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		return nil, err
 	}
 
-	txf := txfactory.NewTxFactory(logger, wallets, chainCfg.MaxContracts)
+	txf := txfactory.NewTxFactory(logger, wallets, chainCfg.TxOpts)
 	nonces := sync.Map{}
 	for _, wallet := range wallets {
 		nonce, err := wallet.GetNonce(ctx)
@@ -79,13 +81,13 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		clients:         clients,
 		wsClients:       wsClients,
 		spec:            spec,
+		chainConfig:     *chainCfg,
 		wallets:         wallets,
 		txFactory:       txf,
-		sentTxs:         make([]inttypes.SentTx, 0, 100),
+		sentTxs:         make([]*inttypes.SentTx, 0, 100),
 		blocksProcessed: 0,
 		nonces:          &nonces,
 		collector:       metrics.NewCollector(logger, clients),
-		blockGasLimit:   30_000_000, // TODO: this is just the max of ethereum. the target is 15m. max is 30m.
 	}
 
 	return r, nil
@@ -134,9 +136,232 @@ func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
 	r.collector.PrintResults(result)
 }
 
+// deployInitialContracts deploys an initial contract, so that messages that rely on a deployed contract can run.
+func (r *Runner) deployInitialContracts(ctx context.Context) error {
+	numInitialDeploy := r.chainConfig.NumInitialContracts
+	if numInitialDeploy == 0 {
+		numInitialDeploy = 5
+	}
+	contractDeploy := loadtesttypes.LoadTestMsg{Type: inttypes.MsgCreateContract}
+
+	loaderDeployTxs := make([]*gethtypes.Transaction, 0)
+	for range numInitialDeploy {
+		txs, err := r.buildLoad(contractDeploy, false)
+		if err != nil {
+			return fmt.Errorf("failed to deploy contracts in PreRun: %w", err)
+		}
+		for _, tx := range txs {
+			if err := r.wallets[0].SendTransaction(ctx, tx); err != nil {
+				return fmt.Errorf("failed to send transaction in PreRun: %w", err)
+			}
+		}
+		// the loader contract embeds multiple contracts inside it to support cross-contract call
+		// load test messages. the loader contract itself is always the last tx in the group.
+		// the first txs are for the subcontracts.
+		loaderDeployTx := txs[len(txs)-1]
+		loaderDeployTxs = append(loaderDeployTxs, loaderDeployTx)
+	}
+
+	loaderAddrs := make([]common.Address, len(loaderDeployTxs))
+	wg := sync.WaitGroup{}
+	for i, tx := range loaderDeployTxs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rec, err := r.wallets[rand.Intn(len(r.wallets))].WaitForTxReceipt(ctx, tx.Hash(), 5*time.Second)
+			if err == nil {
+				loaderAddrs[i] = rec.ContractAddress
+			} else {
+				r.logger.Error("failed to find receipt for initial contract tx", zap.Error(err))
+			}
+		}()
+	}
+	wg.Wait()
+	for _, addr := range loaderAddrs {
+		if addr.Cmp(common.Address{}) != 0 {
+			r.txFactory.SetContractAddrs(addr)
+		}
+	}
+	return nil
+}
+
+func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction, error) {
+	if err := r.txFactory.SetBaselines(ctx); err != nil {
+		return nil, fmt.Errorf("failed to set Baseline txs: %w", err)
+	}
+
+	r.logger.Info("Building load...", zap.Int("num_batches", r.spec.NumBatches))
+	batchLoads := make([][]*gethtypes.Transaction, 0, 100)
+	total := 0
+	for i := range r.spec.NumBatches {
+		batch := make([]*gethtypes.Transaction, 0)
+		for _, msgSpec := range r.spec.Msgs {
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("ctx cancelled during load building: %w", ctx.Err())
+			default:
+			}
+			for range msgSpec.NumMsgs {
+				txs, err := r.buildLoad(msgSpec, true)
+				if err != nil {
+					return nil, fmt.Errorf("failed to build load for %s: %w", msgSpec.Type, err)
+				}
+				batch = append(batch, txs...)
+				total += len(txs)
+			}
+		}
+		r.logger.Info(fmt.Sprintf("built batch %d/%d", i+1, r.spec.NumBatches))
+		batchLoads = append(batchLoads, batch)
+	}
+	r.logger.Info("Load built, starting loadtest", zap.Int("total_txs", total))
+	return batchLoads, nil
+}
+
 func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
+	// when batches and interval are specified, user wants to run on a timed interval
+	if r.spec.NumBatches > 0 && r.spec.SendInterval > 0 {
+		r.logger.Info("Running loadtest on interval", zap.Duration("interval", r.spec.SendInterval), zap.Int("num_batches", r.spec.NumBatches))
+		return r.runOnInterval(ctx)
+	}
+	// otherwise we run on blocks
+	return r.runOnBlocks(ctx)
+}
+
+// runOnInterval starts the runner configured for interval load sending.
+func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
+	// deploy an initial contract. this is needed so that messages that rely on contract calls have something
+	// to call.
+	if err := r.deployInitialContracts(ctx); err != nil {
+		return loadtesttypes.LoadTestResult{}, err
+	}
+	// we build the full load upfront. that is, num_batches * [msg * msg spec amount].
+	batchLoads, err := r.buildFullLoad(ctx)
+	if err != nil {
+		return loadtesttypes.LoadTestResult{}, err
+	}
+	amountPerBatch := len(batchLoads[0])
+	total := len(batchLoads) * amountPerBatch
+
+	crank := time.NewTicker(r.spec.SendInterval)
+	defer crank.Stop()
+
+	// load index is the index into the batchLoads slice.
+	loadIndex := 0
 	startTime := time.Now()
 
+	// go routines will send transactions and then push results to collectionChannel.
+	mu := &sync.Mutex{}
+	sentTxs := make([]*inttypes.SentTx, 0, total)
+	collectionChannel := make(chan *inttypes.SentTx, amountPerBatch)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case tx, ok := <-collectionChannel:
+				if !ok { // channel closed
+					return
+				}
+				mu.Lock()
+				sentTxs = append(sentTxs, tx)
+				mu.Unlock()
+			}
+		}
+	}()
+
+	// waitgroup for every tx
+	wg := sync.WaitGroup{}
+
+loop:
+	for {
+		select {
+		case <-crank.C:
+			// get the load, initialize result slice.
+			load := batchLoads[loadIndex]
+			r.logger.Info("Sending txs", zap.Int("num_txs", len(load)))
+
+			// send each tx in a go routine.
+			for i, tx := range load {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: loadtesttypes.MsgType(getTxType(tx))}
+					// send the tx from a random wallet.
+					wallet := r.wallets[rand.Intn(len(r.wallets))]
+					err := wallet.SendTransaction(ctx, tx)
+					if err != nil {
+						r.logger.Error("failed to send tx", zap.Error(err), zap.Int("index", i), zap.Int("load_index", loadIndex))
+						sentTx.Err = err
+					}
+					collectionChannel <- &sentTx
+				}()
+			}
+
+			loadIndex++
+			if loadIndex >= len(batchLoads) {
+				// exit the loadtest loop. we have finished.
+				break loop
+			}
+		case <-ctx.Done(): // A channel to signal stopping the ticker
+			return loadtesttypes.LoadTestResult{}, fmt.Errorf("ctx cancelled during load firing: %w", ctx.Err())
+		}
+	}
+
+	r.logger.Info("All transactions sent. Waiting for go routines to finish")
+	wg.Wait()
+	close(collectionChannel)
+	r.logger.Info("go routines have completed", zap.Int("total_txs", len(sentTxs)))
+	r.sentTxs = sentTxs
+
+	// sleep for the txs to complete.
+	// it is possible many txs are still in the mempool.
+	// we dont want the collector to start looking for receipts until we have given the EVM time to process. (it is a very emotional state machine)
+	waitDuration := 1 * time.Minute
+	r.logger.Info("Loadtest complete. Sleeping for all txs to complete...", zap.Duration("wait_duration", waitDuration))
+	timer := time.NewTimer(waitDuration)
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		timer.Stop()
+		r.logger.Info("Timer stopped early")
+		break
+	}
+
+	collectorStartTime := time.Now()
+
+	// build clients for collector.
+	clients := make([]wallet.Client, 0, len(r.wallets))
+	for _, wallet := range r.wallets {
+		clients = append(clients, wallet.GetClient())
+	}
+
+	// collect metrics.
+	r.logger.Info("Collecting metrics", zap.Int("num_txs", len(r.sentTxs)))
+	r.collector.GroupSentTxs(ctx, r.sentTxs, clients, startTime)
+	// we pass in 0 for the numOfBlockRequested, because we are not running a block based loadtest.
+	// The collector understands that 0 means we are on a time interval loadtest.
+	collectorResults := r.collector.ProcessResults(0)
+
+	collectorEndTime := time.Now()
+	r.logger.Debug("collector running time",
+		zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))
+	return collectorResults, nil
+}
+
+func getTxType(tx *gethtypes.Transaction) string {
+	if tx.To() == nil {
+		return "contract_deploy"
+	}
+	return "contract_call"
+}
+
+// runOnBlocks runs the loadtest via block signal.
+// It sets up a subscription to block headers, then builds and deploys the load when it receives a header.
+func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
+	if err := r.deployInitialContracts(ctx); err != nil {
+		return loadtesttypes.LoadTestResult{}, err
+	}
+	startTime := time.Now()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel() // Ensure cancel is always called
 
@@ -217,7 +442,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 			clients = append(clients, wallet.GetClient())
 		}
 		r.collector.GroupSentTxs(ctx, r.sentTxs, clients, startTime)
-		collectorResults := r.collector.ProcessResults(r.blockGasLimit, r.spec.NumOfBlocks)
+		collectorResults := r.collector.ProcessResults(r.spec.NumOfBlocks)
 		collectorEndTime := time.Now()
 		r.logger.Debug("collector running time",
 			zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))
@@ -231,9 +456,8 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 	r.logger.Debug("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
 	txs := make([]*gethtypes.Transaction, 0, len(r.spec.Msgs))
 	for _, msgSpec := range r.spec.Msgs {
-		r.logger.Debug("building load", zap.String("type", msgSpec.Type.String()), zap.Int("num_msgs", msgSpec.NumMsgs))
 		for i := 0; i < msgSpec.NumMsgs; i++ {
-			load, err := r.buildLoad(msgSpec)
+			load, err := r.buildLoad(msgSpec, false)
 			if err != nil {
 				return 0, fmt.Errorf("failed to build load: %w", err)
 			}
@@ -246,7 +470,7 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 
 	// submit each tx in a go routine
 	wg := sync.WaitGroup{}
-	sentTxs := make([]inttypes.SentTx, len(txs))
+	sentTxs := make([]*inttypes.SentTx, len(txs))
 	for i, tx := range txs {
 		wg.Add(1)
 		go func() {
@@ -263,7 +487,7 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 			if tx.To() == nil {
 				txType = "contract_creation"
 			}
-			sentTxs[i] = inttypes.SentTx{
+			sentTxs[i] = &inttypes.SentTx{
 				TxHash:      tx.Hash(),
 				NodeAddress: "", // TODO: figure out what to do here.
 				MsgType:     loadtesttypes.MsgType(txType),
@@ -279,7 +503,7 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 	return len(sentTxs), nil
 }
 
-func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg) ([]*gethtypes.Transaction, error) {
+func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
 	fromWallet := r.wallets[rand.Intn(len(r.wallets))]
 
 	nonce, ok := r.nonces.Load(fromWallet.Address())
@@ -287,7 +511,7 @@ func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg) ([]*gethtypes.Tran
 		// this really should not happen ever. better safe than sorry.
 		return nil, fmt.Errorf("nonce for wallet %s not found", fromWallet.Address())
 	}
-	txs, err := r.txFactory.BuildTxs(msgSpec, fromWallet, nonce.(uint64))
+	txs, err := r.txFactory.BuildTxs(msgSpec, fromWallet, nonce.(uint64), useBaseline)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tx for %q: %w", msgSpec.Type, err)
 	}

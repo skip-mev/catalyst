@@ -1,6 +1,7 @@
 package types_test
 
 import (
+	"math/big"
 	"testing"
 	"time"
 
@@ -39,6 +40,37 @@ func TestLoadTestSpec_Marshal_Unmarshal_Eth(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, spec, otherLoadtestSpec)
+}
+
+func TestEthereum(t *testing.T) {
+	yml := []byte(`
+name: worker
+description: eth load test
+kind: eth
+chain_id: 2341
+num_of_blocks: 200
+mnemonics: ["seed phrase goes here"]
+tx_timeout: "30s"
+chain_config:
+  tx_opts:
+    gas_fee_cap: 1000000000000
+    gas_tip_cap: 1000000000000
+`)
+
+	var spec loadtesttypes.LoadTestSpec
+
+	if err := yaml.Unmarshal(yml, &spec); err != nil {
+		t.Fatalf("yaml.Unmarshal failed: %v", err)
+	}
+
+	cfg, ok := spec.ChainCfg.(*ethtypes.ChainConfig)
+	require.True(t, ok)
+	expectedTxOpts := ethtypes.TxOpts{
+		GasPrice:  nil,
+		GasFeeCap: big.NewInt(1000000000000),
+		GasTipCap: big.NewInt(1000000000000),
+	}
+	require.Equal(t, expectedTxOpts, cfg.TxOpts)
 }
 
 func TestLoadTestSpec_Unmarshal_Cosmos(t *testing.T) {

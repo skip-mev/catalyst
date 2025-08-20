@@ -27,9 +27,9 @@ type Collector struct {
 	startTime         time.Time
 	endTime           time.Time
 	blocksProcessed   int
-	txsByBlock        map[int64][]types.SentTx
-	txsByNode         map[string][]types.SentTx
-	txsByMsgType      map[loadtesttypes.MsgType][]types.SentTx
+	txsByBlock        map[int64][]*types.SentTx
+	txsByNode         map[string][]*types.SentTx
+	txsByMsgType      map[loadtesttypes.MsgType][]*types.SentTx
 	gasUsageByMsgType map[loadtesttypes.MsgType][]int64
 	txNotFoundCount   int
 	logger            *zap.Logger
@@ -38,9 +38,9 @@ type Collector struct {
 // NewCollector creates a new metrics collector
 func NewCollector(logger *zap.Logger, clients []*ethclient.Client) Collector {
 	return Collector{
-		txsByBlock:        make(map[int64][]types.SentTx),
-		txsByNode:         make(map[string][]types.SentTx),
-		txsByMsgType:      make(map[loadtesttypes.MsgType][]types.SentTx),
+		txsByBlock:        make(map[int64][]*types.SentTx),
+		txsByNode:         make(map[string][]*types.SentTx),
+		txsByMsgType:      make(map[loadtesttypes.MsgType][]*types.SentTx),
 		gasUsageByMsgType: make(map[loadtesttypes.MsgType][]int64),
 		logger:            logger.With(zap.String("module", "eth_metrics_collector")),
 		clients:           clients,
@@ -48,7 +48,7 @@ func NewCollector(logger *zap.Logger, clients []*ethclient.Client) Collector {
 }
 
 // GroupSentTxs groups sent txs by block, node, and message type
-func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, clients []wallet.Client, startTime time.Time) {
+func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []*types.SentTx, clients []wallet.Client, startTime time.Time) {
 	m.startTime = startTime
 	m.endTime = time.Now()
 
@@ -92,12 +92,12 @@ func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, cl
 					tx.Receipt = txReceipt
 
 					mu.Lock()
-					m.txsByBlock[tx.Receipt.BlockNumber.Int64()] = append(m.txsByBlock[tx.Receipt.BlockNumber.Int64()], *tx)
+					m.txsByBlock[tx.Receipt.BlockNumber.Int64()] = append(m.txsByBlock[tx.Receipt.BlockNumber.Int64()], tx)
 
 					if tx.Receipt.GasUsed > 0 {
 						m.gasUsageByMsgType[tx.MsgType] = append(m.gasUsageByMsgType[tx.MsgType], int64(tx.Receipt.GasUsed)) //nolint:gosec // G115: overflow unlikely in practice
 					}
-					sentTxs[work.index] = *tx
+					sentTxs[work.index] = tx
 					mu.Unlock()
 				}
 			}
@@ -105,7 +105,7 @@ func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, cl
 	}
 
 	for i := range sentTxs {
-		tx := &sentTxs[i]
+		tx := sentTxs[i]
 
 		if tx.Err == nil {
 			workChan <- workItem{index: i, tx: tx}
@@ -119,9 +119,9 @@ func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, cl
 	m.logger.Info("Completed processing transactions", zap.Int("tx_not_found_count", m.txNotFoundCount))
 
 	for i := range sentTxs {
-		tx := &sentTxs[i]
-		m.txsByNode[tx.NodeAddress] = append(m.txsByNode[tx.NodeAddress], *tx)
-		m.txsByMsgType[tx.MsgType] = append(m.txsByMsgType[tx.MsgType], *tx)
+		tx := sentTxs[i]
+		m.txsByNode[tx.NodeAddress] = append(m.txsByNode[tx.NodeAddress], tx)
+		m.txsByMsgType[tx.MsgType] = append(m.txsByMsgType[tx.MsgType], tx)
 	}
 
 	m.blocksProcessed = len(m.txsByBlock)
@@ -232,11 +232,15 @@ func (m *Collector) processNodeStats(result *loadtesttypes.LoadTestResult) {
 }
 
 // processBlockStats processes statistics for each block
-func (m *Collector) processBlockStats(result *loadtesttypes.LoadTestResult, gasLimit int64, numberOfBlocksRequested int) {
+func (m *Collector) processBlockStats(result *loadtesttypes.LoadTestResult, numberOfBlocksRequested int) {
 	blockHeights := slices.Sorted(maps.Keys(m.txsByBlock))
-	// ignore any extra blocks where txs landed in block
+	// Ignore any extra blocks where txs landed in block
 	// will just take heights[start->start+requested]
-	if len(blockHeights) > numberOfBlocksRequested {
+	//
+	// We don't want to truncate if numberOfBlocks is <=0.
+	// numberOfBlocksRequested is only non-zero when the loadtest configuration is set to crank via blocks.
+	// When using a timed interval, we don't need to constrict the blocks we look at.
+	if numberOfBlocksRequested > 0 && len(blockHeights) > numberOfBlocksRequested {
 		m.logger.Info("found extra blocks, excluding from gas utilization stats",
 			zap.Int("number_of_blocks_requested", numberOfBlocksRequested),
 			zap.Int("number_of_blocks_found", len(blockHeights)),
@@ -248,6 +252,7 @@ func (m *Collector) processBlockStats(result *loadtesttypes.LoadTestResult, gasL
 
 	result.ByBlock = make([]loadtesttypes.BlockStat, 0, len(blockHeights))
 	var totalGasUtilization float64
+	var gasLimit int64
 	for _, height := range blockHeights {
 		var timestamp time.Time
 		blk, err := m.clients[0].BlockByNumber(ctx, big.NewInt(height))
@@ -304,7 +309,7 @@ func (m *Collector) processBlockStats(result *loadtesttypes.LoadTestResult, gasL
 }
 
 // ProcessResults returns the final load test results
-func (m *Collector) ProcessResults(gasLimit int64, numOfBlocksRequested int) loadtesttypes.LoadTestResult {
+func (m *Collector) ProcessResults(numOfBlocksRequested int) loadtesttypes.LoadTestResult {
 	result := loadtesttypes.LoadTestResult{
 		Overall: loadtesttypes.OverallStats{
 			StartTime:       m.startTime,
@@ -341,7 +346,7 @@ func (m *Collector) ProcessResults(gasLimit int64, numOfBlocksRequested int) loa
 
 	go func() {
 		defer wg.Done()
-		m.processBlockStats(&result, gasLimit, numOfBlocksRequested)
+		m.processBlockStats(&result, numOfBlocksRequested)
 	}()
 
 	wg.Wait()
