@@ -166,7 +166,7 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 
 func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.InteractingWallet, iterations int, nonce uint64, useBaseline bool) (*types.Transaction, error) {
 	if iterations <= 0 {
-		iterations = 3
+		iterations = 1
 	}
 	if len(f.contractAddresses) == 0 {
 		f.logger.Debug("no contract addresses for tx")
