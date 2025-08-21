@@ -11,11 +11,11 @@ import (
 
 	ethhd "github.com/cosmos/evm/crypto/hd"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
-	"github.com/skip-mev/catalyst/chains/ethereum/metrics/collector"
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
@@ -36,7 +36,6 @@ type Runner struct {
 	chainConfig inttypes.ChainConfig
 	nonces      *sync.Map
 	wallets     []*wallet.InteractingWallet
-	collector   metrics.Collector
 
 	txFactory *txfactory.TxFactory
 
@@ -90,7 +89,6 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		sentTxs:         make([]*inttypes.SentTx, 0, 100),
 		blocksProcessed: 0,
 		nonces:          &nonces,
-		collector:       metrics.NewCollector(logger, clients),
 	}
 
 	return r, nil
@@ -136,7 +134,7 @@ func buildWallets(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) 
 }
 
 func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
-	collector.PrintResults(result)
+	metrics.PrintResults(result)
 }
 
 // deployInitialContracts deploys an initial contract, so that messages that rely on a deployed contract can run.
@@ -321,28 +319,15 @@ loop:
 	r.logger.Info("go routines have completed", zap.Int("total_txs", len(sentTxs)))
 	r.sentTxs = sentTxs
 
-	// sleep for the txs to complete.
-	// it is possible many txs are still in the mempool.
-	// we dont want the collector to start looking for receipts until we have given the EVM time to process. (it is a very emotional state machine)
-	waitDuration := 5 * time.Second
-	r.logger.Info("Loadtest complete. Sleeping for all txs to complete...", zap.Duration("wait_duration", waitDuration))
+	r.logger.Info("Loadtest complete. Waiting for mempool to clear")
 
-	timer := time.NewTimer(waitDuration)
-	select {
-	case <-timer.C:
-	case <-ctx.Done():
-		timer.Stop()
-		r.logger.Info("Timer stopped early")
-		break
-	}
+	r.waitForEmptyMempool(ctx, 1*time.Minute)
 
 	blockNum, err = r.wallets[0].GetClient().BlockNumber(ctx)
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get ending block number: %w", err)
 	}
 	r.endingBlock = blockNum
-
-	collectorStartTime := time.Now()
 
 	// build clients for collector.
 	clients := make([]wallet.Client, 0, len(r.wallets))
@@ -354,14 +339,13 @@ loop:
 	r.logger.Info("Collecting metrics", zap.Int("num_txs", len(r.sentTxs)))
 	// we pass in 0 for the numOfBlockRequested, because we are not running a block based loadtest.
 	// The collector understands that 0 means we are on a time interval loadtest.
-	collectorResults, err := collector.ProcessResults(ctx, r.logger, r.sentTxs, r.startingBlock, r.endingBlock, clients)
+	collectorStartTime := time.Now()
+	collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, r.startingBlock, r.endingBlock, clients)
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to collect metrics: %w", err)
 	}
-
-	collectorEndTime := time.Now()
 	r.logger.Debug("collector running time",
-		zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))
+		zap.Float64("duration_seconds", time.Since(collectorStartTime).Seconds()))
 	return *collectorResults, nil
 }
 
@@ -378,7 +362,6 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 	if err := r.deployInitialContracts(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
-	startTime := time.Now()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel() // Ensure cancel is always called
 
@@ -391,7 +374,8 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 	defer subscription.Unsubscribe()
 	done := make(chan struct{}, 1)
 	defer close(done)
-
+	var startingBlock uint64
+	var endingBlock uint64
 	go func() {
 		for {
 			select {
@@ -410,6 +394,9 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 					cancel()
 					return
 				}
+				sync.OnceFunc(func() {
+					startingBlock = block.Number.Uint64()
+				})()
 				r.blocksProcessed++
 				r.logger.Debug(
 					"processing block",
@@ -427,6 +414,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 
 				r.logger.Info("processed block", zap.Uint64("height", block.Number.Uint64()), zap.Uint64("num_blocks_processed", r.blocksProcessed))
 				if r.blocksProcessed >= uint64(r.spec.NumOfBlocks) { //nolint:gosec // G115: overflow unlikely in practice
+					endingBlock = block.Number.Uint64()
 					r.logger.Info("load test completed - number of blocks desired reached",
 						zap.Uint64("blocks", r.blocksProcessed))
 					done <- struct{}{}
@@ -443,28 +431,22 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 	case <-done:
 		r.logger.Info("load test completed. sleeping 30s for final txs to complete")
 
-		// wait for in-flight txs but still respect ctx completion
-		timer := time.NewTimer(30 * time.Second)
-		select {
-		case <-timer.C:
-		case <-ctx.Done():
-			timer.Stop()
-			r.logger.Info("ctx cancelled during post-completion sleep")
-			return loadtesttypes.LoadTestResult{}, ctx.Err()
-		}
+		r.waitForEmptyMempool(ctx, 1*time.Minute)
 
 		collectorStartTime := time.Now()
 		clients := make([]wallet.Client, 0, len(r.wallets))
 		for _, wallet := range r.wallets {
 			clients = append(clients, wallet.GetClient())
 		}
-		r.collector.GroupSentTxs(ctx, r.sentTxs, clients, startTime)
-		collectorResults := r.collector.ProcessResults(r.spec.NumOfBlocks)
+		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, clients)
+		if err != nil {
+			return loadtesttypes.LoadTestResult{Error: err.Error()}, fmt.Errorf("failed to collect metrics: %w", err)
+		}
 		collectorEndTime := time.Now()
 		r.logger.Debug("collector running time",
 			zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))
 
-		return collectorResults, nil
+		return *collectorResults, nil
 	}
 }
 
@@ -545,4 +527,44 @@ func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) 
 	}
 	r.nonces.Store(fromWallet.Address(), lastTx.Nonce()+1)
 	return txs, nil
+}
+
+func (r *Runner) waitForEmptyMempool(ctx context.Context, timeout time.Duration) {
+	client := r.clients[0].Client()
+	type TxPoolStatus struct {
+		Pending hexutil.Uint64 `json:"pending"`
+		Queued  hexutil.Uint64 `json:"queued"`
+	}
+	type TxPoolStatusResponse struct {
+		JSONRPC string       `json:"jsonrpc"`
+		ID      int          `json:"id"`
+		Result  TxPoolStatus `json:"result"`
+	}
+
+	started := time.Now()
+	timer := time.NewTicker(500 * time.Millisecond)
+	timout := time.NewTimer(timeout)
+	defer timer.Stop()
+	defer timout.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			var res TxPoolStatusResponse
+			err := client.CallContext(ctx, &res, "txpool_status")
+			if err == nil {
+				if res.Result.Pending == 0 && res.Result.Queued == 0 {
+					r.logger.Debug("mempool clear. done waiting for mempool", zap.Duration("waited", time.Since(started)))
+					return
+				}
+			} else {
+				r.logger.Debug("error calling txpool status", zap.Error(err))
+			}
+		case <-timout.C:
+			r.logger.Debug("timed out waiting for mempool to clear", zap.Duration("waited", timeout))
+			return
+		}
+	}
 }

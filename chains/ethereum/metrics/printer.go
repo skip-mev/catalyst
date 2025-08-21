@@ -1,4 +1,4 @@
-package collector
+package metrics
 
 import (
 	"fmt"
@@ -37,13 +37,11 @@ func PrintResults(result loadtesttypes.LoadTestResult) {
 
 	fmt.Println("\n📦 Block Statistics Summary:")
 	fmt.Printf("Total Blocks: %d\n", len(result.ByBlock))
-	var totalGasUtilization float64
 	var maxGasUtilization float64
 	minGasUtilization := result.ByBlock[0].GasUtilization // set first block as min initially
 	maxGasBlock := result.ByBlock[0].BlockHeight
 	minGasBlock := result.ByBlock[0].BlockHeight
 	for _, block := range result.ByBlock {
-		totalGasUtilization += block.GasUtilization
 		if block.GasUtilization > maxGasUtilization {
 			maxGasUtilization = block.GasUtilization
 			maxGasBlock = block.BlockHeight
