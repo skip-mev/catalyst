@@ -374,8 +374,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 	defer subscription.Unsubscribe()
 	done := make(chan struct{}, 1)
 	defer close(done)
-	var startingBlock uint64
-	var endingBlock uint64
+	gotStartingBlock := false
 	go func() {
 		for {
 			select {
@@ -394,9 +393,10 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 					cancel()
 					return
 				}
-				sync.OnceFunc(func() {
-					startingBlock = block.Number.Uint64()
-				})()
+				if !gotStartingBlock {
+					r.startingBlock = block.Number.Uint64()
+					gotStartingBlock = true
+				}
 				r.blocksProcessed++
 				r.logger.Debug(
 					"processing block",
@@ -414,7 +414,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 
 				r.logger.Info("processed block", zap.Uint64("height", block.Number.Uint64()), zap.Uint64("num_blocks_processed", r.blocksProcessed))
 				if r.blocksProcessed >= uint64(r.spec.NumOfBlocks) { //nolint:gosec // G115: overflow unlikely in practice
-					endingBlock = block.Number.Uint64()
+					r.endingBlock = block.Number.Uint64()
 					r.logger.Info("load test completed - number of blocks desired reached",
 						zap.Uint64("blocks", r.blocksProcessed))
 					done <- struct{}{}
@@ -438,7 +438,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 		for _, wallet := range r.wallets {
 			clients = append(clients, wallet.GetClient())
 		}
-		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, clients)
+		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, r.endingBlock, clients)
 		if err != nil {
 			return loadtesttypes.LoadTestResult{Error: err.Error()}, fmt.Errorf("failed to collect metrics: %w", err)
 		}

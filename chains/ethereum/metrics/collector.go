@@ -16,12 +16,13 @@ import (
 	"go.uber.org/zap"
 )
 
+// ProcessResults processes the results of the load test.
 func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.SentTx, startBlock, endBlock uint64, clients []wallet.Client) (*loadtesttypes.LoadTestResult, error) {
 	wg := sync.WaitGroup{}
 	blockStats := make([]loadtesttypes.BlockStat, endBlock-startBlock+1)
 	logger.Info("collecting metrics", zap.Uint64("starting_block", startBlock), zap.Uint64("ending_block", endBlock))
 
-	// block stats
+	// block stats. each go routine will query a block, get all receipts, and construct the block stats.
 	for blockNum := startBlock; blockNum <= endBlock; blockNum++ {
 		wg.Add(1)
 		go func() {
@@ -43,13 +44,15 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 	}
 	wg.Wait()
 
+	// remove any 0 tx blocks from the beginning and ends of block stats.
+	// this can happen if we started processing before txs landed on chain.
 	blockStats = trimBlocks(blockStats)
 	logger.Info("analyzing blocks...", zap.Int("num_blocks", len(blockStats)))
 
-	// message stats
 	msgStats := make(map[loadtesttypes.MsgType]loadtesttypes.MessageStats)
 	totalSentByType := calculateTotalSentByType(sentTxs)
-	// here we are updating each msgTypes total sent transactions
+
+	// update each msgType's total sent transactions
 	for msgType, totalSent := range totalSentByType {
 		stat := msgStats[msgType]
 		stat.Transactions.TotalSent = int(totalSent)
@@ -122,7 +125,6 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 		ByMessage: msgStats,
 		ByNode:    nil, // TODO: we aren't differentiating on node at the moment. not supported.
 		ByBlock:   blockStats,
-		Error:     "",
 	}
 
 	return result, nil
