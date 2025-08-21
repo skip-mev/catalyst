@@ -24,8 +24,8 @@ func PrintResults(result loadtesttypes.LoadTestResult) {
 	for msgType, stats := range result.ByMessage {
 		fmt.Printf("\n%s:\n", msgType)
 		fmt.Printf("  Transactions:\n")
-		fmt.Printf("    Total Included: %d\n", stats.Transactions.TotalIncluded)
 		fmt.Printf("    Total Sent: %d\n", stats.Transactions.TotalSent)
+		fmt.Printf("    Total Included: %d\n", stats.Transactions.TotalIncluded)
 		fmt.Printf("    Execution Successful: %d\n", stats.Transactions.Successful)
 		fmt.Printf("    Execution Failed: %d\n", stats.Transactions.Failed)
 		fmt.Printf("  Gas Usage:\n")
