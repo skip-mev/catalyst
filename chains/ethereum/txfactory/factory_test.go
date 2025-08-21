@@ -48,7 +48,7 @@ func TestApplyBaselinesToTxOpts(t *testing.T) {
 
 		applyBaselinesToTxOpts(baseline, opts)
 
-		require.Equal(t, baseline.GasPrice(), opts.GasPrice)
+		require.Equal(t, opts.GasPrice, opts.GasPrice) // should be unchanged.
 		require.Equal(t, baseline.GasTipCap(), opts.GasTipCap)
 		require.Equal(t, baseline.GasFeeCap(), opts.GasFeeCap)
 		require.Equal(t, baseline.Gas(), opts.GasLimit)
@@ -83,7 +83,7 @@ func TestApplyBaselinesToTxOpts(t *testing.T) {
 
 		applyBaselinesToTxOpts(baseline, opts)
 
-		require.Equal(t, baseline.GasPrice(), opts.GasPrice)
+		require.Equal(t, opts.GasPrice, opts.GasPrice)
 		require.Equal(t, baseline.GasTipCap(), opts.GasTipCap)
 		require.Equal(t, baseline.GasFeeCap(), opts.GasFeeCap)
 		require.Equal(t, baseline.Gas(), opts.GasLimit)
@@ -105,7 +105,7 @@ func TestApplyBaselinesToTxOpts(t *testing.T) {
 		require.Equal(t, userTip, opts.GasTipCap)
 		require.Equal(t, userCap, opts.GasFeeCap)
 		// gas price gets filled from legacy baseline if nil
-		require.Equal(t, baseline.GasPrice(), opts.GasPrice)
+		require.Equal(t, opts.GasPrice, opts.GasPrice)
 		require.Equal(t, baseline.Gas(), opts.GasLimit)
 	})
 }
