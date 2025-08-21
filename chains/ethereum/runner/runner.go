@@ -291,7 +291,7 @@ loop:
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: loadtesttypes.MsgType(getTxType(tx))}
+					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: getTxType(tx)}
 					// send the tx from a random wallet.
 					wallet := r.wallets[rand.Intn(len(r.wallets))]
 					err := wallet.SendTransaction(ctx, tx)
@@ -349,11 +349,11 @@ loop:
 	return *collectorResults, nil
 }
 
-func getTxType(tx *gethtypes.Transaction) string {
+func getTxType(tx *gethtypes.Transaction) loadtesttypes.MsgType {
 	if tx.To() == nil {
-		return "contract_deploy"
+		return metrics.ContractCreate
 	}
-	return "contract_call"
+	return metrics.ContractCall
 }
 
 // runOnBlocks runs the loadtest via block signal.
@@ -438,7 +438,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 		for _, wallet := range r.wallets {
 			clients = append(clients, wallet.GetClient())
 		}
-		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, r.endingBlock, clients)
+		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, r.startingBlock, r.endingBlock, clients)
 		if err != nil {
 			return loadtesttypes.LoadTestResult{Error: err.Error()}, fmt.Errorf("failed to collect metrics: %w", err)
 		}
@@ -481,15 +481,15 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 			}
 
 			// TODO: for now its just easier to differ based on contract creation. ethereum txs dont really have
-			// obvious "msgtypes" inside the tx object itself. we would have to map txhash to the spec that built the tx.
-			txType := "contract_call"
+			// obvious "msgtypes" inside the tx object itself. we would have to map txhash to the spec that built the tx to get anything more specific.
+			txType := metrics.ContractCall
 			if tx.To() == nil {
-				txType = "contract_creation"
+				txType = metrics.ContractCreate
 			}
 			sentTxs[i] = &inttypes.SentTx{
 				TxHash:      tx.Hash(),
 				NodeAddress: "", // TODO: figure out what to do here.
-				MsgType:     loadtesttypes.MsgType(txType),
+				MsgType:     txType,
 				Err:         err,
 				Tx:          tx,
 			}
@@ -555,7 +555,7 @@ func (r *Runner) waitForEmptyMempool(ctx context.Context, timeout time.Duration)
 			var res TxPoolStatusResponse
 			err := client.CallContext(ctx, &res, "txpool_status")
 			if err == nil {
-				if res.Result.Pending == 0 && res.Result.Queued == 0 {
+				if res.Result.Pending == 0 {
 					r.logger.Debug("mempool clear. done waiting for mempool", zap.Duration("waited", time.Since(started)))
 					return
 				}
