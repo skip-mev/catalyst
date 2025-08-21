@@ -351,9 +351,9 @@ loop:
 
 func getTxType(tx *gethtypes.Transaction) loadtesttypes.MsgType {
 	if tx.To() == nil {
-		return metrics.ContractCreate
+		return inttypes.ContractCreate
 	}
-	return metrics.ContractCall
+	return inttypes.ContractCall
 }
 
 // runOnBlocks runs the loadtest via block signal.
@@ -482,9 +482,9 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 
 			// TODO: for now its just easier to differ based on contract creation. ethereum txs dont really have
 			// obvious "msgtypes" inside the tx object itself. we would have to map txhash to the spec that built the tx to get anything more specific.
-			txType := metrics.ContractCall
+			txType := inttypes.ContractCall
 			if tx.To() == nil {
-				txType = metrics.ContractCreate
+				txType = inttypes.ContractCreate
 			}
 			sentTxs[i] = &inttypes.SentTx{
 				TxHash:      tx.Hash(),

@@ -9,6 +9,12 @@ import (
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
+// Types to delineate txs/receipts.
+const (
+	ContractCreate loadtesttypes.MsgType = "contract_create"
+	ContractCall   loadtesttypes.MsgType = "contract_call"
+)
+
 const (
 	// MsgCreateContract deploys a contract
 	MsgCreateContract loadtesttypes.MsgType = "MsgCreateContract"

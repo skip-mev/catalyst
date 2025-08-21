@@ -130,20 +130,15 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 	return result, nil
 }
 
-var (
-	ContractCreate loadtesttypes.MsgType = "contract_create"
-	ContractCall   loadtesttypes.MsgType = "contract_call"
-)
-
 func buildBlockStats(block *gethtypes.Block, receipts gethtypes.Receipts) loadtesttypes.BlockStat {
 	msgStats := make(map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats)
 	for _, r := range receipts {
 		// if the receipt didnt have a created contract address, its a contract call receipt.
 		var txType loadtesttypes.MsgType
 		if r.ContractAddress.Cmp(common.Address{}) == 0 {
-			txType = ContractCall
+			txType = types.ContractCall
 		} else {
-			txType = ContractCreate
+			txType = types.ContractCreate
 		}
 		stat := msgStats[txType]
 		if r.Status == gethtypes.ReceiptStatusSuccessful {
@@ -205,9 +200,9 @@ func calculateTotalSentByType(sentTxs []*types.SentTx) map[loadtesttypes.MsgType
 	totalSentByType := make(map[loadtesttypes.MsgType]uint64)
 	for _, tx := range sentTxs {
 		if tx.Tx.To() == nil { // no To == contract creation
-			totalSentByType[ContractCreate]++
+			totalSentByType[types.ContractCreate]++
 		} else { // has a To = calling that contract
-			totalSentByType[ContractCall]++
+			totalSentByType[types.ContractCall]++
 		}
 	}
 	return totalSentByType
