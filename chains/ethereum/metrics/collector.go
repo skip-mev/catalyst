@@ -77,9 +77,9 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 			stat := msgStats[msgType]
 
 			// update gas values
-			stat.Gas.Max = max(stat.Gas.Max, int64(receipt.GasUsed))
-			stat.Gas.Min = min(stat.Gas.Min, int64(receipt.GasUsed))
-			stat.Gas.Total = stat.Gas.Total + int64(receipt.GasUsed)
+			stat.Gas.Max = max(stat.Gas.Max, int64(receipt.GasUsed)) //nolint:gosec // G115 likely not to happen
+			stat.Gas.Min = min(stat.Gas.Min, int64(receipt.GasUsed)) //nolint:gosec // G115 likely not to happen
+			stat.Gas.Total += int64(receipt.GasUsed)                 //nolint:gosec // G115 likely not to happen
 
 			// inclusion and statuses.
 			stat.Transactions.TotalIncluded++

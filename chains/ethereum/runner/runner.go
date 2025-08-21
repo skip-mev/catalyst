@@ -276,7 +276,7 @@ loop:
 	wg.Wait()
 	close(collectionChannel)
 	<-collectionDone // wait for collection to finish
-	
+
 	r.logger.Info("go routines have completed", zap.Int("total_txs", len(sentTxs)))
 	r.sentTxs = sentTxs
 
