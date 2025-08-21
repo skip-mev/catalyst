@@ -201,6 +201,8 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	crank := time.NewTicker(r.spec.SendInterval)
 	defer crank.Stop()
 
+	// sleeping once before we start, as the initial contracts were showing up in results.
+	time.Sleep(2 * time.Second)
 	blockNum, err := r.wallets[0].GetClient().BlockNumber(ctx)
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get block number: %w", err)
@@ -214,7 +216,9 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	mu := &sync.Mutex{}
 	sentTxs := make([]*inttypes.SentTx, 0, total)
 	collectionChannel := make(chan *inttypes.SentTx, amountPerBatch)
+	collectionDone := make(chan struct{})
 	go func() {
+		defer close(collectionDone)
 		for {
 			select {
 			case <-ctx.Done():
@@ -271,13 +275,16 @@ loop:
 	r.logger.Info("All transactions sent. Waiting for go routines to finish")
 	wg.Wait()
 	close(collectionChannel)
+	<-collectionDone // wait for collection to finish
+	
 	r.logger.Info("go routines have completed", zap.Int("total_txs", len(sentTxs)))
 	r.sentTxs = sentTxs
 
 	r.logger.Info("Loadtest complete. Waiting for mempool to clear")
 
 	r.waitForEmptyMempool(ctx, 1*time.Minute)
-
+	// sleep here for a sec because, even though the mempool may be empty, we could still be in process of executing those txs.
+	time.Sleep(2 * time.Second)
 	blockNum, err = r.wallets[0].GetClient().BlockNumber(ctx)
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get ending block number: %w", err)
