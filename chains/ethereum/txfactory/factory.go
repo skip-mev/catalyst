@@ -117,7 +117,7 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 	if targets != nil {
 		numTargets = *targets
 	} else {
-		// add 1 so we never get 0. can be 1-3.
+		// default. simple
 		numTargets = 2
 	}
 
