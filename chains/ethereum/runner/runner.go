@@ -3,17 +3,13 @@ package runner
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"math/rand"
-	"strings"
 	"sync"
 	"time"
 
-	ethhd "github.com/cosmos/evm/crypto/hd"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
@@ -61,7 +57,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		wsClients = append(wsClients, wsClient)
 	}
 
-	wallets, err := buildWallets(spec, clients)
+	wallets, err := wallet.NewWalletsFromSpec(spec, clients)
 	if err != nil {
 		return nil, err
 	}
@@ -90,45 +86,6 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 	}
 
 	return r, nil
-}
-
-func buildWallets(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) ([]*wallet.InteractingWallet, error) {
-	if len(clients) == 0 {
-		return nil, fmt.Errorf("no clients provided")
-	}
-
-	chainIDStr := strings.TrimSpace(spec.ChainID)
-	chainID, ok := new(big.Int).SetString(chainIDStr, 0) // allow "9001" or "0x2329"
-	if !ok {
-		return nil, fmt.Errorf("failed to parse chain id: %q", spec.ChainID)
-	}
-
-	// EXACT path used by 'eth_secp256k1' default account in Ethermint-based chains.
-	const evmDerivationPath = "m/44'/60'/0'/0/0"
-
-	ws := make([]*wallet.InteractingWallet, len(spec.Mnemonics))
-	for i, m := range spec.Mnemonics {
-		m = strings.TrimSpace(m)
-		if m == "" {
-			return nil, fmt.Errorf("mnemonic at index %d is empty", i)
-		}
-
-		// derive raw 32-byte private key from mnemonic at ETH path .../0
-		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, "", evmDerivationPath)
-		if err != nil {
-			return nil, fmt.Errorf("mnemonic[%d]: derive failed: %w", i, err)
-		}
-
-		pk, err := crypto.ToECDSA(derivedPrivKey)
-		if err != nil {
-			return nil, fmt.Errorf("mnemonic[%d]: invalid ECDSA key: %w", i, err)
-		}
-
-		c := clients[i%len(clients)]
-		w := wallet.NewInteractingWallet(pk, chainID, c)
-		ws[i] = w
-	}
-	return ws, nil
 }
 
 func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
