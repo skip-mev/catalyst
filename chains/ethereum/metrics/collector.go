@@ -28,7 +28,7 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 		go func() {
 			defer wg.Done()
 			client := clients[rand.Intn(len(clients))]
-			block, err := client.BlockByNumber(ctx, big.NewInt(int64(blockNum)))
+			block, err := client.BlockByNumber(ctx, big.NewInt(int64(blockNum))) //nolint:gosec // G115: overflow unlikely in practice
 			if err != nil {
 				logger.Error("Error getting block by number", zap.Uint64("block_num", blockNum), zap.Error(err))
 				return
@@ -55,7 +55,7 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 	// update each msgType's total sent transactions
 	for msgType, totalSent := range totalSentByType {
 		stat := msgStats[msgType]
-		stat.Transactions.TotalSent = int(totalSent)
+		stat.Transactions.TotalSent = int(totalSent) //nolint:gosec // G115: overflow unlikely in practice
 		msgStats[msgType] = stat
 	}
 
@@ -151,14 +151,14 @@ func buildBlockStats(block *gethtypes.Block, receipts gethtypes.Receipts) loadte
 		} else {
 			stat.FailedTxs++
 		}
-		stat.GasUsed += int64(r.GasUsed)
+		stat.GasUsed += int64(r.GasUsed) //nolint:gosec // G115: overflow unlikely in practice
 		msgStats[txType] = stat
 	}
 	stats := loadtesttypes.BlockStat{
 		BlockHeight:    block.Number().Int64(),
-		Timestamp:      time.Unix(int64(block.Time()), 0),
-		GasLimit:       int64(block.GasLimit()),
-		TotalGasUsed:   int64(block.GasUsed()),
+		Timestamp:      time.Unix(int64(block.Time()), 0), //nolint:gosec // G115: overflow unlikely in practice
+		GasLimit:       int64(block.GasLimit()),           //nolint:gosec // G115: overflow unlikely in practice
+		TotalGasUsed:   int64(block.GasUsed()),            //nolint:gosec // G115: overflow unlikely in practice
 		MessageStats:   msgStats,
 		GasUtilization: float64(block.GasUsed()) / float64(block.GasLimit()),
 	}
