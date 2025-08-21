@@ -66,7 +66,6 @@ chain_config:
 	cfg, ok := spec.ChainCfg.(*ethtypes.ChainConfig)
 	require.True(t, ok)
 	expectedTxOpts := ethtypes.TxOpts{
-		GasPrice:  nil,
 		GasFeeCap: big.NewInt(1000000000000),
 		GasTipCap: big.NewInt(1000000000000),
 	}
