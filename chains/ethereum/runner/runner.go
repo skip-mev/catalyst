@@ -41,8 +41,6 @@ type Runner struct {
 
 	sentTxs         []*inttypes.SentTx
 	blocksProcessed uint64
-	startingBlock   uint64
-	endingBlock     uint64
 }
 
 func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
@@ -250,7 +248,7 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get block number: %w", err)
 	}
-	r.startingBlock = blockNum
+	startingBlock := blockNum
 
 	// load index is the index into the batchLoads slice.
 	loadIndex := 0
@@ -327,7 +325,7 @@ loop:
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get ending block number: %w", err)
 	}
-	r.endingBlock = blockNum
+	endingBlock := blockNum
 
 	// build clients for collector.
 	clients := make([]wallet.Client, 0, len(r.wallets))
@@ -340,7 +338,7 @@ loop:
 	// we pass in 0 for the numOfBlockRequested, because we are not running a block based loadtest.
 	// The collector understands that 0 means we are on a time interval loadtest.
 	collectorStartTime := time.Now()
-	collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, r.startingBlock, r.endingBlock, clients)
+	collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, clients)
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to collect metrics: %w", err)
 	}
@@ -375,6 +373,8 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 	done := make(chan struct{}, 1)
 	defer close(done)
 	gotStartingBlock := false
+	startingBlock := uint64(0)
+	endingBlock := uint64(0)
 	go func() {
 		for {
 			select {
@@ -394,7 +394,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 					return
 				}
 				if !gotStartingBlock {
-					r.startingBlock = block.Number.Uint64()
+					startingBlock = block.Number.Uint64()
 					gotStartingBlock = true
 				}
 				r.blocksProcessed++
@@ -414,7 +414,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 
 				r.logger.Info("processed block", zap.Uint64("height", block.Number.Uint64()), zap.Uint64("num_blocks_processed", r.blocksProcessed))
 				if r.blocksProcessed >= uint64(r.spec.NumOfBlocks) { //nolint:gosec // G115: overflow unlikely in practice
-					r.endingBlock = block.Number.Uint64()
+					endingBlock = block.Number.Uint64()
 					r.logger.Info("load test completed - number of blocks desired reached",
 						zap.Uint64("blocks", r.blocksProcessed))
 					done <- struct{}{}
@@ -438,7 +438,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 		for _, wallet := range r.wallets {
 			clients = append(clients, wallet.GetClient())
 		}
-		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, r.startingBlock, r.endingBlock, clients)
+		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, clients)
 		if err != nil {
 			return loadtesttypes.LoadTestResult{Error: err.Error()}, fmt.Errorf("failed to collect metrics: %w", err)
 		}
