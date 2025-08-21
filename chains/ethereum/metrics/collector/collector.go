@@ -16,14 +16,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func calculateTotalSentByType(sentTxs []*types.SentTx) map[loadtesttypes.MsgType]uint64 {
-	totalSentByType := make(map[loadtesttypes.MsgType]uint64)
-	for _, tx := range sentTxs {
-		totalSentByType[tx.MsgType] += 1
-	}
-	return totalSentByType
-}
-
 func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.SentTx, startBlock, endBlock uint64, clients []wallet.Client) (*loadtesttypes.LoadTestResult, error) {
 	wg := sync.WaitGroup{}
 	blockStats := make([]loadtesttypes.BlockStat, endBlock-startBlock+1)
@@ -45,34 +37,37 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 				logger.Error("Error getting receipts for block", zap.Uint64("block_num", blockNum), zap.Error(err))
 				return
 			}
-			logger.Info("constructed block data", zap.Uint64("block_num", blockNum), zap.Int("receipts", len(receipts)))
 			stats := buildBlockStats(block, receipts)
 			blockStats[blockNum-startBlock] = stats
 		}()
 	}
 	wg.Wait()
 
-	logger.Info("block stats before", zap.Int("length", len(blockStats)))
 	blockStats = trimBlocks(blockStats)
-	logger.Info("block stats after", zap.Int("length", len(blockStats)))
+	logger.Info("analyzing blocks...", zap.Int("num_blocks", len(blockStats)))
 
 	// message stats
 	msgStats := make(map[loadtesttypes.MsgType]loadtesttypes.MessageStats)
 	totalSentByType := calculateTotalSentByType(sentTxs)
+	// here we are updating each msgTypes total sent transactions
 	for msgType, totalSent := range totalSentByType {
 		stat := msgStats[msgType]
 		stat.Transactions.TotalSent = int(totalSent)
 		msgStats[msgType] = stat
 	}
 
+	// here we are using transactions from the blocks to update each msg type's statistics.
 	avgGasUtilization := 0.0
 	for i, blockStat := range blockStats {
 		avgGasUtilization += (blockStat.GasUtilization - avgGasUtilization) / float64(i+1)
 		for msgType, stat := range blockStat.MessageStats {
 			msgStat := msgStats[msgType]
+			// update transaction status counts
 			msgStat.Transactions.TotalIncluded += stat.SuccessfulTxs + stat.FailedTxs
 			msgStat.Transactions.Successful += stat.SuccessfulTxs
 			msgStat.Transactions.Failed += stat.FailedTxs
+
+			// update transaction gas counts
 			if msgStat.Gas.Min == 0 || stat.GasUsed < msgStat.Gas.Min {
 				msgStat.Gas.Min = stat.GasUsed
 			}
@@ -80,31 +75,36 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 				msgStat.Gas.Max = stat.GasUsed
 			}
 			msgStat.Gas.Total += stat.GasUsed
+
+			// save
 			msgStats[msgType] = msgStat
 		}
 	}
-	logger.Info("gas block utilization value", zap.Float64("gas_utilization_value", avgGasUtilization))
 
+	// calculate global totals
 	totalIncluded, totalSuccess, totalFailed := 0, 0, 0
+	totalSent := len(sentTxs)
 	for msgType, msgStat := range msgStats {
-		// get totals.
+		// update totals
 		totalIncluded += msgStat.Transactions.TotalIncluded
 		totalSuccess += msgStat.Transactions.Successful
 		totalFailed += msgStat.Transactions.Failed
 
-		// update the gas average.
+		// hijacking this loop to update gas averages for the msg stats.
 		msgStat.Gas.Average = msgStat.Gas.Total / int64(msgStat.Transactions.TotalIncluded)
 		msgStats[msgType] = msgStat
 	}
 
+	// timings / tps.
 	startTime := blockStats[0].Timestamp
 	endTime := blockStats[len(blockStats)-1].Timestamp
 	runtime := endTime.Sub(startTime)
 	tps := float64(totalIncluded) / runtime.Seconds()
 
+	// final results.
 	result := &loadtesttypes.LoadTestResult{
 		Overall: loadtesttypes.OverallStats{
-			TotalTransactions:         len(sentTxs),
+			TotalTransactions:         totalSent,
 			TotalIncludedTransactions: totalIncluded,
 			SuccessfulTransactions:    totalSuccess,
 			FailedTransactions:        totalFailed,
@@ -192,4 +192,13 @@ func trimBlocks(blocks []loadtesttypes.BlockStat) []loadtesttypes.BlockStat {
 	}
 
 	return blocks[startTxIndex : endTxIndex+1]
+}
+
+// returns the total amount of transactions sent for each type.
+func calculateTotalSentByType(sentTxs []*types.SentTx) map[loadtesttypes.MsgType]uint64 {
+	totalSentByType := make(map[loadtesttypes.MsgType]uint64)
+	for _, tx := range sentTxs {
+		totalSentByType[tx.MsgType] += 1
+	}
+	return totalSentByType
 }
