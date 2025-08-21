@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
+	"github.com/skip-mev/catalyst/chains/ethereum/metrics/collector"
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
@@ -41,6 +42,8 @@ type Runner struct {
 
 	sentTxs         []*inttypes.SentTx
 	blocksProcessed uint64
+	startingBlock   uint64
+	endingBlock     uint64
 }
 
 func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
@@ -133,7 +136,7 @@ func buildWallets(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) 
 }
 
 func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
-	r.collector.PrintResults(result)
+	collector.PrintResults(result)
 }
 
 // deployInitialContracts deploys an initial contract, so that messages that rely on a deployed contract can run.
@@ -245,9 +248,14 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	crank := time.NewTicker(r.spec.SendInterval)
 	defer crank.Stop()
 
+	blockNum, err := r.wallets[0].GetClient().BlockNumber(ctx)
+	if err != nil {
+		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get block number: %w", err)
+	}
+	r.startingBlock = blockNum
+
 	// load index is the index into the batchLoads slice.
 	loadIndex := 0
-	startTime := time.Now()
 
 	// go routines will send transactions and then push results to collectionChannel.
 	mu := &sync.Mutex{}
@@ -316,8 +324,9 @@ loop:
 	// sleep for the txs to complete.
 	// it is possible many txs are still in the mempool.
 	// we dont want the collector to start looking for receipts until we have given the EVM time to process. (it is a very emotional state machine)
-	waitDuration := 1 * time.Minute
+	waitDuration := 5 * time.Second
 	r.logger.Info("Loadtest complete. Sleeping for all txs to complete...", zap.Duration("wait_duration", waitDuration))
+
 	timer := time.NewTimer(waitDuration)
 	select {
 	case <-timer.C:
@@ -326,6 +335,12 @@ loop:
 		r.logger.Info("Timer stopped early")
 		break
 	}
+
+	blockNum, err = r.wallets[0].GetClient().BlockNumber(ctx)
+	if err != nil {
+		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get ending block number: %w", err)
+	}
+	r.endingBlock = blockNum
 
 	collectorStartTime := time.Now()
 
@@ -337,15 +352,17 @@ loop:
 
 	// collect metrics.
 	r.logger.Info("Collecting metrics", zap.Int("num_txs", len(r.sentTxs)))
-	r.collector.GroupSentTxs(ctx, r.sentTxs, clients, startTime)
 	// we pass in 0 for the numOfBlockRequested, because we are not running a block based loadtest.
 	// The collector understands that 0 means we are on a time interval loadtest.
-	collectorResults := r.collector.ProcessResults(0)
+	collectorResults, err := collector.ProcessResults(ctx, r.logger, r.sentTxs, r.startingBlock, r.endingBlock, clients)
+	if err != nil {
+		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to collect metrics: %w", err)
+	}
 
 	collectorEndTime := time.Now()
 	r.logger.Debug("collector running time",
 		zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))
-	return collectorResults, nil
+	return *collectorResults, nil
 }
 
 func getTxType(tx *gethtypes.Transaction) string {
