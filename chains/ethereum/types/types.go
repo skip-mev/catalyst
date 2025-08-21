@@ -43,7 +43,6 @@ type NodeAddress struct {
 }
 
 type TxOpts struct {
-	GasPrice  *big.Int `yaml:"gas_price" json:"gas_price"`
 	GasFeeCap *big.Int `yaml:"gas_fee_cap" json:"gas_fee_cap"`
 	GasTipCap *big.Int `yaml:"gas_tip_cap" json:"gas_tip_cap"`
 }

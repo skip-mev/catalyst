@@ -62,9 +62,6 @@ func (f *TxFactory) SetBaselines(ctx context.Context) error {
 // applyBaselinesToTxOpts applies baseline transaction values to transact options, while respecting
 // the static gas values set by the user in the spec.
 func applyBaselinesToTxOpts(baselineTx *types.Transaction, txOpts *bind.TransactOpts) {
-	if txOpts.GasPrice == nil {
-		txOpts.GasPrice = baselineTx.GasPrice()
-	}
 	if txOpts.GasTipCap == nil {
 		txOpts.GasTipCap = baselineTx.GasTipCap()
 	}
@@ -130,7 +127,6 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
 		GasTipCap: f.txOpts.GasTipCap,
 		GasFeeCap: f.txOpts.GasFeeCap,
-		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
 	}
@@ -187,7 +183,6 @@ func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
 		GasTipCap: f.txOpts.GasTipCap,
 		GasFeeCap: f.txOpts.GasFeeCap,
-		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
 	}
@@ -228,7 +223,6 @@ func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *ethw
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
 		GasTipCap: f.txOpts.GasTipCap,
 		GasFeeCap: f.txOpts.GasFeeCap,
-		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
 	}
@@ -265,7 +259,6 @@ func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
 		GasTipCap: f.txOpts.GasTipCap,
 		GasFeeCap: f.txOpts.GasFeeCap,
-		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
 	}
