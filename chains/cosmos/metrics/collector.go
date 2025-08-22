@@ -173,15 +173,15 @@ func (m *Collector) processMessageTypeStats(result *loadtesttypes.LoadTestResult
 
 		stats := loadtesttypes.MessageStats{
 			Transactions: loadtesttypes.TransactionStats{
-				Total:      len(txs),
-				Successful: successful,
-				Failed:     failed,
+				TotalIncluded: len(txs),
+				Successful:    successful,
+				Failed:        failed,
 			},
 			Gas: m.calculateGasStats(m.gasUsageByMsgType[msgType]),
 		}
 
 		result.ByMessage[msgType] = stats
-		totalTxs += stats.Transactions.Total
+		totalTxs += stats.Transactions.TotalIncluded
 		successfulTxs += stats.Transactions.Successful
 		failedTxs += stats.Transactions.Failed
 		totalGasUsed += stats.Gas.Total
@@ -201,7 +201,7 @@ func (m *Collector) processNodeStats(result *loadtesttypes.LoadTestResult) {
 		stats := loadtesttypes.NodeStats{
 			Address: nodeAddr,
 			TransactionStats: loadtesttypes.TransactionStats{
-				Total: len(txs),
+				TotalIncluded: len(txs),
 			},
 			MessageCounts: msgCounts,
 		}
@@ -407,7 +407,7 @@ func (m *Collector) PrintResults(result loadtesttypes.LoadTestResult) {
 	for msgType, stats := range result.ByMessage {
 		fmt.Printf("\n%s:\n", msgType)
 		fmt.Printf("  Transactions:\n")
-		fmt.Printf("    Total: %d\n", stats.Transactions.Total)
+		fmt.Printf("    Total: %d\n", stats.Transactions.TotalIncluded)
 		fmt.Printf("    Successful: %d\n", stats.Transactions.Successful)
 		fmt.Printf("    Failed: %d\n", stats.Transactions.Failed)
 		fmt.Printf("  Gas Usage:\n")
@@ -427,7 +427,7 @@ func (m *Collector) PrintResults(result loadtesttypes.LoadTestResult) {
 	for nodeAddr, stats := range result.ByNode {
 		fmt.Printf("\n%s:\n", nodeAddr)
 		fmt.Printf("  Transactions:\n")
-		fmt.Printf("    Total: %d\n", stats.TransactionStats.Total)
+		fmt.Printf("    Total: %d\n", stats.TransactionStats.TotalIncluded)
 		fmt.Printf("    Successful: %d\n", stats.TransactionStats.Successful)
 		fmt.Printf("    Failed: %d\n", stats.TransactionStats.Failed)
 		fmt.Printf("  Message Distribution:\n")

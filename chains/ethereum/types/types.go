@@ -9,6 +9,12 @@ import (
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
+// Types to delineate txs/receipts.
+const (
+	ContractCreate loadtesttypes.MsgType = "contract_create"
+	ContractCall   loadtesttypes.MsgType = "contract_call"
+)
+
 const (
 	// MsgCreateContract deploys a contract
 	MsgCreateContract loadtesttypes.MsgType = "MsgCreateContract"
@@ -37,7 +43,6 @@ type NodeAddress struct {
 }
 
 type TxOpts struct {
-	GasPrice  *big.Int `yaml:"gas_price" json:"gas_price"`
 	GasFeeCap *big.Int `yaml:"gas_fee_cap" json:"gas_fee_cap"`
 	GasTipCap *big.Int `yaml:"gas_tip_cap" json:"gas_tip_cap"`
 }

@@ -37,6 +37,7 @@ func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet, tx
 }
 
 // SetBaselines sets the baseline transaction for each message type.
+// This is useful for transactions that do not want to use the client to get gas values.
 func (f *TxFactory) SetBaselines(ctx context.Context) error {
 	f.logger.Info("Setting baselines for transactions...")
 	for _, msg := range ethtypes.ValidMessages {
@@ -59,15 +60,12 @@ func (f *TxFactory) SetBaselines(ctx context.Context) error {
 }
 
 // applyBaselinesToTxOpts applies baseline transaction values to transact options, while respecting
-// the static gas values set by the user in the spec..
+// the static gas values set by the user in the spec.
 func applyBaselinesToTxOpts(baselineTx *types.Transaction, txOpts *bind.TransactOpts) {
-	if txOpts.GasPrice != nil {
-		txOpts.GasPrice = baselineTx.GasPrice()
-	}
-	if txOpts.GasTipCap != nil {
+	if txOpts.GasTipCap == nil {
 		txOpts.GasTipCap = baselineTx.GasTipCap()
 	}
-	if txOpts.GasFeeCap != nil {
+	if txOpts.GasFeeCap == nil {
 		txOpts.GasFeeCap = baselineTx.GasFeeCap()
 	}
 	txOpts.GasLimit = baselineTx.Gas()
@@ -116,7 +114,7 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 	if targets != nil {
 		numTargets = *targets
 	} else {
-		// add 1 so we never get 0. can be 1-3.
+		// default. simple
 		numTargets = 2
 	}
 
@@ -129,7 +127,6 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
 		GasTipCap: f.txOpts.GasTipCap,
 		GasFeeCap: f.txOpts.GasFeeCap,
-		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
 	}
@@ -186,7 +183,6 @@ func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
 		GasTipCap: f.txOpts.GasTipCap,
 		GasFeeCap: f.txOpts.GasFeeCap,
-		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
 	}
@@ -227,7 +223,6 @@ func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *ethw
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
 		GasTipCap: f.txOpts.GasTipCap,
 		GasFeeCap: f.txOpts.GasFeeCap,
-		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
 	}
@@ -264,7 +259,6 @@ func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *
 		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
 		GasTipCap: f.txOpts.GasTipCap,
 		GasFeeCap: f.txOpts.GasFeeCap,
-		GasPrice:  f.txOpts.GasPrice,
 		Context:   ctx,
 		NoSend:    true,
 	}

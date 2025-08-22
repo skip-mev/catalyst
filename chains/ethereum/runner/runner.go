@@ -3,16 +3,13 @@ package runner
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"math/rand"
-	"strings"
 	"sync"
 	"time"
 
-	ethhd "github.com/cosmos/evm/crypto/hd"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
@@ -35,7 +32,6 @@ type Runner struct {
 	chainConfig inttypes.ChainConfig
 	nonces      *sync.Map
 	wallets     []*wallet.InteractingWallet
-	collector   metrics.Collector
 
 	txFactory *txfactory.TxFactory
 
@@ -61,7 +57,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		wsClients = append(wsClients, wsClient)
 	}
 
-	wallets, err := buildWallets(spec, clients)
+	wallets, err := wallet.NewWalletsFromSpec(spec, clients)
 	if err != nil {
 		return nil, err
 	}
@@ -87,53 +83,13 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		sentTxs:         make([]*inttypes.SentTx, 0, 100),
 		blocksProcessed: 0,
 		nonces:          &nonces,
-		collector:       metrics.NewCollector(logger, clients),
 	}
 
 	return r, nil
 }
 
-func buildWallets(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) ([]*wallet.InteractingWallet, error) {
-	if len(clients) == 0 {
-		return nil, fmt.Errorf("no clients provided")
-	}
-
-	chainIDStr := strings.TrimSpace(spec.ChainID)
-	chainID, ok := new(big.Int).SetString(chainIDStr, 0) // allow "9001" or "0x2329"
-	if !ok {
-		return nil, fmt.Errorf("failed to parse chain id: %q", spec.ChainID)
-	}
-
-	// EXACT path used by 'eth_secp256k1' default account in Ethermint-based chains.
-	const evmDerivationPath = "m/44'/60'/0'/0/0"
-
-	ws := make([]*wallet.InteractingWallet, len(spec.Mnemonics))
-	for i, m := range spec.Mnemonics {
-		m = strings.TrimSpace(m)
-		if m == "" {
-			return nil, fmt.Errorf("mnemonic at index %d is empty", i)
-		}
-
-		// derive raw 32-byte private key from mnemonic at ETH path .../0
-		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, "", evmDerivationPath)
-		if err != nil {
-			return nil, fmt.Errorf("mnemonic[%d]: derive failed: %w", i, err)
-		}
-
-		pk, err := crypto.ToECDSA(derivedPrivKey)
-		if err != nil {
-			return nil, fmt.Errorf("mnemonic[%d]: invalid ECDSA key: %w", i, err)
-		}
-
-		c := clients[i%len(clients)]
-		w := wallet.NewInteractingWallet(pk, chainID, c)
-		ws[i] = w
-	}
-	return ws, nil
-}
-
 func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
-	r.collector.PrintResults(result)
+	metrics.PrintResults(result)
 }
 
 // deployInitialContracts deploys an initial contract, so that messages that rely on a deployed contract can run.
@@ -245,15 +201,24 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	crank := time.NewTicker(r.spec.SendInterval)
 	defer crank.Stop()
 
+	// sleeping once before we start, as the initial contracts were showing up in results.
+	time.Sleep(2 * time.Second)
+	blockNum, err := r.wallets[0].GetClient().BlockNumber(ctx)
+	if err != nil {
+		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get block number: %w", err)
+	}
+	startingBlock := blockNum
+
 	// load index is the index into the batchLoads slice.
 	loadIndex := 0
-	startTime := time.Now()
 
 	// go routines will send transactions and then push results to collectionChannel.
 	mu := &sync.Mutex{}
 	sentTxs := make([]*inttypes.SentTx, 0, total)
 	collectionChannel := make(chan *inttypes.SentTx, amountPerBatch)
+	collectionDone := make(chan struct{})
 	go func() {
+		defer close(collectionDone)
 		for {
 			select {
 			case <-ctx.Done():
@@ -285,7 +250,7 @@ loop:
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: loadtesttypes.MsgType(getTxType(tx))}
+					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: getTxType(tx)}
 					// send the tx from a random wallet.
 					wallet := r.wallets[rand.Intn(len(r.wallets))]
 					err := wallet.SendTransaction(ctx, tx)
@@ -310,24 +275,21 @@ loop:
 	r.logger.Info("All transactions sent. Waiting for go routines to finish")
 	wg.Wait()
 	close(collectionChannel)
+	<-collectionDone // wait for collection to finish
+
 	r.logger.Info("go routines have completed", zap.Int("total_txs", len(sentTxs)))
 	r.sentTxs = sentTxs
 
-	// sleep for the txs to complete.
-	// it is possible many txs are still in the mempool.
-	// we dont want the collector to start looking for receipts until we have given the EVM time to process. (it is a very emotional state machine)
-	waitDuration := 1 * time.Minute
-	r.logger.Info("Loadtest complete. Sleeping for all txs to complete...", zap.Duration("wait_duration", waitDuration))
-	timer := time.NewTimer(waitDuration)
-	select {
-	case <-timer.C:
-	case <-ctx.Done():
-		timer.Stop()
-		r.logger.Info("Timer stopped early")
-		break
-	}
+	r.logger.Info("Loadtest complete. Waiting for mempool to clear")
 
-	collectorStartTime := time.Now()
+	r.waitForEmptyMempool(ctx, 1*time.Minute)
+	// sleep here for a sec because, even though the mempool may be empty, we could still be in process of executing those txs.
+	time.Sleep(2 * time.Second)
+	blockNum, err = r.wallets[0].GetClient().BlockNumber(ctx)
+	if err != nil {
+		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get ending block number: %w", err)
+	}
+	endingBlock := blockNum
 
 	// build clients for collector.
 	clients := make([]wallet.Client, 0, len(r.wallets))
@@ -337,22 +299,23 @@ loop:
 
 	// collect metrics.
 	r.logger.Info("Collecting metrics", zap.Int("num_txs", len(r.sentTxs)))
-	r.collector.GroupSentTxs(ctx, r.sentTxs, clients, startTime)
 	// we pass in 0 for the numOfBlockRequested, because we are not running a block based loadtest.
 	// The collector understands that 0 means we are on a time interval loadtest.
-	collectorResults := r.collector.ProcessResults(0)
-
-	collectorEndTime := time.Now()
+	collectorStartTime := time.Now()
+	collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, clients)
+	if err != nil {
+		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to collect metrics: %w", err)
+	}
 	r.logger.Debug("collector running time",
-		zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))
-	return collectorResults, nil
+		zap.Float64("duration_seconds", time.Since(collectorStartTime).Seconds()))
+	return *collectorResults, nil
 }
 
-func getTxType(tx *gethtypes.Transaction) string {
+func getTxType(tx *gethtypes.Transaction) loadtesttypes.MsgType {
 	if tx.To() == nil {
-		return "contract_deploy"
+		return inttypes.ContractCreate
 	}
-	return "contract_call"
+	return inttypes.ContractCall
 }
 
 // runOnBlocks runs the loadtest via block signal.
@@ -361,7 +324,6 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 	if err := r.deployInitialContracts(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
-	startTime := time.Now()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel() // Ensure cancel is always called
 
@@ -374,7 +336,9 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 	defer subscription.Unsubscribe()
 	done := make(chan struct{}, 1)
 	defer close(done)
-
+	gotStartingBlock := false
+	startingBlock := uint64(0)
+	endingBlock := uint64(0)
 	go func() {
 		for {
 			select {
@@ -393,6 +357,10 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 					cancel()
 					return
 				}
+				if !gotStartingBlock {
+					startingBlock = block.Number.Uint64()
+					gotStartingBlock = true
+				}
 				r.blocksProcessed++
 				r.logger.Debug(
 					"processing block",
@@ -410,6 +378,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 
 				r.logger.Info("processed block", zap.Uint64("height", block.Number.Uint64()), zap.Uint64("num_blocks_processed", r.blocksProcessed))
 				if r.blocksProcessed >= uint64(r.spec.NumOfBlocks) { //nolint:gosec // G115: overflow unlikely in practice
+					endingBlock = block.Number.Uint64()
 					r.logger.Info("load test completed - number of blocks desired reached",
 						zap.Uint64("blocks", r.blocksProcessed))
 					done <- struct{}{}
@@ -426,28 +395,22 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 	case <-done:
 		r.logger.Info("load test completed. sleeping 30s for final txs to complete")
 
-		// wait for in-flight txs but still respect ctx completion
-		timer := time.NewTimer(30 * time.Second)
-		select {
-		case <-timer.C:
-		case <-ctx.Done():
-			timer.Stop()
-			r.logger.Info("ctx cancelled during post-completion sleep")
-			return loadtesttypes.LoadTestResult{}, ctx.Err()
-		}
+		r.waitForEmptyMempool(ctx, 1*time.Minute)
 
 		collectorStartTime := time.Now()
 		clients := make([]wallet.Client, 0, len(r.wallets))
 		for _, wallet := range r.wallets {
 			clients = append(clients, wallet.GetClient())
 		}
-		r.collector.GroupSentTxs(ctx, r.sentTxs, clients, startTime)
-		collectorResults := r.collector.ProcessResults(r.spec.NumOfBlocks)
+		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, clients)
+		if err != nil {
+			return loadtesttypes.LoadTestResult{Error: err.Error()}, fmt.Errorf("failed to collect metrics: %w", err)
+		}
 		collectorEndTime := time.Now()
 		r.logger.Debug("collector running time",
 			zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))
 
-		return collectorResults, nil
+		return *collectorResults, nil
 	}
 }
 
@@ -482,15 +445,15 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 			}
 
 			// TODO: for now its just easier to differ based on contract creation. ethereum txs dont really have
-			// obvious "msgtypes" inside the tx object itself. we would have to map txhash to the spec that built the tx.
-			txType := "contract_call"
+			// obvious "msgtypes" inside the tx object itself. we would have to map txhash to the spec that built the tx to get anything more specific.
+			txType := inttypes.ContractCall
 			if tx.To() == nil {
-				txType = "contract_creation"
+				txType = inttypes.ContractCreate
 			}
 			sentTxs[i] = &inttypes.SentTx{
 				TxHash:      tx.Hash(),
 				NodeAddress: "", // TODO: figure out what to do here.
-				MsgType:     loadtesttypes.MsgType(txType),
+				MsgType:     txType,
 				Err:         err,
 				Tx:          tx,
 			}
@@ -528,4 +491,44 @@ func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) 
 	}
 	r.nonces.Store(fromWallet.Address(), lastTx.Nonce()+1)
 	return txs, nil
+}
+
+func (r *Runner) waitForEmptyMempool(ctx context.Context, timeout time.Duration) {
+	client := r.clients[0].Client()
+	type TxPoolStatus struct {
+		Pending hexutil.Uint64 `json:"pending"`
+		Queued  hexutil.Uint64 `json:"queued"`
+	}
+	type TxPoolStatusResponse struct {
+		JSONRPC string       `json:"jsonrpc"`
+		ID      int          `json:"id"`
+		Result  TxPoolStatus `json:"result"`
+	}
+
+	started := time.Now()
+	timer := time.NewTicker(500 * time.Millisecond)
+	timout := time.NewTimer(timeout)
+	defer timer.Stop()
+	defer timout.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			var res TxPoolStatusResponse
+			err := client.CallContext(ctx, &res, "txpool_status")
+			if err == nil {
+				if res.Result.Pending == 0 {
+					r.logger.Debug("mempool clear. done waiting for mempool", zap.Duration("waited", time.Since(started)))
+					return
+				}
+			} else {
+				r.logger.Debug("error calling txpool status", zap.Error(err))
+			}
+		case <-timout.C:
+			r.logger.Debug("timed out waiting for mempool to clear", zap.Duration("waited", timeout))
+			return
+		}
+	}
 }

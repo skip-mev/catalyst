@@ -15,8 +15,13 @@ type LoadTestResult struct {
 
 // OverallStats represents the overall statistics of the load test
 type OverallStats struct {
-	TotalTransactions      int
+	// TotalTransactions are the total txs sent to the chain
+	TotalTransactions int
+	// TotalIncludedTransactions are the total txs that were sent to the chain and included in a block.
+	TotalIncludedTransactions int
+	// SuccessfulTransactions are all txs that successfully executed.
 	SuccessfulTransactions int
+	// FailedTransactions are all txs that were included in a block, but failed execution.
 	FailedTransactions     int
 	AvgGasPerTransaction   int64
 	AvgBlockGasUtilization float64
@@ -36,9 +41,10 @@ type MessageStats struct {
 
 // TransactionStats represents transaction-related statistics
 type TransactionStats struct {
-	Total      int
-	Successful int
-	Failed     int
+	TotalSent     int
+	TotalIncluded int
+	Successful    int
+	Failed        int
 }
 
 // GasStats represents gas-related statistics

@@ -5,18 +5,62 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
+	ethhd "github.com/cosmos/evm/crypto/hd"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
 // InteractingWallet represents a wallet that can interact with the Ethereum chain
 type InteractingWallet struct {
 	signer *Signer
 	client Client
+}
+
+func NewWalletsFromSpec(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) ([]*InteractingWallet, error) {
+	if len(clients) == 0 {
+		return nil, fmt.Errorf("no clients provided")
+	}
+
+	chainIDStr := strings.TrimSpace(spec.ChainID)
+	chainID, ok := new(big.Int).SetString(chainIDStr, 0) // allow "9001" or "0x2329"
+	if !ok {
+		return nil, fmt.Errorf("failed to parse chain id: %q", spec.ChainID)
+	}
+
+	// EXACT path used by 'eth_secp256k1' default account in Ethermint-based chains.
+	const evmDerivationPath = "m/44'/60'/0'/0/0"
+
+	ws := make([]*InteractingWallet, len(spec.Mnemonics))
+	for i, m := range spec.Mnemonics {
+		m = strings.TrimSpace(m)
+		if m == "" {
+			return nil, fmt.Errorf("mnemonic at index %d is empty", i)
+		}
+
+		// derive raw 32-byte private key from mnemonic at ETH path .../0
+		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, "", evmDerivationPath)
+		if err != nil {
+			return nil, fmt.Errorf("mnemonic[%d]: derive failed: %w", i, err)
+		}
+
+		pk, err := crypto.ToECDSA(derivedPrivKey)
+		if err != nil {
+			return nil, fmt.Errorf("mnemonic[%d]: invalid ECDSA key: %w", i, err)
+		}
+
+		c := clients[i%len(clients)]
+		w := NewInteractingWallet(pk, chainID, c)
+		ws[i] = w
+	}
+	return ws, nil
 }
 
 // NewInteractingWallet creates a new Ethereum wallet

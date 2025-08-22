@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
@@ -16,6 +17,98 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 )
+
+func TestApplyBaselinesToTxOpts(t *testing.T) {
+	makeDynamicBaseline := func() *types.Transaction {
+		to := common.Address{}
+		return types.NewTx(&types.DynamicFeeTx{
+			ChainID:   big.NewInt(1),
+			Nonce:     0,
+			GasTipCap: big.NewInt(2_000_000_000),  // 2 gwei
+			GasFeeCap: big.NewInt(30_000_000_000), // 30 gwei
+			Gas:       21000,
+			To:        &to,
+			Value:     big.NewInt(0),
+		})
+	}
+	makeLegacyBaseline := func() *types.Transaction {
+		to := common.Address{}
+		return types.NewTx(&types.LegacyTx{
+			Nonce:    0,
+			GasPrice: big.NewInt(10_000_000_000), // 10 gwei
+			Gas:      21000,
+			To:       &to,
+			Value:    big.NewInt(0),
+		})
+	}
+
+	t.Run("fills all nil from dynamic baseline", func(t *testing.T) {
+		baseline := makeDynamicBaseline()
+		opts := &bind.TransactOpts{} // all nil/zero
+
+		applyBaselinesToTxOpts(baseline, opts)
+
+		require.Equal(t, opts.GasPrice, opts.GasPrice) // should be unchanged.
+		require.Equal(t, baseline.GasTipCap(), opts.GasTipCap)
+		require.Equal(t, baseline.GasFeeCap(), opts.GasFeeCap)
+		require.Equal(t, baseline.Gas(), opts.GasLimit)
+	})
+
+	t.Run("preserves preset values and fills only missing", func(t *testing.T) {
+		baseline := makeDynamicBaseline()
+		presetGasPrice := big.NewInt(99)
+		presetTipCap := big.NewInt(88)
+
+		opts := &bind.TransactOpts{
+			GasPrice:  new(big.Int).Set(presetGasPrice),
+			GasTipCap: new(big.Int).Set(presetTipCap),
+			// GasFeeCap nil -> should copy from baseline
+			// GasLimit 0 -> should copy from baseline
+		}
+
+		applyBaselinesToTxOpts(baseline, opts)
+
+		// preserved
+		require.Equal(t, presetGasPrice, opts.GasPrice)
+		require.Equal(t, presetTipCap, opts.GasTipCap)
+
+		// filled from baseline
+		require.Equal(t, baseline.GasFeeCap(), opts.GasFeeCap)
+		require.Equal(t, baseline.Gas(), opts.GasLimit)
+	})
+
+	t.Run("legacy baseline mirrors legacy fields and leaves 1559 caps as in baseline (nil)", func(t *testing.T) {
+		baseline := makeLegacyBaseline()
+		opts := &bind.TransactOpts{} // all nil/zero
+
+		applyBaselinesToTxOpts(baseline, opts)
+
+		require.Equal(t, opts.GasPrice, opts.GasPrice)
+		require.Equal(t, baseline.GasTipCap(), opts.GasTipCap)
+		require.Equal(t, baseline.GasFeeCap(), opts.GasFeeCap)
+		require.Equal(t, baseline.Gas(), opts.GasLimit)
+	})
+
+	t.Run("does not overwrite user-provided fee caps with legacy baseline", func(t *testing.T) {
+		baseline := makeLegacyBaseline()
+		userTip := big.NewInt(123)
+		userCap := big.NewInt(456)
+
+		opts := &bind.TransactOpts{
+			GasTipCap: new(big.Int).Set(userTip),
+			GasFeeCap: new(big.Int).Set(userCap),
+		}
+
+		applyBaselinesToTxOpts(baseline, opts)
+
+		// user-provided values are preserved
+		require.Equal(t, userTip, opts.GasTipCap)
+		require.Equal(t, userCap, opts.GasFeeCap)
+		// gas price gets filled from legacy baseline if nil
+		require.Equal(t, opts.GasPrice, opts.GasPrice)
+		require.Equal(t, baseline.Gas(), opts.GasLimit)
+	})
+}
 
 func TestCreateContract_SuccessfulTxs(t *testing.T) {
 	// since the createContract involves some randomness, we do this test a few times.
