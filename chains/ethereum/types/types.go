@@ -39,7 +39,7 @@ var (
 	// LoaderDependencies are the msg types that require the presence of the Loader contract.
 	LoaderDependencies = []loadtesttypes.MsgType{MsgWriteTo, MsgCrossContractCall, MsgCallDataBlast}
 	// ERC20Dependencies are the msg types that require the presence of the WETH contract.
-	ERC20Dependencies = []loadtesttypes.MsgType{MsgDeployERC20}
+	ERC20Dependencies = []loadtesttypes.MsgType{MsgTransferERC0}
 )
 
 type SentTx struct {
