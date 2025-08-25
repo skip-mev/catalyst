@@ -28,6 +28,8 @@ type TxFactory struct {
 	mu              sync.Mutex
 	txOpts          ethtypes.TxOpts
 
+	// nativeERC20PrecompileAddress is the native precompile address of the EVMD chain.
+	// see: EVMD genesis.
 	nativeERC20PrecompileAddress common.Address
 
 	// baseLines are baseline transactions for a given message type. This is useful for upfront load building.
