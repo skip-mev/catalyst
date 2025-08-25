@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"slices"
 	"sync"
 	"time"
 
@@ -93,7 +94,32 @@ func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
 }
 
 // deployInitialContracts deploys an initial contract, so that messages that rely on a deployed contract can run.
-func (r *Runner) deployInitialContracts(ctx context.Context) error {
+func (r *Runner) deployWETH(ctx context.Context) error {
+	contractDeploy := loadtesttypes.LoadTestMsg{Type: inttypes.MsgDeployERC20}
+
+	txs, err := r.buildLoad(contractDeploy, false)
+	if err != nil {
+		return fmt.Errorf("failed to build tx in PreRun: %w", err)
+	}
+	tx := txs[0]
+	if err := r.wallets[0].SendTransaction(ctx, tx); err != nil {
+		return fmt.Errorf("failed to send transaction in PreRun: %w", err)
+	}
+
+	rec, err := r.wallets[rand.Intn(len(r.wallets))].WaitForTxReceipt(ctx, tx.Hash(), 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to wait for tx receipt: %w", err)
+	}
+	if rec.Status != gethtypes.ReceiptStatusSuccessful {
+		return fmt.Errorf("deploying WETH contract failed")
+	}
+
+	r.txFactory.SetWETHAddresses(rec.ContractAddress)
+
+	return nil
+}
+
+func (r *Runner) deployLoader(ctx context.Context) error {
 	numInitialDeploy := r.chainConfig.NumInitialContracts
 	if numInitialDeploy == 0 {
 		numInitialDeploy = 5
@@ -135,7 +161,28 @@ func (r *Runner) deployInitialContracts(ctx context.Context) error {
 	wg.Wait()
 	for _, addr := range loaderAddrs {
 		if addr.Cmp(common.Address{}) != 0 {
-			r.txFactory.SetContractAddrs(addr)
+			r.txFactory.SetLoaderAddresses(addr)
+		}
+	}
+	return nil
+}
+
+// deployInitialContracts deploys the contracts needed for the messages in the spec.
+func (r *Runner) deployInitialContracts(ctx context.Context) error {
+	hasLoaderDependencies := slices.ContainsFunc(r.spec.Msgs, func(msg loadtesttypes.LoadTestMsg) bool {
+		return slices.Contains(inttypes.LoaderDependencies, msg.Type)
+	})
+	hasERC20Dependencies := slices.ContainsFunc(r.spec.Msgs, func(msg loadtesttypes.LoadTestMsg) bool {
+		return slices.Contains(inttypes.ERC20Dependencies, msg.Type)
+	})
+	if hasLoaderDependencies {
+		if err := r.deployLoader(ctx); err != nil {
+			return err
+		}
+	}
+	if hasERC20Dependencies {
+		if err := r.deployWETH(ctx); err != nil {
+			return err
 		}
 	}
 	return nil

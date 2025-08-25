@@ -157,7 +157,7 @@ func TestCreateMsgWriteTo(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, receipt.Status, types.ReceiptStatusSuccessful)
 
-	loader, err := loader.NewLoader(f.contractAddresses[0], wallet.GetClient())
+	loader, err := loader.NewLoader(f.loaderAddresses[0], wallet.GetClient())
 	require.NoError(t, err)
 	slot5, err := loader.Storage1(&bind.CallOpts{}, big.NewInt(5))
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ func TestCrossContractCall(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, receipt.Status, types.ReceiptStatusSuccessful)
 
-	loader, err := loader.NewLoader(f.contractAddresses[0], wallet.GetClient())
+	loader, err := loader.NewLoader(f.loaderAddresses[0], wallet.GetClient())
 	require.NoError(t, err)
 	addr, err := loader.Targets(&bind.CallOpts{}, big.NewInt(0))
 	require.NoError(t, err)
@@ -234,7 +234,7 @@ func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory) {
 		require.NoError(t, err)
 		require.Equal(t, receipt.Status, types.ReceiptStatusSuccessful)
 		if i == len(txs)-1 {
-			f.SetContractAddrs(receipt.ContractAddress)
+			f.SetLoaderAddresses(receipt.ContractAddress)
 		}
 	}
 }
