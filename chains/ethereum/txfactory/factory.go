@@ -366,9 +366,11 @@ func (f *TxFactory) createMsgTransferERC20(ctx context.Context, fromWallet *ethw
 func (f *TxFactory) createMsgNativeTransferERC20(ctx context.Context, fromWallet *ethwallet.InteractingWallet, nonce uint64, useBaseline bool) (*types.Transaction, error) {
 	recipient := f.wallets[rand.Intn(10)].Address() // it is very rare that ERC20s send to a new address. so lets just bounce between 10s.
 
-	// random amount. weth calls amounts wad for some reason.
+	// random amount. weth calls amounts wad for some reason. we continue that trend here.
 	wad := big.NewInt(int64(rand.Intn(10_000)))
 
+	// we use the weth transactor even though were interacting with the native precompile since they share the same interface,
+	// and the call data constructed here will be the same.
 	wethInstance, err := weth.NewWethTransactor(f.nativeERC20PrecompileAddress, fromWallet.GetClient())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get erc20 contract instance at %s: %w", f.nativeERC20PrecompileAddress.String(), err)
