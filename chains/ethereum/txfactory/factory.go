@@ -28,6 +28,8 @@ type TxFactory struct {
 	mu              sync.Mutex
 	txOpts          ethtypes.TxOpts
 
+	nativeERC20PrecompileAddress common.Address
+
 	// baseLines are baseline transactions for a given message type. This is useful for upfront load building.
 	// Instead of using the client to make gas estimations over and over again for the same tx, we can just re-use these initial values.
 	// Be sure to call txFactory.SetBaseLines before using this.
@@ -36,35 +38,36 @@ type TxFactory struct {
 
 func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet, txOpts ethtypes.TxOpts) *TxFactory {
 	return &TxFactory{
-		logger:          logger.With(zap.String("module", "tx_factory")),
-		wallets:         wallets,
-		mu:              sync.Mutex{},
-		txOpts:          txOpts,
-		baseLines:       map[loadtesttypes.MsgType][]*types.Transaction{},
-		loaderAddresses: []common.Address{},
-		wethAddresses:   []common.Address{},
+		logger:                       logger.With(zap.String("module", "tx_factory")),
+		wallets:                      wallets,
+		mu:                           sync.Mutex{},
+		txOpts:                       txOpts,
+		baseLines:                    map[loadtesttypes.MsgType][]*types.Transaction{},
+		nativeERC20PrecompileAddress: common.HexToAddress("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"), // see: evmd
+		loaderAddresses:              []common.Address{},
+		wethAddresses:                []common.Address{},
 	}
 }
 
 // SetBaselines sets the baseline transaction for each message type.
 // This is useful for transactions that do not want to use the client to get gas values.
-func (f *TxFactory) SetBaselines(ctx context.Context) error {
+func (f *TxFactory) SetBaselines(ctx context.Context, msgs []loadtesttypes.LoadTestMsg) error {
 	f.logger.Info("Setting baselines for transactions...")
-	for _, msg := range ethtypes.ValidMessages {
+	for _, msg := range msgs {
 		wallet := f.wallets[rand.Intn(len(f.wallets))]
 		nonce, err := wallet.GetNonce(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get nonce of %s: %w", wallet.FormattedAddress(), err)
 		}
 		spec := loadtesttypes.LoadTestMsg{
-			Type:    msg,
+			Type:    msg.Type,
 			NumMsgs: 1,
 		}
 		txs, err := f.BuildTxs(spec, wallet, nonce, false)
 		if err != nil {
 			return fmt.Errorf("failed to build txs: %w", err)
 		}
-		f.baseLines[msg] = txs
+		f.baseLines[msg.Type] = txs
 	}
 	return nil
 }
@@ -118,6 +121,12 @@ func (f *TxFactory) BuildTxs(msgSpec loadtesttypes.LoadTestMsg, fromWallet *ethw
 		return []*types.Transaction{tx}, nil
 	case ethtypes.MsgTransferERC0:
 		tx, err := f.createMsgTransferERC20(ctx, fromWallet, nonce, useBaseline)
+		if err != nil {
+			return nil, err
+		}
+		return []*types.Transaction{tx}, nil
+	case ethtypes.MsgNativeTransferERC20:
+		tx, err := f.createMsgNativeTransferERC20(ctx, fromWallet, nonce, useBaseline)
 		if err != nil {
 			return nil, err
 		}
@@ -350,6 +359,36 @@ func (f *TxFactory) createMsgTransferERC20(ctx context.Context, fromWallet *ethw
 	tx, err := wethInstance.Transfer(txOpts, recipient, wad)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build tx for writeTo function at %s: %w", contractAddr.String(), err)
+	}
+	return tx, nil
+}
+
+func (f *TxFactory) createMsgNativeTransferERC20(ctx context.Context, fromWallet *ethwallet.InteractingWallet, nonce uint64, useBaseline bool) (*types.Transaction, error) {
+	recipient := f.wallets[rand.Intn(10)].Address() // it is very rare that ERC20s send to a new address. so lets just bounce between 10s.
+
+	// random amount. weth calls amounts wad for some reason.
+	wad := big.NewInt(int64(rand.Intn(10_000)))
+
+	wethInstance, err := weth.NewWethTransactor(f.nativeERC20PrecompileAddress, fromWallet.GetClient())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get erc20 contract instance at %s: %w", f.nativeERC20PrecompileAddress.String(), err)
+	}
+	txOpts := &bind.TransactOpts{
+		From:      fromWallet.Address(),
+		Signer:    fromWallet.SignerFnLegacy(),
+		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
+		GasTipCap: f.txOpts.GasTipCap,
+		GasFeeCap: f.txOpts.GasFeeCap,
+		Context:   ctx,
+		NoSend:    true,
+	}
+	if useBaseline {
+		baseLineTx := f.baseLines[ethtypes.MsgNativeTransferERC20][0]
+		applyBaselinesToTxOpts(baseLineTx, txOpts)
+	}
+	tx, err := wethInstance.Transfer(txOpts, recipient, wad)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build tx for writeTo function at %s: %w", f.nativeERC20PrecompileAddress.String(), err)
 	}
 	return tx, nil
 }

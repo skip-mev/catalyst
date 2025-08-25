@@ -31,6 +31,9 @@ const (
 	// MsgTransferERC0 transfers a random number of tokens to a random address.
 	// Transfers always succeed, no matter the balance.
 	MsgTransferERC0 loadtesttypes.MsgType = "MsgTransferERC0"
+
+	// MsgNativeTransferERC20 calls the cosmos/evm native ERC20 precompile contract.
+	MsgNativeTransferERC20 loadtesttypes.MsgType = "MsgNativeTransferERC20"
 )
 
 var (

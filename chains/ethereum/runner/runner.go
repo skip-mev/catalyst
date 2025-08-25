@@ -197,7 +197,7 @@ func (r *Runner) deployInitialContracts(ctx context.Context) error {
 }
 
 func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction, error) {
-	if err := r.txFactory.SetBaselines(ctx); err != nil {
+	if err := r.txFactory.SetBaselines(ctx, r.spec.Msgs); err != nil {
 		return nil, fmt.Errorf("failed to set Baseline txs: %w", err)
 	}
 
