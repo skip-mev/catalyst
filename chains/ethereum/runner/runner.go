@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net"
+	"net/http"
 	"slices"
 	"sync"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
@@ -45,10 +48,27 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 	clients := make([]*ethclient.Client, 0, len(chainCfg.NodesAddresses))
 	wsClients := make([]*ethclient.Client, 0, len(chainCfg.NodesAddresses))
 	for _, nodeAddress := range chainCfg.NodesAddresses {
-		client, err := ethclient.DialContext(ctx, nodeAddress.RPC)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to node %s: %w", nodeAddress, err)
+		tr := &http.Transport{
+			MaxConnsPerHost:     256,  // cap concurrency per host
+			MaxIdleConns:        2048, // large idle pool
+			MaxIdleConnsPerHost: 1024,
+			IdleConnTimeout:     90 * time.Second,
+			DialContext: (&net.Dialer{
+				Timeout:   3 * time.Second,
+				KeepAlive: 30 * time.Second,
+				// DO NOT set LocalAddr unless you really need to.
+			}).DialContext,
+			// Keep-alives are on by default; don't disable them.
 		}
+		hc := &http.Client{
+			Transport: tr,
+			Timeout:   30 * time.Second, // per-request ceiling
+		}
+		rpcClient, err := rpc.DialOptions(ctx, nodeAddress.RPC, rpc.WithHTTPClient(hc))
+		if err != nil {
+			return nil, fmt.Errorf("failed construct RPC client for %s: %w", nodeAddress.RPC, err)
+		}
+		client := ethclient.NewClient(rpcClient)
 		clients = append(clients, client)
 
 		wsClient, err := ethclient.DialContext(ctx, nodeAddress.Websocket)
