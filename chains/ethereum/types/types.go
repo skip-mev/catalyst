@@ -24,9 +24,26 @@ const (
 	MsgCrossContractCall loadtesttypes.MsgType = "MsgCrossContractCall"
 	// MsgCallDataBlast sends a bunch of calldata to the contract
 	MsgCallDataBlast loadtesttypes.MsgType = "MsgCallDataBlast"
+
+	// MsgDeployERC20 deploys a weth ERC20 contract. The contract is modified to never fail.
+	// That is, you do not need to modify or initiate balances. Every call always passes.
+	MsgDeployERC20 loadtesttypes.MsgType = "MsgDeployERC20"
+	// MsgTransferERC0 transfers a random number of tokens to a random address.
+	// Transfers always succeed, no matter the balance.
+	MsgTransferERC0 loadtesttypes.MsgType = "MsgTransferERC0"
+
+	// MsgNativeTransferERC20 calls the cosmos/evm native ERC20 precompile contract.
+	MsgNativeTransferERC20 loadtesttypes.MsgType = "MsgNativeTransferERC20"
 )
 
-var ValidMessages = []loadtesttypes.MsgType{MsgCreateContract, MsgWriteTo, MsgCrossContractCall, MsgCallDataBlast}
+var (
+	ValidMessages = []loadtesttypes.MsgType{MsgCreateContract, MsgWriteTo, MsgCrossContractCall, MsgCallDataBlast, MsgDeployERC20, MsgTransferERC0}
+
+	// LoaderDependencies are the msg types that require the presence of the Loader contract.
+	LoaderDependencies = []loadtesttypes.MsgType{MsgWriteTo, MsgCrossContractCall, MsgCallDataBlast}
+	// ERC20Dependencies are the msg types that require the presence of the WETH contract.
+	ERC20Dependencies = []loadtesttypes.MsgType{MsgTransferERC0}
+)
 
 type SentTx struct {
 	TxHash      common.Hash

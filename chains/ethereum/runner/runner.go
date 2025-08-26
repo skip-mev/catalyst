@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"slices"
 	"sync"
 	"time"
 
@@ -92,57 +93,111 @@ func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
 	metrics.PrintResults(result)
 }
 
-// deployInitialContracts deploys an initial contract, so that messages that rely on a deployed contract can run.
-func (r *Runner) deployInitialContracts(ctx context.Context) error {
+// ContractDeployer encapsulates the contract deployment configuration
+type ContractDeployer struct {
+	msgType        loadtesttypes.MsgType
+	setAddressFunc func(...common.Address)
+}
+
+// deployContracts is a generic function that handles the common deployment logic
+func (r *Runner) deployContracts(ctx context.Context, deployer ContractDeployer) error {
 	numInitialDeploy := r.chainConfig.NumInitialContracts
 	if numInitialDeploy == 0 {
 		numInitialDeploy = 5
 	}
-	contractDeploy := loadtesttypes.LoadTestMsg{Type: inttypes.MsgCreateContract}
 
-	loaderDeployTxs := make([]*gethtypes.Transaction, 0)
+	contractDeploy := loadtesttypes.LoadTestMsg{Type: deployer.msgType}
+	deployedTxs := make([]*gethtypes.Transaction, 0)
+
+	// Deploy contracts
 	for range numInitialDeploy {
 		txs, err := r.buildLoad(contractDeploy, false)
 		if err != nil {
 			return fmt.Errorf("failed to deploy contracts in PreRun: %w", err)
 		}
+
 		for _, tx := range txs {
 			if err := r.wallets[0].SendTransaction(ctx, tx); err != nil {
 				return fmt.Errorf("failed to send transaction in PreRun: %w", err)
 			}
 		}
-		// the loader contract embeds multiple contracts inside it to support cross-contract call
-		// load test messages. the loader contract itself is always the last tx in the group.
-		// the first txs are for the subcontracts.
-		loaderDeployTx := txs[len(txs)-1]
-		loaderDeployTxs = append(loaderDeployTxs, loaderDeployTx)
+
+		// Get the main contract transaction (always the last one)
+		mainContractTx := txs[len(txs)-1]
+		deployedTxs = append(deployedTxs, mainContractTx)
 	}
 
-	loaderAddrs := make([]common.Address, len(loaderDeployTxs))
+	// Wait for receipts and collect addresses
+	addresses := make([]common.Address, len(deployedTxs))
 	wg := sync.WaitGroup{}
-	for i, tx := range loaderDeployTxs {
+
+	for i, tx := range deployedTxs {
 		wg.Add(1)
-		go func() {
+		go func(index int, transaction *gethtypes.Transaction) {
 			defer wg.Done()
-			rec, err := r.wallets[rand.Intn(len(r.wallets))].WaitForTxReceipt(ctx, tx.Hash(), 5*time.Second)
+			rec, err := r.wallets[rand.Intn(len(r.wallets))].WaitForTxReceipt(ctx, transaction.Hash(), 5*time.Second)
 			if err == nil {
-				loaderAddrs[i] = rec.ContractAddress
+				addresses[index] = rec.ContractAddress
 			} else {
-				r.logger.Error("failed to find receipt for initial contract tx", zap.Error(err))
+				r.logger.Error("failed to find receipt", zap.String("msg_type", deployer.msgType.String()), zap.Error(err))
 			}
-		}()
+		}(i, tx)
 	}
 	wg.Wait()
-	for _, addr := range loaderAddrs {
+
+	// Set addresses in the factory
+	for _, addr := range addresses {
 		if addr.Cmp(common.Address{}) != 0 {
-			r.txFactory.SetContractAddrs(addr)
+			deployer.setAddressFunc(addr)
+		}
+	}
+
+	return nil
+}
+
+// deployWETH deploys WETH contracts using the generic deployment function
+func (r *Runner) deployWETH(ctx context.Context) error {
+	deployer := ContractDeployer{
+		msgType:        inttypes.MsgDeployERC20,
+		setAddressFunc: r.txFactory.SetWETHAddresses,
+	}
+	return r.deployContracts(ctx, deployer)
+}
+
+// deployLoader deploys loader contracts using the generic deployment function
+func (r *Runner) deployLoader(ctx context.Context) error {
+	deployer := ContractDeployer{
+		msgType:        inttypes.MsgCreateContract,
+		setAddressFunc: r.txFactory.SetLoaderAddresses,
+	}
+	return r.deployContracts(ctx, deployer)
+}
+
+// deployInitialContracts deploys the contracts needed for the messages in the spec.
+func (r *Runner) deployInitialContracts(ctx context.Context) error {
+	hasLoaderDependencies := slices.ContainsFunc(r.spec.Msgs, func(msg loadtesttypes.LoadTestMsg) bool {
+		return slices.Contains(inttypes.LoaderDependencies, msg.Type)
+	})
+	hasERC20Dependencies := slices.ContainsFunc(r.spec.Msgs, func(msg loadtesttypes.LoadTestMsg) bool {
+		return slices.Contains(inttypes.ERC20Dependencies, msg.Type)
+	})
+	r.logger.Info("deploy loader?", zap.Bool("hasLoaderDependencies", hasLoaderDependencies))
+	r.logger.Info("deploy erc20?", zap.Bool("hasERC20Deps", hasERC20Dependencies))
+	if hasLoaderDependencies {
+		if err := r.deployLoader(ctx); err != nil {
+			return err
+		}
+	}
+	if hasERC20Dependencies {
+		if err := r.deployWETH(ctx); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction, error) {
-	if err := r.txFactory.SetBaselines(ctx); err != nil {
+	if err := r.txFactory.SetBaselines(ctx, r.spec.Msgs); err != nil {
 		return nil, fmt.Errorf("failed to set Baseline txs: %w", err)
 	}
 
@@ -185,8 +240,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 
 // runOnInterval starts the runner configured for interval load sending.
 func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
-	// deploy an initial contract. this is needed so that messages that rely on contract calls have something
-	// to call.
+	// deploy the initial contracts needed by the runner.
 	if err := r.deployInitialContracts(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
@@ -284,7 +338,7 @@ loop:
 
 	r.waitForEmptyMempool(ctx, 1*time.Minute)
 	// sleep here for a sec because, even though the mempool may be empty, we could still be in process of executing those txs.
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 	blockNum, err = r.wallets[0].GetClient().BlockNumber(ctx)
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get ending block number: %w", err)
