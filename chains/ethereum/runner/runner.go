@@ -365,18 +365,12 @@ loop:
 	}
 	endingBlock := blockNum
 
-	// build clients for collector.
-	clients := make([]wallet.Client, 0, len(r.wallets))
-	for _, wallet := range r.wallets {
-		clients = append(clients, wallet.GetClient())
-	}
-
 	// collect metrics.
 	r.logger.Info("Collecting metrics", zap.Int("num_txs", len(r.sentTxs)))
 	// we pass in 0 for the numOfBlockRequested, because we are not running a block based loadtest.
 	// The collector understands that 0 means we are on a time interval loadtest.
 	collectorStartTime := time.Now()
-	collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, clients)
+	collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, r.clients)
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to collect metrics: %w", err)
 	}
@@ -472,11 +466,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 		r.waitForEmptyMempool(ctx, 1*time.Minute)
 
 		collectorStartTime := time.Now()
-		clients := make([]wallet.Client, 0, len(r.wallets))
-		for _, wallet := range r.wallets {
-			clients = append(clients, wallet.GetClient())
-		}
-		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, clients)
+		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, r.clients)
 		if err != nil {
 			return loadtesttypes.LoadTestResult{Error: err.Error()}, fmt.Errorf("failed to collect metrics: %w", err)
 		}
@@ -568,41 +558,49 @@ func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) 
 }
 
 func (r *Runner) waitForEmptyMempool(ctx context.Context, timeout time.Duration) {
-	client := r.clients[0].Client()
-	type TxPoolStatus struct {
-		Pending hexutil.Uint64 `json:"pending"`
-		Queued  hexutil.Uint64 `json:"queued"`
-	}
-	type TxPoolStatusResponse struct {
-		JSONRPC string       `json:"jsonrpc"`
-		ID      int          `json:"id"`
-		Result  TxPoolStatus `json:"result"`
-	}
+	wg := sync.WaitGroup{}
+	for _, c := range r.clients {
+		wg.Add(1)
+		go func(ethClient *ethclient.Client) {
+			client := ethClient.Client()
+			defer wg.Done()
+			type TxPoolStatus struct {
+				Pending hexutil.Uint64 `json:"pending"`
+				Queued  hexutil.Uint64 `json:"queued"`
+			}
+			type TxPoolStatusResponse struct {
+				JSONRPC string       `json:"jsonrpc"`
+				ID      int          `json:"id"`
+				Result  TxPoolStatus `json:"result"`
+			}
 
-	started := time.Now()
-	timer := time.NewTicker(500 * time.Millisecond)
-	timout := time.NewTimer(timeout)
-	defer timer.Stop()
-	defer timout.Stop()
+			started := time.Now()
+			timer := time.NewTicker(500 * time.Millisecond)
+			timout := time.NewTimer(timeout)
+			defer timer.Stop()
+			defer timout.Stop()
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			var res TxPoolStatusResponse
-			err := client.CallContext(ctx, &res, "txpool_status")
-			if err == nil {
-				if res.Result.Pending == 0 {
-					r.logger.Debug("mempool clear. done waiting for mempool", zap.Duration("waited", time.Since(started)))
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-timer.C:
+					var res TxPoolStatusResponse
+					err := client.CallContext(ctx, &res, "txpool_status")
+					if err == nil {
+						if res.Result.Pending == 0 {
+							r.logger.Debug("mempool clear. done waiting for mempool", zap.Duration("waited", time.Since(started)))
+							return
+						}
+					} else {
+						r.logger.Debug("error calling txpool status", zap.Error(err))
+					}
+				case <-timout.C:
+					r.logger.Debug("timed out waiting for mempool to clear", zap.Duration("waited", timeout))
 					return
 				}
-			} else {
-				r.logger.Debug("error calling txpool status", zap.Error(err))
 			}
-		case <-timout.C:
-			r.logger.Debug("timed out waiting for mempool to clear", zap.Duration("waited", timeout))
-			return
-		}
+		}(c)
 	}
+	wg.Wait()
 }
