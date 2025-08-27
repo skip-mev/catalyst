@@ -365,18 +365,12 @@ loop:
 	}
 	endingBlock := blockNum
 
-	// build clients for collector.
-	clients := make([]wallet.Client, 0, len(r.wallets))
-	for _, wallet := range r.wallets {
-		clients = append(clients, wallet.GetClient())
-	}
-
 	// collect metrics.
 	r.logger.Info("Collecting metrics", zap.Int("num_txs", len(r.sentTxs)))
 	// we pass in 0 for the numOfBlockRequested, because we are not running a block based loadtest.
 	// The collector understands that 0 means we are on a time interval loadtest.
 	collectorStartTime := time.Now()
-	collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, clients)
+	collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, r.clients)
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to collect metrics: %w", err)
 	}
@@ -472,11 +466,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 		r.waitForEmptyMempool(ctx, 1*time.Minute)
 
 		collectorStartTime := time.Now()
-		clients := make([]wallet.Client, 0, len(r.wallets))
-		for _, wallet := range r.wallets {
-			clients = append(clients, wallet.GetClient())
-		}
-		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, clients)
+		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, r.clients)
 		if err != nil {
 			return loadtesttypes.LoadTestResult{Error: err.Error()}, fmt.Errorf("failed to collect metrics: %w", err)
 		}

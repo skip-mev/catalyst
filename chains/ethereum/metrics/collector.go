@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
@@ -18,7 +19,7 @@ import (
 )
 
 // ProcessResults processes the results of the load test.
-func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.SentTx, startBlock, endBlock uint64, clients []wallet.Client) (*loadtesttypes.LoadTestResult, error) {
+func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.SentTx, startBlock, endBlock uint64, clients []*ethclient.Client) (*loadtesttypes.LoadTestResult, error) {
 	wg := sync.WaitGroup{}
 	blockStats := make([]loadtesttypes.BlockStat, endBlock-startBlock+1)
 	receipts := make(map[uint64]gethtypes.Receipts)
