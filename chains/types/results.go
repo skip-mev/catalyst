@@ -30,6 +30,10 @@ type OverallStats struct {
 	EndTime                time.Time
 	BlocksProcessed        int
 	TPS                    float64 `json:"TPS,omitempty"`
+	TPS5SecondWindow       float64 `json:"TPS5SecondWindow,omitempty"`
+	TPS10SecondWindow      float64 `json:"TPS10SecondWindow,omitempty"`
+	TPS30SecondWindow      float64 `json:"TPS30SecondWindow,omitempty"`
+	TPS60SecondWindow      float64 `json:"TPS60SecondWindow,omitempty"`
 }
 
 // MessageStats represents statistics for a specific message type
@@ -71,6 +75,7 @@ type BlockStat struct {
 	TotalGasUsed   int64
 	MessageStats   map[MsgType]MessageBlockStats
 	GasUtilization float64
+	NumTxs         int
 }
 
 // MessageBlockStats represents message-specific statistics within a block
