@@ -43,7 +43,14 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 			if len(blockReceipts) > 0 {
 				receipts[blockReceipts[0].BlockNumber.Uint64()] = blockReceipts
 			}
-			blockStats[blockNum-startBlock] = buildBlockStats(block, blockReceipts)
+			stats := buildBlockStats(block, blockReceipts)
+			blockStats[blockNum-startBlock] = stats
+			logger.Info(
+				"block stats",
+				zap.Int64("block_num", stats.BlockHeight),
+				zap.Int64("gas_limit", stats.GasLimit),
+				zap.Int64("gas_used", stats.TotalGasUsed),
+			)
 		}()
 	}
 	wg.Wait()
@@ -114,6 +121,10 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 	runtime := endTime.Sub(startTime)
 	tps := float64(totalIncluded) / runtime.Seconds()
 
+	tps5s, _, _ := findMaxTPS(blockStats, 5*time.Second)
+	tps10s, _, _ := findMaxTPS(blockStats, 10*time.Second)
+	tps30s, _, _ := findMaxTPS(blockStats, 30*time.Second)
+	tps60s, _, _ := findMaxTPS(blockStats, 60*time.Second)
 	// final results.
 	result := &loadtesttypes.LoadTestResult{
 		Overall: loadtesttypes.OverallStats{
@@ -128,6 +139,10 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 			EndTime:                   endTime,
 			BlocksProcessed:           len(blockStats),
 			TPS:                       tps,
+			TPS5SecondWindow:          tps5s,
+			TPS10SecondWindow:         tps10s,
+			TPS30SecondWindow:         tps30s,
+			TPS60SecondWindow:         tps60s,
 		},
 		ByMessage: msgStats,
 		ByNode:    nil, // TODO: we aren't differentiating on node at the moment. not supported.
@@ -163,6 +178,7 @@ func buildBlockStats(block *gethtypes.Block, receipts gethtypes.Receipts) loadte
 		TotalGasUsed:   int64(block.GasUsed()),            //nolint:gosec // G115: overflow unlikely in practice
 		MessageStats:   msgStats,
 		GasUtilization: float64(block.GasUsed()) / float64(block.GasLimit()),
+		NumTxs:         len(receipts),
 	}
 	return stats
 }
@@ -213,4 +229,35 @@ func calculateTotalSentByType(sentTxs []*types.SentTx) map[loadtesttypes.MsgType
 		}
 	}
 	return totalSentByType
+}
+
+func findMaxTPS(stats []loadtesttypes.BlockStat, window time.Duration) (maxTPS float64, windowStart time.Time, windowEnd time.Time) {
+	if len(stats) == 0 {
+		return 0, time.Time{}, time.Time{}
+	}
+
+	maxTPS = 0
+
+	for i := 0; i < len(stats); i++ {
+		windowStartTime := stats[i].Timestamp
+		windowEndTime := windowStartTime.Add(window)
+
+		totalTxs := 0
+
+		// count all transactions within this 10-second window
+		for j := i; j < len(stats) && stats[j].Timestamp.Before(windowEndTime); j++ {
+			totalTxs += stats[j].NumTxs
+		}
+
+		// Calculate TPS for this window
+		tps := float64(totalTxs) / window.Seconds()
+
+		if tps > maxTPS {
+			maxTPS = tps
+			windowStart = windowStartTime
+			windowEnd = windowEndTime
+		}
+	}
+
+	return maxTPS, windowStart, windowEnd
 }
