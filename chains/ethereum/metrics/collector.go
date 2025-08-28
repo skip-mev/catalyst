@@ -232,6 +232,7 @@ func calculateTotalSentByType(sentTxs []*types.SentTx) map[loadtesttypes.MsgType
 	return totalSentByType
 }
 
+//nolint:unparam // its fine
 func findMaxTPS(stats []loadtesttypes.BlockStat, window time.Duration) (maxTPS float64, windowStart time.Time, windowEnd time.Time) {
 	if len(stats) == 0 {
 		return 0, time.Time{}, time.Time{}

@@ -13,7 +13,7 @@ func TestGetMaxTPS(t *testing.T) {
 	testCases := []struct {
 		name           string
 		stats          []types.BlockStat
-		expectedMaxTPS int
+		expectedMaxTPS float64
 	}{
 		{
 			name:           "TestGetMaxTPS",
