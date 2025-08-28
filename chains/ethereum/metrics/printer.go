@@ -20,10 +20,10 @@ func PrintResults(result loadtesttypes.LoadTestResult) {
 	fmt.Printf("Runtime: %s\n", result.Overall.Runtime)
 	fmt.Printf("Blocks Processed: %d\n", result.Overall.BlocksProcessed)
 	fmt.Printf("Transactions Per Second (TPS): %.2f\n", result.Overall.TPS)
-	fmt.Printf("Max TPS in 5s Window: %.2f\n", result.Overall.TPS5SecondWindow)
-	fmt.Printf("Max TPS in 10s Window: %.2f\n", result.Overall.TPS10SecondWindow)
-	fmt.Printf("Max TPS in 30s Window: %.2f\n", result.Overall.TPS30SecondWindow)
-	fmt.Printf("Max TPS in 60s Window: %.2f\n", result.Overall.TPS60SecondWindow)
+	fmt.Printf("Best TPS in sliding 5s Window: %.2f\n", result.Overall.TPS5SecondWindow)
+	fmt.Printf("Best TPS in sliding 10s Window: %.2f\n", result.Overall.TPS10SecondWindow)
+	fmt.Printf("Best TPS in sliding 30s Window: %.2f\n", result.Overall.TPS30SecondWindow)
+	fmt.Printf("Best TPS in sliding 60s Window: %.2f\n", result.Overall.TPS60SecondWindow)
 
 	fmt.Println("\n📊 Message Type Statistics:")
 	for msgType, stats := range result.ByMessage {

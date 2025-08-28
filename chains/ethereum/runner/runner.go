@@ -78,7 +78,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		wsClients = append(wsClients, wsClient)
 	}
 
-	wallets, err := wallet.NewWalletsFromSpec(spec, wsClients)
+	wallets, err := wallet.NewWalletsFromSpec(spec, clients)
 	if err != nil {
 		return nil, err
 	}

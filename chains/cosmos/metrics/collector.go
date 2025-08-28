@@ -361,6 +361,7 @@ func (m *Collector) ProcessResults(gasLimit int64, numOfBlocksRequested int) loa
 }
 
 // calculateTPS calculates transactions per second based on block timestamps
+// it returns: tps, blockTimespan, first block height and last block height.
 func (m *Collector) calculateTPS(blocks []loadtesttypes.BlockStat, successfulTxs int) (float64, float64, int64, int64) {
 	if len(blocks) == 0 {
 		return 0, 0, 0, 0

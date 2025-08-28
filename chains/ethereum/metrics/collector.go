@@ -50,6 +50,7 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 				zap.Int64("block_num", stats.BlockHeight),
 				zap.Int64("gas_limit", stats.GasLimit),
 				zap.Int64("gas_used", stats.TotalGasUsed),
+				zap.Int("num_txs", stats.NumTxs),
 			)
 		}()
 	}
