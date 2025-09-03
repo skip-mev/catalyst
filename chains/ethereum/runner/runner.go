@@ -41,6 +41,9 @@ type Runner struct {
 
 	sentTxs         []*inttypes.SentTx
 	blocksProcessed uint64
+
+	// senderToWallet maps sender addresses to their assigned wallet
+	senderToWallet map[common.Address]*wallet.InteractingWallet
 }
 
 func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
@@ -93,6 +96,12 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		nonces.Store(wallet.Address(), nonce)
 	}
 
+	// Create sender to wallet mapping for consistent endpoint usage
+	senderToWallet := make(map[common.Address]*wallet.InteractingWallet)
+	for _, w := range wallets {
+		senderToWallet[w.Address()] = w
+	}
+
 	r := &Runner{
 		logger:          logger,
 		clients:         clients,
@@ -104,9 +113,29 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		sentTxs:         make([]*inttypes.SentTx, 0, 100),
 		blocksProcessed: 0,
 		nonces:          &nonces,
+		senderToWallet:  senderToWallet,
 	}
 
 	return r, nil
+}
+
+// getWalletForTx returns the appropriate wallet for sending a transaction based on the sender address.
+// This ensures each sender consistently uses the same endpoint.
+func (r *Runner) getWalletForTx(tx *gethtypes.Transaction) (*wallet.InteractingWallet, error) {
+	// Extract sender address from the transaction
+	signer := gethtypes.NewPragueSigner(tx.ChainId())
+	sender, err := signer.Sender(tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract sender from transaction: %w", err)
+	}
+
+	// Get the wallet assigned to this sender
+	wallet, exists := r.senderToWallet[sender]
+	if !exists {
+		return nil, fmt.Errorf("no wallet found for sender %s", sender.Hex())
+	}
+
+	return wallet, nil
 }
 
 func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
@@ -137,7 +166,12 @@ func (r *Runner) deployContracts(ctx context.Context, deployer ContractDeployer)
 		}
 
 		for _, tx := range txs {
-			if err := r.wallets[0].SendTransaction(ctx, tx); err != nil {
+			// Use the wallet assigned to this transaction's sender for consistent endpoint usage
+			wallet, err := r.getWalletForTx(tx)
+			if err != nil {
+				return fmt.Errorf("failed to get wallet for tx in PreRun: %w", err)
+			}
+			if err := wallet.SendTransaction(ctx, tx); err != nil {
 				return fmt.Errorf("failed to send transaction in PreRun: %w", err)
 			}
 		}
@@ -155,7 +189,13 @@ func (r *Runner) deployContracts(ctx context.Context, deployer ContractDeployer)
 		wg.Add(1)
 		go func(index int, transaction *gethtypes.Transaction) {
 			defer wg.Done()
-			rec, err := r.wallets[rand.Intn(len(r.wallets))].WaitForTxReceipt(ctx, transaction.Hash(), 5*time.Second)
+			// Use the wallet assigned to this transaction's sender for consistent endpoint usage
+			wallet, err := r.getWalletForTx(transaction)
+			if err != nil {
+				r.logger.Error("failed to get wallet for tx receipt", zap.String("msg_type", deployer.msgType.String()), zap.Error(err))
+				return
+			}
+			rec, err := wallet.WaitForTxReceipt(ctx, transaction.Hash(), 5*time.Second)
 			if err == nil {
 				addresses[index] = rec.ContractAddress
 			} else {
@@ -325,9 +365,15 @@ loop:
 				go func() {
 					defer wg.Done()
 					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: getTxType(tx)}
-					// send the tx from a random wallet.
-					wallet := r.wallets[rand.Intn(len(r.wallets))]
-					err := wallet.SendTransaction(ctx, tx)
+					// send the tx from the wallet assigned to this transaction's sender
+					wallet, err := r.getWalletForTx(tx)
+					if err != nil {
+						r.logger.Error("failed to get wallet for tx", zap.Error(err), zap.Int("index", i), zap.Int("load_index", loadIndex))
+						sentTx.Err = err
+						collectionChannel <- &sentTx
+						return
+					}
+					err = wallet.SendTransaction(ctx, tx)
 					if err != nil {
 						r.logger.Error("failed to send tx", zap.Error(err), zap.Int("index", i), zap.Int("load_index", loadIndex))
 						sentTx.Err = err
@@ -502,8 +548,26 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			fromWallet := r.wallets[rand.Intn(len(r.wallets))]
-			err := fromWallet.SendTransaction(ctx, tx)
+			// send the tx from the wallet assigned to this transaction's sender
+			fromWallet, err := r.getWalletForTx(tx)
+			if err != nil {
+				r.logger.Debug("failed to get wallet for tx", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
+				// TODO: for now its just easier to differ based on contract creation. ethereum txs dont really have
+				// obvious "msgtypes" inside the tx object itself. we would have to map txhash to the spec that built the tx to get anything more specific.
+				txType := inttypes.ContractCall
+				if tx.To() == nil {
+					txType = inttypes.ContractCreate
+				}
+				sentTxs[i] = &inttypes.SentTx{
+					TxHash:      tx.Hash(),
+					NodeAddress: "", // TODO: figure out what to do here.
+					MsgType:     txType,
+					Err:         err,
+					Tx:          tx,
+				}
+				return
+			}
+			err = fromWallet.SendTransaction(ctx, tx)
 			if err != nil {
 				r.logger.Debug("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
 			}
