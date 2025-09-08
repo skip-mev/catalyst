@@ -1,12 +1,11 @@
 name: Build & Push
-# Build & Push builds the catalyst docker image on every push to main and
+# Build & Push builds the catalyst docker image on PR events and version tags
 # and pushes the image to https://ghcr.io/skip-mev/catalyst
 on:
   workflow_dispatch:
   pull_request:
+    types: [opened, synchronize, reopened]
   push:
-    branches:
-      - main
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+" # Push events to matching v*, i.e. v1.0.0, v20.15.10
       - "v[0-9]+.[0-9]+.[0-9]+-rc.*" # Push events to matching v*, i.e. v1.0.0-rc.1, v20.15.10-rc.5
@@ -35,9 +34,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=pr
-            type=semver,pattern=v{{major}}.{{minor}}
+            type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
+            type=semver,pattern=v{{major}}.{{minor}}.{{patch}}
           flavor: |
             latest=false
       - name: Set up Docker Buildx
