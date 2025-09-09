@@ -265,6 +265,9 @@ func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction,
 	batchLoads := make([][]*gethtypes.Transaction, 0, 100)
 	total := 0
 	for i := range r.spec.NumBatches {
+		// Reset wallet allocation for each batch to enable role rotation
+		r.txFactory.ResetWalletAllocation()
+
 		batch := make([]*gethtypes.Transaction, 0)
 		for _, msgSpec := range r.spec.Msgs {
 			select {
@@ -525,6 +528,9 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 }
 
 func (r *Runner) submitLoad(ctx context.Context) (int, error) {
+	// Reset wallet allocation for each block/load to enable role rotation
+	r.txFactory.ResetWalletAllocation()
+
 	// first we build the tx load. this constructs all the ethereum txs based in the spec.
 	r.logger.Debug("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
 	txs := make([]*gethtypes.Transaction, 0, len(r.spec.Msgs))
@@ -595,7 +601,14 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 }
 
 func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
-	fromWallet := r.wallets[rand.Intn(len(r.wallets))]
+	// For ERC20 transactions, use optimal sender selection from factory
+	var fromWallet *wallet.InteractingWallet
+	if msgSpec.Type == inttypes.MsgTransferERC0 || msgSpec.Type == inttypes.MsgNativeTransferERC20 {
+		fromWallet = r.txFactory.GetNextSender()
+	} else {
+		// For non-ERC20 transactions, keep random selection
+		fromWallet = r.wallets[rand.Intn(len(r.wallets))]
+	}
 
 	nonce, ok := r.nonces.Load(fromWallet.Address())
 	if !ok {

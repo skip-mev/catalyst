@@ -36,6 +36,12 @@ type TxFactory struct {
 	// Instead of using the client to make gas estimations over and over again for the same tx, we can just re-use these initial values.
 	// Be sure to call txFactory.SetBaseLines before using this.
 	baseLines map[loadtesttypes.MsgType][]*types.Transaction
+
+	// Wallet allocation tracking for minimizing reuse with role rotation
+	senderIndex    int
+	receiverIndex  int
+	loadGeneration int // tracks which load we're on for role rotation
+	numWallets     int // cached number of wallets for pool calculations
 }
 
 func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet, txOpts ethtypes.TxOpts) *TxFactory {
@@ -48,6 +54,10 @@ func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet, tx
 		nativeERC20PrecompileAddress: common.HexToAddress("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"), // see: evmd
 		loaderAddresses:              []common.Address{},
 		wethAddresses:                []common.Address{},
+		senderIndex:                  0,
+		receiverIndex:                0,
+		loadGeneration:               0,
+		numWallets:                   len(wallets),
 	}
 }
 
@@ -144,6 +154,80 @@ func (f *TxFactory) SetLoaderAddresses(addrs ...common.Address) {
 
 func (f *TxFactory) SetWETHAddresses(addrs ...common.Address) {
 	f.wethAddresses = append(f.wethAddresses, addrs...)
+}
+
+// ResetWalletAllocation resets wallet allocation for a new load and rotates roles
+func (f *TxFactory) ResetWalletAllocation() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.senderIndex = 0
+	f.receiverIndex = 0
+	f.loadGeneration++
+}
+
+// getCurrentSenderPool returns the current sender pool with role rotation
+func (f *TxFactory) getCurrentSenderPool() []*ethwallet.InteractingWallet {
+	if f.numWallets < 2 {
+		return f.wallets
+	}
+
+	// Rotate roles: wallets that were receivers in previous loads become senders
+	// This ensures balance distribution over time
+	offset := (f.loadGeneration * (f.numWallets / 2)) % f.numWallets
+	midpoint := f.numWallets / 2
+
+	senderPool := make([]*ethwallet.InteractingWallet, 0, midpoint)
+	for i := 0; i < midpoint; i++ {
+		idx := (offset + i) % f.numWallets
+		senderPool = append(senderPool, f.wallets[idx])
+	}
+
+	return senderPool
+}
+
+// getCurrentReceiverPool returns the current receiver pool with role rotation
+func (f *TxFactory) getCurrentReceiverPool() []*ethwallet.InteractingWallet {
+	if f.numWallets < 2 {
+		return f.wallets
+	}
+
+	// Receivers are the complement of senders in this load
+	offset := (f.loadGeneration * (f.numWallets / 2)) % f.numWallets
+	midpoint := f.numWallets / 2
+	receiverOffset := (offset + midpoint) % f.numWallets
+
+	receiverPool := make([]*ethwallet.InteractingWallet, 0, f.numWallets-midpoint)
+	for i := 0; i < f.numWallets-midpoint; i++ {
+		idx := (receiverOffset + i) % f.numWallets
+		receiverPool = append(receiverPool, f.wallets[idx])
+	}
+
+	return receiverPool
+}
+
+// GetNextSender returns the next sender wallet using round-robin within the current load
+func (f *TxFactory) GetNextSender() *ethwallet.InteractingWallet {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	senderPool := f.getCurrentSenderPool()
+	sender := senderPool[f.senderIndex]
+	f.senderIndex = (f.senderIndex + 1) % len(senderPool)
+
+	return sender
+}
+
+// getNextReceiver returns the next receiver wallet using round-robin within the current load
+func (f *TxFactory) getNextReceiver() common.Address {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	receiverPool := f.getCurrentReceiverPool()
+	receiver := receiverPool[f.receiverIndex]
+	f.receiverIndex = (f.receiverIndex + 1) % len(receiverPool)
+
+	return receiver.Address()
 }
 
 func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *ethwallet.InteractingWallet, targets *int, nonce uint64, useBaseline bool) ([]*types.Transaction, error) {
@@ -336,7 +420,12 @@ func (f *TxFactory) createMsgTransferERC20(ctx context.Context, fromWallet *ethw
 	// Pick a random contract
 	contractAddr := f.wethAddresses[rand.Intn(len(f.wethAddresses))]
 
-	recipient := f.wallets[rand.Intn(10)].Address() // it is very rare that ERC20s send to a new address. so lets just bounce between 10s.
+	// Use optimal recipient selection to minimize reuse and prevent self-transfers
+	recipient := f.getNextReceiver()
+	// Ensure sender != receiver if we have more than one wallet
+	for recipient == fromWallet.Address() && f.numWallets > 1 {
+		recipient = f.getNextReceiver()
+	}
 
 	// random amount. weth calls amounts wad for some reason.
 	wad := big.NewInt(int64(rand.Intn(10_000)))
@@ -366,7 +455,12 @@ func (f *TxFactory) createMsgTransferERC20(ctx context.Context, fromWallet *ethw
 }
 
 func (f *TxFactory) createMsgNativeTransferERC20(ctx context.Context, fromWallet *ethwallet.InteractingWallet, nonce uint64, useBaseline bool) (*types.Transaction, error) {
-	recipient := f.wallets[rand.Intn(10)].Address() // it is very rare that ERC20s send to a new address. so lets just bounce between 10s.
+	// Use optimal recipient selection to minimize reuse and prevent self-transfers
+	recipient := f.getNextReceiver()
+	// Ensure sender != receiver if we have more than one wallet
+	for recipient == fromWallet.Address() && f.numWallets > 1 {
+		recipient = f.getNextReceiver()
+	}
 
 	// random amount. weth calls amounts wad for some reason. we continue that trend here.
 	wad := big.NewInt(int64(rand.Intn(10_000)))
