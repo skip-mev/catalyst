@@ -50,9 +50,12 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 
 	// remove any 0 tx blocks from the beginning and ends of block stats.
 	// this can happen if we started processing before txs landed on chain.
-	blockStats = trimBlocks(blockStats)
-	logger.Info("analyzing blocks...", zap.Int("num_blocks", len(blockStats)))
+	blockStats, err := trimBlocks(blockStats)
+	if err != nil {
+		return nil, fmt.Errorf("failed to trim blocks: %w", err)
+	}
 
+	logger.Info("analyzing blocks...", zap.Int("num_blocks", len(blockStats)))
 	msgStats := make(map[loadtesttypes.MsgType]loadtesttypes.MessageStats)
 	totalSentByType := calculateTotalSentByType(sentTxs)
 	// update each msgType's total sent transactions
@@ -180,7 +183,7 @@ func getReceiptsForBlockTxs(ctx context.Context, block *gethtypes.Block, client 
 	return receipts, nil
 }
 
-func trimBlocks(blocks []loadtesttypes.BlockStat) []loadtesttypes.BlockStat {
+func trimBlocks(blocks []loadtesttypes.BlockStat) ([]loadtesttypes.BlockStat, error) {
 	endTxIndex := len(blocks) - 1
 	for i := len(blocks) - 1; i >= 0; i-- {
 		if len(blocks[i].MessageStats) == 0 {
@@ -199,7 +202,17 @@ func trimBlocks(blocks []loadtesttypes.BlockStat) []loadtesttypes.BlockStat {
 		break
 	}
 
-	return blocks[startTxIndex : endTxIndex+1]
+	if startTxIndex > endTxIndex {
+		return nil, fmt.Errorf("no blocks with transactions")
+	}
+
+	// Include one block before the first transaction block for TPS calculation
+	// This ensures we have a proper time span when all transactions are in one block
+	if startTxIndex > 0 {
+		startTxIndex = startTxIndex - 1
+	}
+
+	return blocks[startTxIndex : endTxIndex+1], nil
 }
 
 // returns the total amount of transactions sent for each type.
