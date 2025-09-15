@@ -209,7 +209,7 @@ func trimBlocks(blocks []loadtesttypes.BlockStat) ([]loadtesttypes.BlockStat, er
 	// Include one block before the first transaction block for TPS calculation
 	// This ensures we have a proper time span when all transactions are in one block
 	if startTxIndex > 0 {
-		startTxIndex = startTxIndex - 1
+		startTxIndex--
 	}
 
 	return blocks[startTxIndex : endTxIndex+1], nil
