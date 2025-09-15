@@ -184,13 +184,17 @@ func getReceiptsForBlockTxs(ctx context.Context, block *gethtypes.Block, client 
 }
 
 func trimBlocks(blocks []loadtesttypes.BlockStat) ([]loadtesttypes.BlockStat, error) {
-	endTxIndex := len(blocks) - 1
+	endTxIndex := -1
 	for i := len(blocks) - 1; i >= 0; i-- {
 		if len(blocks[i].MessageStats) == 0 {
 			continue
 		}
 		endTxIndex = i
 		break
+	}
+
+	if endTxIndex == -1 {
+		return nil, fmt.Errorf("no blocks with transactions")
 	}
 
 	startTxIndex := 0
@@ -200,10 +204,6 @@ func trimBlocks(blocks []loadtesttypes.BlockStat) ([]loadtesttypes.BlockStat, er
 		}
 		startTxIndex = i
 		break
-	}
-
-	if startTxIndex > endTxIndex {
-		return nil, fmt.Errorf("no blocks with transactions")
 	}
 
 	// Include one block before the first transaction block for TPS calculation
