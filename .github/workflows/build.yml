@@ -1,10 +1,10 @@
 name: Build & Push
-# Build & Push builds the catalyst docker image on every push to main and
+# Build & Push builds the catalyst docker image on PR events and pushes to main
 # and pushes the image to https://ghcr.io/skip-mev/catalyst
 on:
+  workflow_dispatch:
   pull_request:
-    paths:
-      - "Dockerfile"
+    types: [opened, synchronize, reopened]
   push:
     branches:
       - main
@@ -36,9 +36,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern=v{{major}}.{{minor}}
-            type=semver,pattern={{version}},value=v${{ inputs.tags }},enable=${{ inputs.tags != '' }}
+            type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
+            type=semver,pattern=v{{major}}.{{minor}}.{{patch}}
           flavor: |
             latest=false
       - name: Set up Docker Buildx
@@ -46,7 +45,6 @@ jobs:
       - name: Setup Depot
         uses: depot/setup-action@v1
       - name: Log into registry ${{ env.REGISTRY }}
-        if: ${{ github.event_name != 'pull_request' }}
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -57,5 +55,6 @@ jobs:
         with:
           project: rpx95khdpz
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
