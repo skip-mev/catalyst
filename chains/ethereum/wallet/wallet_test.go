@@ -17,7 +17,7 @@ import (
 func setupSimulatedBackend(alloc types.GenesisAlloc) *simulated.Backend {
 	backend := simulated.NewBackend(alloc)
 	return backend
-}s
+}
 
 func TestBuildWallets(t *testing.T) {
 	baseMnemonic := "copper push brief egg scan entry inform record adjust fossil boss egg comic alien upon aspect dry avoid interest fury window hint race symptom"
