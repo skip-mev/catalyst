@@ -19,7 +19,8 @@ func TestLoadTestSpec_Marshal_Unmarshal_Eth(t *testing.T) {
 	spec.Kind = "eth"
 	spec.ChainID = "262144"
 	spec.NumOfBlocks = 200
-	spec.Mnemonics = []string{"seed phrase goes here"}
+	spec.BaseMnemonic = "seed phrase goes here"
+	spec.NumWallets = 4
 	spec.ChainCfg = &ethtypes.ChainConfig{NodesAddresses: []ethtypes.NodeAddress{
 		{RPC: "https://foobar:8545", Websocket: "ws://foobar:8546"},
 	}}
@@ -49,7 +50,8 @@ description: eth load test
 kind: eth
 chain_id: 2341
 num_of_blocks: 200
-mnemonics: ["seed phrase goes here"]
+base_mnemonic: "seed phrase goes here"
+num_wallets: 1500
 tx_timeout: "30s"
 chain_config:
   tx_opts:
@@ -79,7 +81,8 @@ description: cosmos load test
 kind: cosmos
 chain_id: cosmoshub-4
 num_of_blocks: 200
-mnemonics: ["seed phrase goes here"]
+base_mnemonic: "seed phrase goes here"
+num_wallets: 4
 tx_timeout: "30s"
 chain_config:
   gas_denom: "uatom"
@@ -89,13 +92,14 @@ chain_config:
 `)
 
 	expectedSpec := loadtesttypes.LoadTestSpec{
-		Name:        "worker",
-		Description: "cosmos load test",
-		Kind:        "cosmos",
-		ChainID:     "cosmoshub-4",
-		NumOfBlocks: 200,
-		Mnemonics:   []string{"seed phrase goes here"},
-		TxTimeout:   30 * time.Second,
+		Name:         "worker",
+		Description:  "cosmos load test",
+		Kind:         "cosmos",
+		ChainID:      "cosmoshub-4",
+		NumOfBlocks:  200,
+		BaseMnemonic: "seed phrase goes here",
+		NumWallets:   4,
+		TxTimeout:    30 * time.Second,
 		ChainCfg: &cosmostypes.ChainConfig{
 			GasDenom:       "uatom",
 			Bech32Prefix:   "cosmos",

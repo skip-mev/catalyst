@@ -113,8 +113,8 @@ func (s ChainConfig) Validate(mainCfg loadtesttypes.LoadTestSpec) error {
 			}
 			seenMsgArrTypes[msg.ContainedType] = true
 		case MsgMultiSend:
-			if msg.NumOfRecipients > len(mainCfg.Mnemonics) {
-				return fmt.Errorf("number of recipients must be less than or equal to number of mneomnics available")
+			if msg.NumOfRecipients > mainCfg.NumWallets {
+				return fmt.Errorf("number of recipients must be less than or equal to number of wallets available")
 			}
 		default:
 			if seenMsgTypes[msg.Type] {

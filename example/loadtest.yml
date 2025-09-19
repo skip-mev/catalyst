@@ -7,12 +7,8 @@ nodes_addresses:
     rpc: "http://100.122.238.40:26657"
   - grpc: "100.94.146.128:9090"
     rpc: "http://100.94.146.128:26657"
-mnemonics:
-  # These are example BIP39 mnemonics for deriving secp256k1 private keys
-  # You should replace these with your actual mnemonics
-  - "rotate stumble once topic possible message powder recall turkey legend depart brick"  # Replace with actual BIP39 mnemonic
-  - "boat physical carry remain install glance cloud ethics plunge garment split shaft"
-  - "tackle lesson category enroll reopen romance can flat cable equip between cushion" # Replace with actual BIP39 mnemonic
+base_mnemonic: "rotate stumble once topic possible message powder recall turkey legend depart brick"
+num_wallets: 15000
 gas_denom: "stake"
 bech32_prefix: "cosmos"
 msgs:
