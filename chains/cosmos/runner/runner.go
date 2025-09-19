@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/crypto/types"
@@ -22,8 +23,6 @@ import (
 	logging "github.com/skip-mev/catalyst/chains/log"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"go.uber.org/zap"
-
-	sdkmath "cosmossdk.io/math"
 )
 
 // MsgGasEstimation stores gas estimation for a specific message type
