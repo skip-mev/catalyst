@@ -1,11 +1,9 @@
 package petriintegration
 
-/*
 import (
 	"context"
 	"fmt"
 	"os/signal"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -14,12 +12,11 @@ import (
 	"github.com/skip-mev/catalyst/chains"
 	cosmoslttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"github.com/skip-mev/petri/core/v3/provider"
-	"github.com/skip-mev/petri/core/v3/provider/docker"
-	petritypes "github.com/skip-mev/petri/core/v3/types"
-	"github.com/skip-mev/petri/core/v3/util"
-	"github.com/skip-mev/petri/cosmos/v3/chain"
-	"github.com/skip-mev/petri/cosmos/v3/node"
+	"github.com/skip-mev/ironbird/petri/core/provider"
+	"github.com/skip-mev/ironbird/petri/core/provider/docker"
+	petritypes "github.com/skip-mev/ironbird/petri/core/types"
+	"github.com/skip-mev/ironbird/petri/cosmos/chain"
+	"github.com/skip-mev/ironbird/petri/cosmos/node"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
@@ -27,6 +24,7 @@ import (
 var (
 	defaultChainConfig = petritypes.ChainConfig{
 		Denom:         "stake",
+		Name:          "iamatest",
 		Decimals:      6,
 		NumValidators: 1,
 		NumNodes:      0,
@@ -59,6 +57,8 @@ var (
 			DerivationFn:     hd.Secp256k1.Derive(),
 			GenerationFn:     hd.Secp256k1.Generate(),
 		},
+		AdditionalAccounts: 500,
+		BaseMnemonic:       "copper push brief egg scan entry inform record adjust fossil boss egg comic alien upon aspect dry avoid interest fury window hint race symptom",
 	}
 )
 
@@ -115,73 +115,18 @@ func TestPetriDockerIntegration(t *testing.T) {
 		})
 	}
 
-	var wallets []petritypes.WalletI
-	var walletsMutex sync.Mutex
-	var wg sync.WaitGroup
-
-	faucetWallet := c.GetFaucetWallet()
-	node := c.GetValidators()[0]
-
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			w, err := c.CreateWallet(ctx, util.RandomString(5), defaultChainOptions.WalletConfig)
-			if err != nil {
-				logger.Error("Failed to create wallet", zap.Error(err))
-				return
-			}
-
-			walletsMutex.Lock()
-			wallets = append(wallets, w)
-			walletsMutex.Unlock()
-		}()
-	}
-
-	wg.Wait()
-	time.Sleep(20 * time.Second)
-
-	logger.Info("Successfully created wallets asynchronously", zap.Int("count", len(wallets)))
-
-	addresses := make([]string, len(wallets))
-	for i, w := range wallets {
-		addresses[i] = w.FormattedAddress()
-	}
-
-	command := []string{
-		defaultChainConfig.BinaryName,
-		"tx", "bank", "multi-send",
-		faucetWallet.FormattedAddress(),
-	}
-	command = append(command, addresses...)
-	command = append(command, "1000000000stake",
-		"--chain-id", defaultChainConfig.ChainId,
-		"--keyring-backend", "test",
-		"--fees", "3000stake",
-		"--gas", "auto",
-		"--yes",
-		"--home", defaultChainConfig.HomeDir,
-	)
-
-	t.Log("command: ", command)
-	stdout, stderr, exitCode, err := node.RunCommand(ctx, command)
-	t.Log("stdout, stderr", stdout, stderr)
-	if err != nil || exitCode != 0 {
-		t.Fatal("Failed to fund wallets with MsgMultiSend", zap.Error(err), zap.String("stderr", stderr))
-	}
-	time.Sleep(5 * time.Second)
-
 	msgs := []loadtesttypes.LoadTestMsg{
 		{Weight: 1, Type: cosmoslttypes.MsgMultiSend},
 		// {Weight: 1, Type: cosmoslttypes.MsgSend},
 	}
 
 	spec := loadtesttypes.LoadTestSpec{
-		ChainID:     defaultChainConfig.ChainId,
-		NumOfBlocks: 5,
-		Mnemonics:   mnemonics,
-		Msgs:        msgs,
-		TxTimeout:   time.Second * 20,
+		ChainID:      defaultChainConfig.ChainId,
+		NumOfBlocks:  5,
+		BaseMnemonic: defaultChainOptions.BaseMnemonic,
+		NumWallets:   defaultChainOptions.AdditionalAccounts,
+		Msgs:         msgs,
+		TxTimeout:    time.Second * 20,
 		ChainCfg: &cosmoslttypes.ChainConfig{
 			GasDenom:       defaultChainConfig.Denom,
 			Bech32Prefix:   defaultChainConfig.Bech32Prefix,
@@ -259,75 +204,17 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 		})
 	}
 
-	var mnemonics []string
-	var wallets []petritypes.WalletI
-	var walletsMutex sync.Mutex
-	var wg sync.WaitGroup
-
-	faucetWallet := c.GetFaucetWallet()
-	node := c.GetValidators()[0]
-
-	numWallets := 2
-	for range numWallets {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			w, err := c.CreateWallet(ctx, util.RandomString(5), defaultChainOptions.WalletConfig)
-			if err != nil {
-				logger.Error("Failed to create wallet", zap.Error(err))
-				return
-			}
-
-			walletsMutex.Lock()
-			mnemonics = append(mnemonics, w.Mnemonic())
-			wallets = append(wallets, w)
-			walletsMutex.Unlock()
-		}()
-	}
-
-	wg.Wait()
-
-	logger.Info("Successfully created wallets asynchronously", zap.Int("count", len(wallets)))
-
-	addresses := make([]string, len(wallets))
-	for i, w := range wallets {
-		addresses[i] = w.FormattedAddress()
-	}
-	t.Log("addresses: ", addresses)
-
-	command := []string{
-		defaultChainConfig.BinaryName,
-		"tx", "bank", "multi-send",
-		faucetWallet.FormattedAddress(),
-	}
-	command = append(command, addresses...)
-	command = append(command, "1000000000stake",
-		"--chain-id", defaultChainConfig.ChainId,
-		"--keyring-backend", "test",
-		"--fees", "500stake",
-		"--gas", "auto",
-		"--yes",
-		"--home", defaultChainConfig.HomeDir,
-	)
-	t.Log("funding command. ", command)
-
-	stdout, stderr, exitCode, err := node.RunCommand(ctx, command)
-	t.Log("stdout, stderr", stdout, stderr)
-	if err != nil || exitCode != 0 {
-		t.Fatal("Failed to fund wallets with MsgMultiSend", zap.Error(err), zap.String("stderr", stderr))
-	}
-	time.Sleep(5 * time.Second)
-
 	msgs := []loadtesttypes.LoadTestMsg{
 		{Weight: 1, Type: cosmoslttypes.MsgMultiSend},
 	}
 	spec := loadtesttypes.LoadTestSpec{
-		ChainID:     defaultChainConfig.ChainId,
-		NumOfBlocks: 20,
-		Mnemonics:   mnemonics,
-		Msgs:        msgs,
-		NumOfTxs:    10,
-		Kind:        chains.CosmosKind,
+		ChainID:      defaultChainConfig.ChainId,
+		NumOfBlocks:  20,
+		BaseMnemonic: defaultChainOptions.BaseMnemonic,
+		NumWallets:   defaultChainOptions.AdditionalAccounts,
+		Msgs:         msgs,
+		NumOfTxs:     10,
+		Kind:         chains.CosmosKind,
 		ChainCfg: &cosmoslttypes.ChainConfig{
 			GasDenom:       defaultChainConfig.Denom,
 			Bech32Prefix:   defaultChainConfig.Bech32Prefix,
@@ -336,8 +223,7 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 	}
 
 	task, err := p.CreateTask(ctx, provider.TaskDefinition{
-		Name:          "catalyst",
-		ContainerName: "catalyst",
+		Name: "catalyst",
 		Image: provider.ImageDefinition{
 			Image: "ghcr.io/skip-mev/catalyst:latest",
 			UID:   "100",
@@ -382,4 +268,3 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 
 	fmt.Printf("Load test results: %+v\n", result)
 }
-*/
