@@ -12,11 +12,29 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zaptest"
 )
 
 func setupSimulatedBackend(alloc types.GenesisAlloc) *simulated.Backend {
 	backend := simulated.NewBackend(alloc)
 	return backend
+}
+
+func TestBuildWallets2(t *testing.T) {
+	baseMnemonic := "copper push brief egg scan entry inform record adjust fossil boss egg comic alien upon aspect dry avoid interest fury window hint race symptom"
+	spec := loadtesttypes.LoadTestSpec{
+		BaseMnemonic: baseMnemonic,
+		NumWallets:   360000,
+		ChainID:      "262144",
+	}
+
+	client := &ethclient.Client{}
+
+	logger := zaptest.NewLogger(t)
+	wallets, err := NewWalletsFromSpec(logger, spec, []*ethclient.Client{client})
+	require.NoError(t, err)
+
+	require.Len(t, wallets, spec.NumWallets)
 }
 
 func TestBuildWallets(t *testing.T) {
@@ -36,7 +54,8 @@ func TestBuildWallets(t *testing.T) {
 
 	client := &ethclient.Client{}
 
-	wallets, err := NewWalletsFromSpec(spec, []*ethclient.Client{client})
+	logger := zaptest.NewLogger(t)
+	wallets, err := NewWalletsFromSpec(logger, spec, []*ethclient.Client{client})
 	require.NoError(t, err)
 
 	require.Len(t, wallets, spec.NumWallets)

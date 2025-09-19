@@ -47,6 +47,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 	chainCfg := spec.ChainCfg.(*inttypes.ChainConfig)
 	clients := make([]*ethclient.Client, 0, len(chainCfg.NodesAddresses))
 	wsClients := make([]*ethclient.Client, 0, len(chainCfg.NodesAddresses))
+	logger.Info("configuring runner")
 	for _, nodeAddress := range chainCfg.NodesAddresses {
 		tr := &http.Transport{
 			MaxConnsPerHost:     256,  // cap concurrency per host
@@ -77,8 +78,9 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		}
 		wsClients = append(wsClients, wsClient)
 	}
+	logger.Info("built clients", zap.Int("clients", len(clients)))
 
-	wallets, err := wallet.NewWalletsFromSpec(spec, clients)
+	wallets, err := wallet.NewWalletsFromSpec(logger, spec, clients)
 	if err != nil {
 		return nil, err
 	}
@@ -86,11 +88,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 	txf := txfactory.NewTxFactory(logger, wallets, chainCfg.TxOpts)
 	nonces := sync.Map{}
 	for _, wallet := range wallets {
-		nonce, err := wallet.GetNonce(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get nonce of %s: %w", wallet.Address(), err)
-		}
-		nonces.Store(wallet.Address(), nonce)
+		nonces.Store(wallet.Address(), 0)
 	}
 
 	// Create sender to wallet mapping for consistent endpoint usage
@@ -98,6 +96,8 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 	for _, w := range wallets {
 		senderToWallet[w.Address()] = w
 	}
+
+	logger.Info("runner construction complete")
 
 	r := &Runner{
 		logger:          logger,

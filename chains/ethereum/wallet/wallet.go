@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"go.uber.org/zap"
 )
 
 // InteractingWallet represents a wallet that can interact with the Ethereum chain
@@ -28,7 +29,7 @@ type InteractingWallet struct {
 
 // NewWalletsFromSpec builds wallets from the spec. It takes the `BaseMnemonic` and derives all keys from this mnemonic
 // by using an increasing bip passphrase. The passphrase value is an integer from [0,spec.NumWallets).
-func NewWalletsFromSpec(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) ([]*InteractingWallet, error) {
+func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) ([]*InteractingWallet, error) {
 	if len(clients) == 0 {
 		return nil, fmt.Errorf("no clients provided")
 	}
@@ -47,7 +48,9 @@ func NewWalletsFromSpec(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Cl
 	if m == "" {
 		return nil, errors.New("BaseMnemonic is empty")
 	}
+	logger.Info("building wallets", zap.Int("num_wallets", spec.NumWallets))
 	for i := range spec.NumWallets {
+		logger.Info("building wallet", zap.Int("index", i))
 		// derive raw 32-byte private key from mnemonic at ETH path .../0
 		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, strconv.Itoa(i), evmDerivationPath)
 		if err != nil {
@@ -62,7 +65,11 @@ func NewWalletsFromSpec(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Cl
 		c := clients[i%len(clients)]
 		w := NewInteractingWallet(pk, chainID, c)
 		ws[i] = w
+		if i%100 == 0 {
+			logger.Info("wallets built", zap.Int("num_wallets", i))
+		}
 	}
+	logger.Info("completed building wallets")
 	return ws, nil
 }
 
