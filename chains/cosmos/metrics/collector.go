@@ -87,7 +87,7 @@ func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, cl
 					tx.TxResponse = txResponse
 
 					if txResponse.Code != 0 {
-						tx.Err = fmt.Errorf(txResponse.RawLog)
+						tx.Err = fmt.Errorf("%s", txResponse.RawLog)
 					}
 
 					mu.Lock()
