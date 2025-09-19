@@ -50,7 +50,6 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 	}
 	logger.Info("building wallets", zap.Int("num_wallets", spec.NumWallets))
 	for i := range spec.NumWallets {
-		logger.Info("building wallet", zap.Int("index", i))
 		// derive raw 32-byte private key from mnemonic at ETH path .../0
 		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, strconv.Itoa(i), evmDerivationPath)
 		if err != nil {
