@@ -3,8 +3,10 @@ package wallet
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,15 +40,14 @@ func NewWalletsFromSpec(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Cl
 	// EXACT path used by 'eth_secp256k1' default account in Ethermint-based chains.
 	const evmDerivationPath = "m/44'/60'/0'/0/0"
 
-	ws := make([]*InteractingWallet, len(spec.Mnemonics))
-	for i, m := range spec.Mnemonics {
-		m = strings.TrimSpace(m)
-		if m == "" {
-			return nil, fmt.Errorf("mnemonic at index %d is empty", i)
-		}
-
+	ws := make([]*InteractingWallet, spec.NumWallets)
+	m := strings.TrimSpace(spec.BaseMnemonic)
+	if m == "" {
+		return nil, errors.New("BaseMnemonic is empty")
+	}
+	for i := range spec.NumWallets {
 		// derive raw 32-byte private key from mnemonic at ETH path .../0
-		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, "", evmDerivationPath)
+		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, strconv.Itoa(i), evmDerivationPath)
 		if err != nil {
 			return nil, fmt.Errorf("mnemonic[%d]: derive failed: %w", i, err)
 		}

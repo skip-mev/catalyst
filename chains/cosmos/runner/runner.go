@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/crypto/types"
@@ -23,6 +22,8 @@ import (
 	logging "github.com/skip-mev/catalyst/chains/log"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"go.uber.org/zap"
+
+	sdkmath "cosmossdk.io/math"
 )
 
 // MsgGasEstimation stores gas estimation for a specific message type
@@ -77,12 +78,12 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		return nil, fmt.Errorf("no valid clients created")
 	}
 
-	var privKeys []types.PrivKey
-	if len(spec.Mnemonics) > 0 {
-		for _, mnemonic := range spec.Mnemonics {
+	privKeys := make([]types.PrivKey, 0, spec.NumWallets)
+	if spec.NumWallets > 0 {
+		for i := range spec.NumWallets {
 			derivedPrivKey, err := hd.Secp256k1.Derive()(
-				mnemonic,
-				"",
+				spec.BaseMnemonic,
+				strconv.Itoa(i),
 				"44'/118'/0'/0/0",
 			)
 			if err != nil {
@@ -93,7 +94,7 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 	}
 
 	if len(privKeys) == 0 {
-		return nil, fmt.Errorf("no private keys available: either provide mnemonics or private keys")
+		return nil, fmt.Errorf("no private keys available: either provide base mnemonic or private keys")
 	}
 
 	var wallets []*wallet.InteractingWallet

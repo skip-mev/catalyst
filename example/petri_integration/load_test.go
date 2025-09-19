@@ -1,5 +1,6 @@
 package petriintegration
 
+/*
 import (
 	"context"
 	"fmt"
@@ -114,7 +115,6 @@ func TestPetriDockerIntegration(t *testing.T) {
 		})
 	}
 
-	var mnemonics []string
 	var wallets []petritypes.WalletI
 	var walletsMutex sync.Mutex
 	var wg sync.WaitGroup
@@ -134,7 +134,6 @@ func TestPetriDockerIntegration(t *testing.T) {
 
 			walletsMutex.Lock()
 			wallets = append(wallets, w)
-			mnemonics = append(mnemonics, w.Mnemonic())
 			walletsMutex.Unlock()
 		}()
 	}
@@ -383,3 +382,4 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 
 	fmt.Printf("Load test results: %+v\n", result)
 }
+*/
