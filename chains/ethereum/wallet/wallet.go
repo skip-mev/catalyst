@@ -26,6 +26,8 @@ type InteractingWallet struct {
 	client Client
 }
 
+// NewWalletsFromSpec builds wallets from the spec. It takes the `BaseMnemonic` and derives all keys from this mnemonic
+// by using an increasing bip passphrase. The passphrase value is an integer from [0,spec.NumWallets).
 func NewWalletsFromSpec(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) ([]*InteractingWallet, error) {
 	if len(clients) == 0 {
 		return nil, fmt.Errorf("no clients provided")

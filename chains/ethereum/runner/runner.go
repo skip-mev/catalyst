@@ -23,9 +23,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// TODO: we likely need to be more sophisticated here for problems that may arise when txs fail.
-// i.e. nonces could be out of whack if one batch fails but we still want to continue.
-
 type Runner struct {
 	logger *zap.Logger
 
