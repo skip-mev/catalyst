@@ -64,7 +64,7 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 		c := clients[i%len(clients)]
 		w := NewInteractingWallet(pk, chainID, c)
 		ws[i] = w
-		if i%100 == 0 {
+		if i%10_000 == 0 {
 			logger.Info("wallets built", zap.Int("num_wallets", i))
 		}
 	}
