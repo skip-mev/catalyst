@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zaptest"
 )
 
 func setupSimulatedBackend(alloc types.GenesisAlloc) *simulated.Backend {
@@ -20,28 +21,27 @@ func setupSimulatedBackend(alloc types.GenesisAlloc) *simulated.Backend {
 }
 
 func TestBuildWallets(t *testing.T) {
-	mnems := []string{
-		"copper push brief egg scan entry inform record adjust fossil boss egg comic alien upon aspect dry avoid interest fury window hint race symptom",
-		"maximum display century economy unlock van census kite error heart snow filter midnight usage egg venture cash kick motor survey drastic edge muffin visual",
-		"will wear settle write dance topic tape sea glory hotel oppose rebel client problem era video gossip glide during yard balance cancel file rose",
-		"doll midnight silk carpet brush boring pluck office gown inquiry duck chief aim exit gain never tennis crime fragile ship cloud surface exotic patch",
-	}
+	baseMnemonic := "copper push brief egg scan entry inform record adjust fossil boss egg comic alien upon aspect dry avoid interest fury window hint race symptom"
+
 	expectedAddrs := []string{
-		"0xC6Fe5D33615a1C52c08018c47E8Bc53646A0E101",
-		"0x963EBDf2e1f8DB8707D05FC75bfeFFBa1B5BaC17",
-		"0x40a0cb1C63e026A81B55EE1308586E21eec1eFa9",
-		"0x498B5AeC5D439b733dC2F58AB489783A23FB26dA",
+		"0x9359cdfd29EbFA924c0a29972C9b8f69d26a0bF1",
+		"0x9A271A6A9C60936f2E6E32e460Fda5d2C92e4368",
+		"0xBf2B5547C06662DdEB4b1D43542fb65BFd4e6330",
+		"0x6dE3b4C24cef32bEA6D0dCa96727A5BDAEa56D22",
 	}
 	spec := loadtesttypes.LoadTestSpec{
-		Mnemonics: mnems,
-		ChainID:   "262144",
+		BaseMnemonic: baseMnemonic,
+		NumWallets:   4,
+		ChainID:      "262144",
 	}
 
 	client := &ethclient.Client{}
 
-	wallets, err := NewWalletsFromSpec(spec, []*ethclient.Client{client})
+	logger := zaptest.NewLogger(t)
+	wallets, err := NewWalletsFromSpec(logger, spec, []*ethclient.Client{client})
 	require.NoError(t, err)
 
+	require.Len(t, wallets, spec.NumWallets)
 	for i, wallet := range wallets {
 		require.Equal(t, expectedAddrs[i], wallet.Address().String())
 	}

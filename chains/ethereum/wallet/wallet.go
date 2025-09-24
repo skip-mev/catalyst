@@ -3,8 +3,10 @@ package wallet
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"go.uber.org/zap"
 )
 
 // InteractingWallet represents a wallet that can interact with the Ethereum chain
@@ -24,7 +27,9 @@ type InteractingWallet struct {
 	client Client
 }
 
-func NewWalletsFromSpec(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) ([]*InteractingWallet, error) {
+// NewWalletsFromSpec builds wallets from the spec. It takes the `BaseMnemonic` and derives all keys from this mnemonic
+// by using an increasing bip passphrase. The passphrase value is an integer from [0,spec.NumWallets).
+func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) ([]*InteractingWallet, error) {
 	if len(clients) == 0 {
 		return nil, fmt.Errorf("no clients provided")
 	}
@@ -38,15 +43,15 @@ func NewWalletsFromSpec(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Cl
 	// EXACT path used by 'eth_secp256k1' default account in Ethermint-based chains.
 	const evmDerivationPath = "m/44'/60'/0'/0/0"
 
-	ws := make([]*InteractingWallet, len(spec.Mnemonics))
-	for i, m := range spec.Mnemonics {
-		m = strings.TrimSpace(m)
-		if m == "" {
-			return nil, fmt.Errorf("mnemonic at index %d is empty", i)
-		}
-
+	ws := make([]*InteractingWallet, spec.NumWallets)
+	m := strings.TrimSpace(spec.BaseMnemonic)
+	if m == "" {
+		return nil, errors.New("BaseMnemonic is empty")
+	}
+	logger.Info("building wallets", zap.Int("num_wallets", spec.NumWallets))
+	for i := range spec.NumWallets {
 		// derive raw 32-byte private key from mnemonic at ETH path .../0
-		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, "", evmDerivationPath)
+		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, strconv.Itoa(i), evmDerivationPath)
 		if err != nil {
 			return nil, fmt.Errorf("mnemonic[%d]: derive failed: %w", i, err)
 		}
@@ -59,7 +64,11 @@ func NewWalletsFromSpec(spec loadtesttypes.LoadTestSpec, clients []*ethclient.Cl
 		c := clients[i%len(clients)]
 		w := NewInteractingWallet(pk, chainID, c)
 		ws[i] = w
+		if i%10_000 == 0 {
+			logger.Info("wallets built", zap.Int("num_wallets", i))
+		}
 	}
+	logger.Info("completed building wallets")
 	return ws, nil
 }
 

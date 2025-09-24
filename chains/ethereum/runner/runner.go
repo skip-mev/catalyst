@@ -23,9 +23,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// TODO: we likely need to be more sophisticated here for problems that may arise when txs fail.
-// i.e. nonces could be out of whack if one batch fails but we still want to continue.
-
 type Runner struct {
 	logger *zap.Logger
 
@@ -41,12 +38,16 @@ type Runner struct {
 
 	sentTxs         []*inttypes.SentTx
 	blocksProcessed uint64
+
+	// senderToWallet maps sender addresses to their assigned wallet
+	senderToWallet map[common.Address]*wallet.InteractingWallet
 }
 
 func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
 	chainCfg := spec.ChainCfg.(*inttypes.ChainConfig)
 	clients := make([]*ethclient.Client, 0, len(chainCfg.NodesAddresses))
 	wsClients := make([]*ethclient.Client, 0, len(chainCfg.NodesAddresses))
+	logger.Info("configuring runner")
 	for _, nodeAddress := range chainCfg.NodesAddresses {
 		tr := &http.Transport{
 			MaxConnsPerHost:     256,  // cap concurrency per host
@@ -77,8 +78,9 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		}
 		wsClients = append(wsClients, wsClient)
 	}
+	logger.Info("built clients", zap.Int("clients", len(clients)))
 
-	wallets, err := wallet.NewWalletsFromSpec(spec, clients)
+	wallets, err := wallet.NewWalletsFromSpec(logger, spec, clients)
 	if err != nil {
 		return nil, err
 	}
@@ -86,12 +88,16 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 	txf := txfactory.NewTxFactory(logger, wallets, chainCfg.TxOpts)
 	nonces := sync.Map{}
 	for _, wallet := range wallets {
-		nonce, err := wallet.GetNonce(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get nonce of %s: %w", wallet.Address(), err)
-		}
-		nonces.Store(wallet.Address(), nonce)
+		nonces.Store(wallet.Address(), uint64(0))
 	}
+
+	// Create sender to wallet mapping for consistent endpoint usage
+	senderToWallet := make(map[common.Address]*wallet.InteractingWallet)
+	for _, w := range wallets {
+		senderToWallet[w.Address()] = w
+	}
+
+	logger.Info("runner construction complete")
 
 	r := &Runner{
 		logger:          logger,
@@ -104,9 +110,29 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		sentTxs:         make([]*inttypes.SentTx, 0, 100),
 		blocksProcessed: 0,
 		nonces:          &nonces,
+		senderToWallet:  senderToWallet,
 	}
 
 	return r, nil
+}
+
+// getWalletForTx returns the appropriate wallet for sending a transaction based on the sender address.
+// This ensures each sender consistently uses the same endpoint.
+func (r *Runner) getWalletForTx(tx *gethtypes.Transaction) *wallet.InteractingWallet {
+	// Extract sender address from the transaction
+	signer := gethtypes.NewPragueSigner(tx.ChainId())
+	sender, err := signer.Sender(tx)
+	if err != nil {
+		panic(fmt.Sprintf("failed to extract sender from transaction: %v", err))
+	}
+
+	// Get the wallet assigned to this sender
+	wallet, exists := r.senderToWallet[sender]
+	if !exists {
+		panic(fmt.Sprintf("no wallet found for sender %s", sender.Hex()))
+	}
+
+	return wallet
 }
 
 func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
@@ -137,7 +163,9 @@ func (r *Runner) deployContracts(ctx context.Context, deployer ContractDeployer)
 		}
 
 		for _, tx := range txs {
-			if err := r.wallets[0].SendTransaction(ctx, tx); err != nil {
+			// Use the wallet assigned to this transaction's sender for consistent endpoint usage
+			wallet := r.getWalletForTx(tx)
+			if err := wallet.SendTransaction(ctx, tx); err != nil {
 				return fmt.Errorf("failed to send transaction in PreRun: %w", err)
 			}
 		}
@@ -155,7 +183,9 @@ func (r *Runner) deployContracts(ctx context.Context, deployer ContractDeployer)
 		wg.Add(1)
 		go func(index int, transaction *gethtypes.Transaction) {
 			defer wg.Done()
-			rec, err := r.wallets[rand.Intn(len(r.wallets))].WaitForTxReceipt(ctx, transaction.Hash(), 5*time.Second)
+			// Use the wallet assigned to this transaction's sender for consistent endpoint usage
+			wallet := r.getWalletForTx(transaction)
+			rec, err := wallet.WaitForTxReceipt(ctx, transaction.Hash(), 5*time.Second)
 			if err == nil {
 				addresses[index] = rec.ContractAddress
 			} else {
@@ -225,6 +255,9 @@ func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction,
 	batchLoads := make([][]*gethtypes.Transaction, 0, 100)
 	total := 0
 	for i := range r.spec.NumBatches {
+		// Reset wallet allocation for each batch to enable role rotation
+		r.txFactory.ResetWalletAllocation()
+
 		batch := make([]*gethtypes.Transaction, 0)
 		for _, msgSpec := range r.spec.Msgs {
 			select {
@@ -325,9 +358,9 @@ loop:
 				go func() {
 					defer wg.Done()
 					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: getTxType(tx)}
-					// send the tx from a random wallet.
-					wallet := r.wallets[rand.Intn(len(r.wallets))]
-					err := wallet.SendTransaction(ctx, tx)
+					// send the tx from the wallet assigned to this transaction's sender
+					wallet := r.getWalletForTx(tx)
+					err = wallet.SendTransaction(ctx, tx)
 					if err != nil {
 						r.logger.Error("failed to send tx", zap.Error(err), zap.Int("index", i), zap.Int("load_index", loadIndex))
 						sentTx.Err = err
@@ -479,6 +512,9 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 }
 
 func (r *Runner) submitLoad(ctx context.Context) (int, error) {
+	// Reset wallet allocation for each block/load to enable role rotation
+	r.txFactory.ResetWalletAllocation()
+
 	// first we build the tx load. this constructs all the ethereum txs based in the spec.
 	r.logger.Debug("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
 	txs := make([]*gethtypes.Transaction, 0, len(r.spec.Msgs))
@@ -502,7 +538,8 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			fromWallet := r.wallets[rand.Intn(len(r.wallets))]
+			// send the tx from the wallet assigned to this transaction's sender
+			fromWallet := r.getWalletForTx(tx)
 			err := fromWallet.SendTransaction(ctx, tx)
 			if err != nil {
 				r.logger.Debug("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
@@ -531,7 +568,14 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 }
 
 func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
-	fromWallet := r.wallets[rand.Intn(len(r.wallets))]
+	// For ERC20 transactions, use optimal sender selection from factory
+	var fromWallet *wallet.InteractingWallet
+	if msgSpec.Type == inttypes.MsgTransferERC0 || msgSpec.Type == inttypes.MsgNativeTransferERC20 {
+		fromWallet = r.txFactory.GetNextSender()
+	} else {
+		// For non-ERC20 transactions, keep random selection
+		fromWallet = r.wallets[rand.Intn(len(r.wallets))]
+	}
 
 	nonce, ok := r.nonces.Load(fromWallet.Address())
 	if !ok {

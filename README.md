@@ -15,7 +15,8 @@ spec := types.LoadTestSpec{
     NumOfBlocks:         100,
 	NumOfTxs:            100,
     NodesAddresses:      []types.NodeAddress{...},
-    Mnemonics:           []string{"word1 word2 ... word24"},  // BIP39 mnemonics
+    BaseMnemonic:        "word1 word2 word3",  // BIP39 mnemonic
+	NumWallets:          1500 // number of wallets to derive from the base mnemonic. 
     GasDenom:            "stake",
     Bech32Prefix:        "cosmos",
 }
@@ -50,9 +51,8 @@ num_of_blocks: 100  # Process 100 blocks
 nodes_addresses:
   - grpc: "localhost:9090"
     rpc: "http://localhost:26657"
-mnemonics:
-  # BIP39 mnemonics for deriving secp256k1 private keys
-  - "word1 word2 word3 ... word24"  # Replace with actual mnemonic
+base_mnemonic: "word1 word2 word3 ... word24"  # Replace with actual mnemonic
+num_wallets: 150000
 gas_denom: "stake"
 bech32_prefix: "cosmos"
 ```
