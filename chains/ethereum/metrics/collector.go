@@ -3,7 +3,6 @@ package metrics
 import (
 	"context"
 	"fmt"
-	"math"
 	"math/big"
 	"math/rand"
 	"sync"
@@ -18,33 +17,40 @@ import (
 	"go.uber.org/zap"
 )
 
+type BlockStat struct {
+	Number    int
+	TotalTxs  int
+	Timestamp time.Time
+}
+
 // ProcessResults processes the results of the load test.
 func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.SentTx, startBlock, endBlock uint64, clients []*ethclient.Client) (*loadtesttypes.LoadTestResult, error) {
-	wg := sync.WaitGroup{}
-	blockStats := make([]loadtesttypes.BlockStat, endBlock-startBlock+1)
-	receipts := make(map[uint64]gethtypes.Receipts)
 	logger.Info("collecting metrics", zap.Uint64("starting_block", startBlock), zap.Uint64("ending_block", endBlock))
-	// block stats. each go routine will query a block, get all receipts, and construct the block stats.
+
+	// number of txs per block index of the load test
+	blockStats := make([]BlockStat, endBlock-startBlock+1)
+
+	var wg sync.WaitGroup
 	for blockNum := startBlock; blockNum <= endBlock; blockNum++ {
 		wg.Add(1)
-		go func() {
+		go func(blockNum uint64) {
 			defer wg.Done()
+
 			client := clients[rand.Intn(len(clients))]
+
+			logger.Info("fetching block", zap.Uint64("block_num", blockNum))
 			block, err := client.BlockByNumber(ctx, big.NewInt(int64(blockNum))) //nolint:gosec // G115: overflow unlikely in practice
 			if err != nil {
-				logger.Error("Error getting block by number", zap.Uint64("block_num", blockNum), zap.Error(err))
+				logger.Error("error fetching block by number", zap.Uint64("block_num", blockNum), zap.Error(err))
 				return
 			}
-			blockReceipts, err := getReceiptsForBlockTxs(ctx, block, client)
-			if err != nil {
-				logger.Error("Error getting receipts for block", zap.Uint64("block_num", blockNum), zap.Error(err))
-				return
-			}
-			if len(blockReceipts) > 0 {
-				receipts[blockReceipts[0].BlockNumber.Uint64()] = blockReceipts
-			}
-			blockStats[blockNum-startBlock] = buildBlockStats(block, blockReceipts)
-		}()
+
+			numTxs := len(block.Transactions())
+			logger.Info("fetched block", zap.Uint64("block_num", blockNum), zap.Int("num_txs", numTxs))
+
+			blockStats[blockNum-startBlock] = BlockStat{Number: int(block.Number().Int64()), TotalTxs: int(numTxs), Timestamp: time.Unix(int64(block.Time()), 0)}
+
+		}(blockNum)
 	}
 	wg.Wait()
 
@@ -56,86 +62,39 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 	}
 
 	logger.Info("analyzing blocks...", zap.Int("num_blocks", len(blockStats)))
-	msgStats := make(map[loadtesttypes.MsgType]loadtesttypes.MessageStats)
-	totalSentByType := calculateTotalSentByType(sentTxs)
-	// update each msgType's total sent transactions
-	for msgType, totalSent := range totalSentByType {
-		stat := msgStats[msgType]
-		stat.Transactions.TotalSent = int(totalSent) //nolint:gosec // G115: overflow unlikely in practice
-		stat.Gas.Min = math.MaxInt64                 // sentinel values for next step
-		msgStats[msgType] = stat
-	}
-
-	// update msg stats and get global tally
-	totalIncluded, totalSuccess, totalFailed := 0, 0, 0
-	totalSent := len(sentTxs)
-	avgGasPerTx := 0.0
-	for _, blockReceipts := range receipts {
-		for _, receipt := range blockReceipts {
-			var msgType loadtesttypes.MsgType
-			if receipt.ContractAddress.Cmp(common.Address{}) == 0 {
-				msgType = types.ContractCall
-			} else {
-				msgType = types.ContractCreate
-			}
-			stat := msgStats[msgType]
-
-			// update gas values
-			stat.Gas.Max = max(stat.Gas.Max, int64(receipt.GasUsed)) //nolint:gosec // G115 likely not to happen
-			stat.Gas.Min = min(stat.Gas.Min, int64(receipt.GasUsed)) //nolint:gosec // G115 likely not to happen
-			stat.Gas.Total += int64(receipt.GasUsed)                 //nolint:gosec // G115 likely not to happen
-
-			// inclusion and statuses.
-			stat.Transactions.TotalIncluded++
-			totalIncluded++
-			if receipt.Status == gethtypes.ReceiptStatusSuccessful {
-				totalSuccess++
-				stat.Transactions.Successful++
-			} else {
-				totalFailed++
-				stat.Transactions.Failed++
-			}
-
-			// gas average
-			stat.Gas.Average = stat.Gas.Total / int64(stat.Transactions.TotalIncluded)
-			avgGasPerTx += (float64(receipt.GasUsed) - avgGasPerTx) / float64(totalIncluded)
-			msgStats[msgType] = stat
-		}
-	}
-
-	// calculate statistics for ALL txs by type. (totals)
-	// here we are using transactions from the blocks to update each msg type's statistics.
-	avgGasUtilization := 0.0
-	for i, blockStat := range blockStats {
-		// rolling average of gas utilization.
-		avgGasUtilization += (blockStat.GasUtilization - avgGasUtilization) / float64(i+1)
-	}
 
 	// timings / tps.
-	startTime := blockStats[0].Timestamp
-	endTime := blockStats[len(blockStats)-1].Timestamp
+	var totalIncluded int
+	for _, blockStat := range blockStats {
+		totalIncluded += blockStat.TotalTxs
+	}
+
+	startBlockStat := blockStats[0]
+	endBlockStat := blockStats[len(blockStats)-1]
+	startTime := startBlockStat.Timestamp
+	endTime := endBlockStat.Timestamp
 	runtime := endTime.Sub(startTime)
 	tps := float64(totalIncluded) / runtime.Seconds()
 
+	logger.Info(
+		"load test transaction info",
+		zap.Float64("tps", tps),
+		zap.Int("total_included", totalIncluded),
+		zap.Int("total_attempted", len(sentTxs)),
+	)
+
+	logger.Info(
+		"load test block info",
+		zap.Int("start_block", startBlockStat.Number),
+		zap.String("start_time", startBlockStat.Timestamp.Format(time.RFC3339)),
+		zap.Int("end_block", endBlockStat.Number),
+		zap.String("end_time", endBlockStat.Timestamp.Format(time.RFC3339)),
+		zap.Int("total_blocks", endBlockStat.Number-startBlockStat.Number),
+		zap.Duration("total_time", runtime),
+	)
+
 	// final results.
-	result := &loadtesttypes.LoadTestResult{
-		Overall: loadtesttypes.OverallStats{
-			TotalTransactions:         totalSent,
-			TotalIncludedTransactions: totalIncluded,
-			SuccessfulTransactions:    totalSuccess,
-			FailedTransactions:        totalFailed,
-			AvgBlockGasUtilization:    avgGasUtilization,
-			AvgGasPerTransaction:      int64(avgGasPerTx),
-			Runtime:                   runtime,
-			StartTime:                 startTime,
-			EndTime:                   endTime,
-			BlocksProcessed:           len(blockStats),
-			TPS:                       tps,
-		},
-		ByMessage: msgStats,
-		ByNode:    nil, // TODO: we aren't differentiating on node at the moment. not supported.
-		ByBlock:   blockStats,
-	}
+	result := &loadtesttypes.LoadTestResult{}
 
 	return result, nil
 }
@@ -183,10 +142,10 @@ func getReceiptsForBlockTxs(ctx context.Context, block *gethtypes.Block, client 
 	return receipts, nil
 }
 
-func trimBlocks(blocks []loadtesttypes.BlockStat) ([]loadtesttypes.BlockStat, error) {
+func trimBlocks(blocks []BlockStat) ([]BlockStat, error) {
 	endTxIndex := -1
 	for i := len(blocks) - 1; i >= 0; i-- {
-		if len(blocks[i].MessageStats) == 0 {
+		if blocks[i].TotalTxs == 0 {
 			continue
 		}
 		endTxIndex = i
@@ -199,7 +158,7 @@ func trimBlocks(blocks []loadtesttypes.BlockStat) ([]loadtesttypes.BlockStat, er
 
 	startTxIndex := 0
 	for i := range blocks {
-		if len(blocks[i].MessageStats) == 0 {
+		if blocks[i].TotalTxs == 0 {
 			continue
 		}
 		startTxIndex = i
