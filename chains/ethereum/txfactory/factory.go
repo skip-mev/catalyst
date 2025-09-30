@@ -93,7 +93,7 @@ func applyBaselinesToTxOpts(baselineTx *types.Transaction, txOpts *bind.Transact
 	if txOpts.GasFeeCap == nil {
 		txOpts.GasFeeCap = baselineTx.GasFeeCap()
 	}
-	txOpts.GasLimit = baselineTx.Gas()
+	txOpts.GasLimit = baselineTx.Gas() + uint64(float64(baselineTx.Gas())*0.3)
 }
 
 // BuildTxs builds the transactions for the message.
