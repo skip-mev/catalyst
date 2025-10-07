@@ -185,7 +185,7 @@ func (r *Runner) buildLoad(ctx context.Context, msgSpec loadtesttypes.LoadTestMs
 		return nil, fmt.Errorf("failed to create message: %w", err)
 	}
 
-	gasBufferFactor := 1.1
+	gasBufferFactor := 1.5
 	gasUsed := r.gasEstimations[msgSpec]
 	gasWithBuffer := int64(float64(gasUsed) * gasBufferFactor)
 	fees := sdk.NewCoins(sdk.NewCoin(r.chainCfg.GasDenom, sdkmath.NewInt(gasWithBuffer)))
