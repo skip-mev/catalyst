@@ -25,21 +25,13 @@ import (
 	"go.uber.org/zap"
 )
 
-// MsgGasEstimation stores gas estimation for a specific message type
-type MsgGasEstimation struct {
-	gasUsed int64
-	weight  float64
-	numTxs  int
-}
-
 // Runner represents a load test runner that executes a single LoadTestSpec
 type Runner struct {
 	spec               loadtesttypes.LoadTestSpec
 	clients            []*client.Chain
 	wallets            []*wallet.InteractingWallet
 	blockGasLimit      int64
-	gasEstimations     map[loadtesttypes.LoadTestMsg]MsgGasEstimation
-	totalTxsPerBlock   int
+	gasEstimations     map[loadtesttypes.LoadTestMsg]uint64
 	mu                 sync.Mutex
 	numBlocksProcessed int
 	collector          metrics.Collector
@@ -135,15 +127,13 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 	}
 	r.blockGasLimit = blockGasLimit
 
-	r.gasEstimations = make(map[loadtesttypes.LoadTestMsg]MsgGasEstimation)
-	r.totalTxsPerBlock = 0
-
 	gasEstimations, err := r.calculateMsgGasEstimations(ctx, client)
 	if err != nil {
 		return err
 	}
+	r.gasEstimations = gasEstimations
 
-	return r.initNumOfTxsWorkflow(gasEstimations)
+	return nil
 }
 
 // calculateMsgGasEstimations calculates gas estimations for all message types
@@ -195,34 +185,6 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 	}
 
 	return gasEstimations, nil
-}
-
-// initNumOfTxsWorkflow initializes the gas estimations based on number of transactions
-func (r *Runner) initNumOfTxsWorkflow(gasEstimations map[loadtesttypes.LoadTestMsg]uint64) error {
-	for _, msgSpec := range r.spec.Msgs {
-		gasUsed := gasEstimations[msgSpec]
-
-		numTxs := int(float64(r.spec.NumOfTxs) * msgSpec.Weight)
-
-		r.gasEstimations[msgSpec] = MsgGasEstimation{
-			gasUsed: int64(gasUsed), //nolint:gosec // G115: overflow unlikely in practice
-			weight:  msgSpec.Weight,
-			numTxs:  numTxs,
-		}
-		r.totalTxsPerBlock += numTxs
-
-		r.logger.Info("transaction allocation based on NumOfTxs workflow",
-			zap.String("msgType", msgSpec.Type.String()),
-			zap.Int("totalTxs", r.spec.NumOfTxs),
-			zap.Float64("weight", msgSpec.Weight),
-			zap.Int("numTxs", numTxs))
-	}
-
-	if r.totalTxsPerBlock <= 0 {
-		return fmt.Errorf("calculated total number of transactions per block is zero or negative: %d", r.totalTxsPerBlock)
-	}
-
-	return nil
 }
 
 // Run executes the load test
@@ -318,7 +280,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) { //nol
 	var sentTxs []inttypes.SentTx
 	var sentTxsMu sync.Mutex
 
-	r.logger.Info("starting to send transactions for block", zap.Int("block_number", r.numBlocksProcessed), zap.Int("expected_txs", r.totalTxsPerBlock))
+	r.logger.Info("starting to send transactions for block", zap.Int("block_number", r.numBlocksProcessed))
 
 	getLatestNonce := func(walletAddr string, client *client.Chain) uint64 { //nolint:unparam // client may be used in future versions
 		r.walletNoncesMu.Lock()
@@ -335,8 +297,8 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) { //nol
 	var wg sync.WaitGroup
 	var txsSentMu sync.Mutex
 
-	for mspSpec, estimation := range r.gasEstimations {
-		for i := 0; i < estimation.numTxs; i++ {
+	for _, msgSpec := range r.spec.Msgs {
+		for i := 0; i < msgSpec.NumTxs; i++ {
 			wg.Add(1)
 			go func(msgSpec loadtesttypes.LoadTestMsg, txIndex int) { //nolint:unparam // txIndex may be used in future versions
 				defer wg.Done()
@@ -346,7 +308,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) { //nol
 					sentTxs = append(sentTxs, sentTx)
 					sentTxsMu.Unlock()
 				}
-			}(mspSpec, i)
+			}(msgSpec, i)
 		}
 	}
 
@@ -357,8 +319,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) { //nol
 	r.sentTxsMu.Unlock()
 
 	r.logger.Info("completed sending transactions for block",
-		zap.Int("block_number", r.numBlocksProcessed), zap.Int("txs_sent", txsSent),
-		zap.Int("expected_txs", r.totalTxsPerBlock))
+		zap.Int("block_number", r.numBlocksProcessed), zap.Int("txs_sent", txsSent))
 
 	return txsSent, nil
 }
@@ -445,8 +406,8 @@ func (r *Runner) createAndSendTransaction(
 	walletAddress := fromWallet.FormattedAddress()
 
 	gasBufferFactor := 1.1
-	estimation := r.gasEstimations[mspSpec]
-	gasWithBuffer := int64(float64(estimation.gasUsed) * gasBufferFactor)
+	gasUsed := r.gasEstimations[mspSpec]
+	gasWithBuffer := int64(float64(gasUsed) * gasBufferFactor)
 	fees := sdk.NewCoins(sdk.NewCoin(r.chainCfg.GasDenom, sdkmath.NewInt(gasWithBuffer)))
 	accountNumber := r.accountNumbers[walletAddress]
 	memo := RandomString(16) // Avoid ErrTxInMempoolCache

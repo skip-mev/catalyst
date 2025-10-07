@@ -1,6 +1,5 @@
 # Example load test configuration
 chain_id: "ib-cosmos-0ea659"
-num_of_txs: 100     # transactions per block
 num_of_blocks: 100  # Process 100 blocks
 nodes_addresses:
   - grpc: "100.122.238.40:9090"
@@ -12,7 +11,7 @@ num_wallets: 15000
 gas_denom: "stake"
 bech32_prefix: "cosmos"
 msgs:
-  - type: "MsgSend"  # MsgSend
-    weight: 0.7  # 70% of transactions
-  - type: "MsgMultiSend"  # MsgMultiSend
-    weight: 0.3  # 30% of transactions
+  - type: "MsgSend"
+    num_txs: 70  # 70 transactions per block
+  - type: "MsgMultiSend"
+    num_txs: 30  # 30 transactions per block

@@ -25,10 +25,10 @@ func TestLoadTestSpec_Marshal_Unmarshal_Eth(t *testing.T) {
 		{RPC: "https://foobar:8545", Websocket: "ws://foobar:8546"},
 	}}
 	spec.Msgs = []loadtesttypes.LoadTestMsg{
-		{Weight: 0, NumMsgs: 20, Type: ethtypes.MsgCreateContract},
-		{Weight: 0, NumMsgs: 20, Type: ethtypes.MsgWriteTo},
-		{Weight: 0, NumMsgs: 20, Type: ethtypes.MsgCrossContractCall},
-		{Weight: 0, NumMsgs: 20, Type: ethtypes.MsgCallDataBlast},
+		{NumTxs: 20, NumMsgs: 20, Type: ethtypes.MsgCreateContract},
+		{NumTxs: 20, NumMsgs: 20, Type: ethtypes.MsgWriteTo},
+		{NumTxs: 20, NumMsgs: 20, Type: ethtypes.MsgCrossContractCall},
+		{NumTxs: 20, NumMsgs: 20, Type: ethtypes.MsgCallDataBlast},
 	}
 
 	msgBytes, err := yaml.Marshal(&spec)

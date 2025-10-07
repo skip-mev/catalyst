@@ -13,12 +13,15 @@ import "github.com/skip-mev/catalyst/loadtest"
 spec := types.LoadTestSpec{
     ChainID:             "my-chain-1",
     NumOfBlocks:         100,
-	NumOfTxs:            100,
     NodesAddresses:      []types.NodeAddress{...},
     BaseMnemonic:        "word1 word2 word3",  // BIP39 mnemonic
-	NumWallets:          1500 // number of wallets to derive from the base mnemonic. 
+	NumWallets:          1500, // number of wallets to derive from the base mnemonic.
     GasDenom:            "stake",
     Bech32Prefix:        "cosmos",
+    Msgs: []types.LoadTestMsg{
+        {NumTxs: 70, Type: "MsgSend"},      // 70 transactions per block
+        {NumTxs: 30, Type: "MsgMultiSend"}, // 30 transactions per block
+    },
 }
 
 // Create and run the load test

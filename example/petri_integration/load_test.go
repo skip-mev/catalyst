@@ -116,8 +116,7 @@ func TestPetriDockerIntegration(t *testing.T) {
 	}
 
 	msgs := []loadtesttypes.LoadTestMsg{
-		{Weight: 1, Type: cosmoslttypes.MsgMultiSend},
-		// {Weight: 1, Type: cosmoslttypes.MsgSend},
+		{NumTxs: 10, Type: cosmoslttypes.MsgMultiSend},
 	}
 
 	spec := loadtesttypes.LoadTestSpec{
@@ -133,8 +132,7 @@ func TestPetriDockerIntegration(t *testing.T) {
 			UnorderedTxs:   false,
 			NodesAddresses: nodeAddresses,
 		},
-		NumOfTxs: 10,
-		Kind:     chains.CosmosKind,
+		Kind: chains.CosmosKind,
 	}
 
 	time.Sleep(10 * time.Second)
@@ -205,7 +203,7 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 	}
 
 	msgs := []loadtesttypes.LoadTestMsg{
-		{Weight: 1, Type: cosmoslttypes.MsgMultiSend},
+		{NumTxs: 10, Type: cosmoslttypes.MsgMultiSend},
 	}
 	spec := loadtesttypes.LoadTestSpec{
 		ChainID:      defaultChainConfig.ChainId,
@@ -213,7 +211,6 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 		BaseMnemonic: defaultChainOptions.BaseMnemonic,
 		NumWallets:   defaultChainOptions.AdditionalAccounts,
 		Msgs:         msgs,
-		NumOfTxs:     10,
 		Kind:         chains.CosmosKind,
 		ChainCfg: &cosmoslttypes.ChainConfig{
 			GasDenom:       defaultChainConfig.Denom,
