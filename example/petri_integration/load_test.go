@@ -121,7 +121,8 @@ func TestPetriDockerIntegration(t *testing.T) {
 
 	spec := loadtesttypes.LoadTestSpec{
 		ChainID:      defaultChainConfig.ChainId,
-		NumOfBlocks:  5,
+		NumBatches:   5,
+		SendInterval: 10 * time.Second,
 		BaseMnemonic: defaultChainOptions.BaseMnemonic,
 		NumWallets:   defaultChainOptions.AdditionalAccounts,
 		Msgs:         msgs,
@@ -207,7 +208,8 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 	}
 	spec := loadtesttypes.LoadTestSpec{
 		ChainID:      defaultChainConfig.ChainId,
-		NumOfBlocks:  20,
+		NumBatches:   10,
+		SendInterval: 5 * time.Second,
 		BaseMnemonic: defaultChainOptions.BaseMnemonic,
 		NumWallets:   defaultChainOptions.AdditionalAccounts,
 		Msgs:         msgs,

@@ -1,6 +1,8 @@
 # Example load test configuration
 chain_id: "ib-cosmos-0ea659"
-num_of_blocks: 100  # Process 100 blocks
+num_batches: 50           # Send 50 batches
+send_interval: "5s"       # Send a batch every 5 seconds
+
 nodes_addresses:
   - grpc: "100.122.238.40:9090"
     rpc: "http://100.122.238.40:26657"
@@ -12,6 +14,6 @@ gas_denom: "stake"
 bech32_prefix: "cosmos"
 msgs:
   - type: "MsgSend"
-    num_txs: 70  # 70 transactions per block
+    num_txs: 70  # 70 transactions per batch
   - type: "MsgMultiSend"
-    num_txs: 30  # 30 transactions per block
+    num_txs: 30  # 30 transactions per batch
