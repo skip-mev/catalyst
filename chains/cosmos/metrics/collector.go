@@ -384,6 +384,10 @@ func (m *Collector) calculateTPS(blocks []loadtesttypes.BlockStat, successfulTxs
 
 // PrintResults prints the load test results in a clean, formatted way
 func (m *Collector) PrintResults(result loadtesttypes.LoadTestResult) {
+	if result.Error != "" {
+		fmt.Printf("Load test failed. Error: %s\n", result.Error)
+		return
+	}
 	fmt.Println("\n=== Load Test Results ===")
 
 	fmt.Println("\n🎯 Overall Statistics:")
@@ -415,12 +419,6 @@ func (m *Collector) PrintResults(result loadtesttypes.LoadTestResult) {
 		fmt.Printf("    Min: %d\n", stats.Gas.Min)
 		fmt.Printf("    Max: %d\n", stats.Gas.Max)
 		fmt.Printf("    Total: %d\n", stats.Gas.Total)
-		// if len(stats.Errors.BroadcastErrors) > 0 {
-		//	fmt.Printf("  Errors:\n")
-		//	for errType, count := range stats.Errors.ErrorCounts {
-		//		fmt.Printf("    %s: %d occurrences\n", errType, count)
-		//	}
-		//}
 	}
 
 	fmt.Println("\n🖥️  Node Statistics:")
