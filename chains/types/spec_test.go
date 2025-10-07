@@ -18,17 +18,16 @@ func TestLoadTestSpec_Marshal_Unmarshal_Eth(t *testing.T) {
 	spec.Description = "eth load test"
 	spec.Kind = "eth"
 	spec.ChainID = "262144"
-	spec.NumOfBlocks = 200
 	spec.BaseMnemonic = "seed phrase goes here"
 	spec.NumWallets = 4
 	spec.ChainCfg = &ethtypes.ChainConfig{NodesAddresses: []ethtypes.NodeAddress{
 		{RPC: "https://foobar:8545", Websocket: "ws://foobar:8546"},
 	}}
 	spec.Msgs = []loadtesttypes.LoadTestMsg{
-		{NumTxs: 20, NumMsgs: 20, Type: ethtypes.MsgCreateContract},
-		{NumTxs: 20, NumMsgs: 20, Type: ethtypes.MsgWriteTo},
-		{NumTxs: 20, NumMsgs: 20, Type: ethtypes.MsgCrossContractCall},
-		{NumTxs: 20, NumMsgs: 20, Type: ethtypes.MsgCallDataBlast},
+		{NumMsgs: 20, Type: ethtypes.MsgCreateContract},
+		{NumMsgs: 20, Type: ethtypes.MsgWriteTo},
+		{NumMsgs: 20, Type: ethtypes.MsgCrossContractCall},
+		{NumMsgs: 20, Type: ethtypes.MsgCallDataBlast},
 	}
 
 	msgBytes, err := yaml.Marshal(&spec)
@@ -96,7 +95,6 @@ chain_config:
 		Description:  "cosmos load test",
 		Kind:         "cosmos",
 		ChainID:      "cosmoshub-4",
-		NumOfBlocks:  200,
 		BaseMnemonic: "seed phrase goes here",
 		NumWallets:   4,
 		TxTimeout:    30 * time.Second,
