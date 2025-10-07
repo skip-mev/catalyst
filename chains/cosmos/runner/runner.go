@@ -342,13 +342,19 @@ loop:
 	r.sentTxs = sentTxs
 
 	r.logger.Info("Loadtest complete. Waiting for final txs to complete")
-	time.Sleep(30 * time.Second)
+	time.Sleep(10 * time.Second)
 
-	// collect metrics
 	r.logger.Info("Collecting metrics", zap.Int("num_txs", len(r.sentTxs)))
 	collectorStartTime := time.Now()
 	r.collector.GroupSentTxs(ctx, r.sentTxs, r.clients, startTime)
-	collectorResults := r.collector.ProcessResults(0, 0) // interval-based test
+
+	gasLimit, err := r.clients[0].GetGasLimit(ctx)
+	if err != nil {
+		r.logger.Warn("failed to get gas limit from chain, using 0", zap.Error(err))
+		gasLimit = 0
+	}
+
+	collectorResults := r.collector.ProcessResults(gasLimit)
 	collectorEndTime := time.Now()
 	r.logger.Debug("collector running time",
 		zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))

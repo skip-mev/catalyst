@@ -231,9 +231,7 @@ func (m *Collector) processNodeStats(result *loadtesttypes.LoadTestResult) {
 }
 
 // processBlockStats processes statistics for each block
-func (m *Collector) processBlockStats(result *loadtesttypes.LoadTestResult, gasLimit int64,
-	numberOfBlocksRequested int,
-) {
+func (m *Collector) processBlockStats(result *loadtesttypes.LoadTestResult, gasLimit int64) {
 	var results []loadtesttypes.BlockStat
 	result.ByBlock = results
 
@@ -247,14 +245,6 @@ func (m *Collector) processBlockStats(result *loadtesttypes.LoadTestResult, gasL
 	sort.Slice(blockHeights, func(i, j int) bool {
 		return blockHeights[i] < blockHeights[j]
 	})
-	// ignore any extra blocks where txs landed in block
-	if len(blockHeights) > numberOfBlocksRequested {
-		m.logger.Info("found extra blocks, excluding from gas utilization stats",
-			zap.Int("number_of_blocks_requested", numberOfBlocksRequested),
-			zap.Int("number_of_blocks_found", len(blockHeights)),
-			zap.Int("number_of_blocks_excluded", len(blockHeights)-numberOfBlocksRequested))
-		blockHeights = blockHeights[:numberOfBlocksRequested]
-	}
 
 	for _, height := range blockHeights {
 		txs := m.txsByBlock[height]
@@ -280,7 +270,10 @@ func (m *Collector) processBlockStats(result *loadtesttypes.LoadTestResult, gasL
 			msgStats[tx.MsgType] = stats
 		}
 
-		gasUtilization := float64(blockGasUsed) / float64(gasLimit)
+		var gasUtilization float64
+		if gasLimit > 0 {
+			gasUtilization = float64(blockGasUsed) / float64(gasLimit)
+		}
 
 		blockStats := loadtesttypes.BlockStat{
 			BlockHeight:    height,
@@ -310,7 +303,7 @@ func (m *Collector) processBlockStats(result *loadtesttypes.LoadTestResult, gasL
 }
 
 // ProcessResults returns the final load test results
-func (m *Collector) ProcessResults(gasLimit int64, numOfBlocksRequested int) loadtesttypes.LoadTestResult {
+func (m *Collector) ProcessResults(gasLimit int64) loadtesttypes.LoadTestResult {
 	result := loadtesttypes.LoadTestResult{
 		Overall: loadtesttypes.OverallStats{
 			StartTime:       m.startTime,
@@ -347,7 +340,7 @@ func (m *Collector) ProcessResults(gasLimit int64, numOfBlocksRequested int) loa
 
 	go func() {
 		defer wg.Done()
-		m.processBlockStats(&result, gasLimit, numOfBlocksRequested)
+		m.processBlockStats(&result, gasLimit)
 	}()
 
 	wg.Wait()
