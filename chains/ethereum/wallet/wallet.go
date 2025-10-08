@@ -119,7 +119,7 @@ func (w *InteractingWallet) estimateGasWithBuffer(ctx context.Context, msg ether
 	}
 
 	// add a 20% buffer to limit (common practice)
-	buffer := gasLimit / 20
+	buffer := gasLimit / 50
 	return gasLimit + buffer, nil
 }
 
