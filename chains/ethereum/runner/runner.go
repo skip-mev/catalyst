@@ -392,8 +392,6 @@ loop:
 
 	// collect metrics
 	r.logger.Info("Collecting metrics", zap.Int("num_txs", len(r.sentTxs)))
-	// we pass in 0 for the numOfBlockRequested, because we are not running a block based loadtest
-	// The collector understands that 0 means we are on a time interval loadtest
 	collectorStartTime := time.Now()
 	collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, r.clients)
 	if err != nil {

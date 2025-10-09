@@ -40,6 +40,12 @@ type Runner struct {
 	chainCfg inttypes.ChainConfig
 }
 
+// PreparedTx holds a transaction and its message type
+type PreparedTx struct {
+	TxBytes []byte
+	MsgType loadtesttypes.MsgType
+}
+
 // NewRunner creates a new load test runner for a given spec
 func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
 	logger, _ := zap.NewDevelopment()
@@ -175,7 +181,7 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 }
 
 // buildLoad creates transactions for a single message specification
-func (r *Runner) buildLoad(ctx context.Context, msgSpec loadtesttypes.LoadTestMsg) ([][]byte, error) {
+func (r *Runner) buildLoad(ctx context.Context, msgSpec loadtesttypes.LoadTestMsg) ([]PreparedTx, error) {
 	fromWallet := r.wallets[rand.Intn(len(r.wallets))]
 	client := fromWallet.GetClient()
 	walletAddress := fromWallet.FormattedAddress()
@@ -209,17 +215,17 @@ func (r *Runner) buildLoad(ctx context.Context, msgSpec loadtesttypes.LoadTestMs
 		return nil, fmt.Errorf("failed to encode tx: %w", err)
 	}
 
-	return [][]byte{txBytes}, nil
+	return []PreparedTx{{TxBytes: txBytes, MsgType: msgSpec.Type}}, nil
 }
 
 // buildFullLoad builds the full transaction load for interval-based sending
-func (r *Runner) buildFullLoad(ctx context.Context) ([][][]byte, error) {
+func (r *Runner) buildFullLoad(ctx context.Context) ([][]PreparedTx, error) {
 	r.logger.Info("Building load...", zap.Int("num_batches", r.spec.NumBatches))
-	batchLoads := make([][][]byte, 0, r.spec.NumBatches)
+	batchLoads := make([][]PreparedTx, 0, r.spec.NumBatches)
 	total := 0
 
 	for i := range r.spec.NumBatches {
-		batch := make([][]byte, 0)
+		batch := make([]PreparedTx, 0)
 		for _, msgSpec := range r.spec.Msgs {
 			select {
 			case <-ctx.Done():
@@ -261,8 +267,6 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 	crank := time.NewTicker(r.spec.SendInterval)
 	defer crank.Stop()
 
-	// sleeping once before we start
-	time.Sleep(2 * time.Second)
 	startTime := time.Now()
 
 	// load index is the index into the batchLoads slice
@@ -303,14 +307,14 @@ loop:
 			r.logger.Info("Sending txs", zap.Int("num_txs", len(load)))
 
 			// send each tx in a go routine
-			for i, txBytes := range load {
+			for i, preparedTx := range load {
 				wg.Add(1)
-				go func(txBytes []byte, index int) {
+				go func(preparedTx PreparedTx, index int) {
 					defer wg.Done()
-					sentTx := inttypes.SentTx{MsgType: "unknown"} // TODO: track message types properly
+					sentTx := inttypes.SentTx{MsgType: preparedTx.MsgType}
 					// select random client for sending
 					client := r.clients[rand.Intn(len(r.clients))]
-					res, err := client.BroadcastTx(ctx, txBytes)
+					res, err := client.BroadcastTx(ctx, preparedTx.TxBytes)
 					if err != nil {
 						r.logger.Error("failed to send tx", zap.Error(err), zap.Int("index", index), zap.Int("load_index", loadIndex))
 						sentTx.Err = err
@@ -320,7 +324,7 @@ loop:
 						sentTx.NodeAddress = client.GetNodeAddress().RPC
 					}
 					collectionChannel <- sentTx
-				}(txBytes, i)
+				}(preparedTx, i)
 			}
 
 			loadIndex++
@@ -341,8 +345,10 @@ loop:
 	r.logger.Info("go routines have completed", zap.Int("total_txs", len(sentTxs)))
 	r.sentTxs = sentTxs
 
-	r.logger.Info("Loadtest complete. Waiting for final txs to complete")
-	time.Sleep(10 * time.Second)
+	r.logger.Info("Loadtest complete. Waiting for mempool to clear")
+	r.waitForEmptyMempool(ctx, 1*time.Minute)
+	// sleep here for a sec because, even though the mempool may be empty, we could still be in process of executing those txs
+	time.Sleep(5 * time.Second)
 
 	r.logger.Info("Collecting metrics", zap.Int("num_txs", len(r.sentTxs)))
 	collectorStartTime := time.Now()
@@ -419,4 +425,42 @@ func RandomString(n int) string {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
 	}
 	return string(b)
+}
+
+func (r *Runner) waitForEmptyMempool(ctx context.Context, timeout time.Duration) {
+	wg := sync.WaitGroup{}
+	for _, c := range r.clients {
+		wg.Add(1)
+		go func(client *client.Chain) {
+			defer wg.Done()
+			cometClient := client.GetCometClient()
+
+			started := time.Now()
+			timer := time.NewTicker(500 * time.Millisecond)
+			timout := time.NewTimer(timeout)
+			defer timer.Stop()
+			defer timout.Stop()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-timer.C:
+					res, err := cometClient.NumUnconfirmedTxs(ctx)
+					if err == nil {
+						if res.Count == 0 {
+							r.logger.Debug("mempool clear. done waiting for mempool", zap.Duration("waited", time.Since(started)))
+							return
+						}
+					} else {
+						r.logger.Debug("error calling mempool status", zap.Error(err))
+					}
+				case <-timout.C:
+					r.logger.Debug("timed out waiting for mempool to clear", zap.Duration("waited", timeout))
+					return
+				}
+			}
+		}(c)
+	}
+	wg.Wait()
 }
