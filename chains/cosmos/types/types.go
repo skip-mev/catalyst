@@ -91,12 +91,10 @@ func (s ChainConfig) Validate(mainCfg loadtesttypes.LoadTestSpec) error {
 	seenMsgTypes := make(map[loadtesttypes.MsgType]bool)
 	seenMsgArrTypes := make(map[loadtesttypes.MsgType]bool)
 
-	var totalWeight float64
 	for _, msg := range mainCfg.Msgs {
 		if err := validateMsgType(msg); err != nil {
 			return err
 		}
-		totalWeight += msg.Weight
 
 		switch msg.Type {
 		case MsgArr:
@@ -122,10 +120,6 @@ func (s ChainConfig) Validate(mainCfg loadtesttypes.LoadTestSpec) error {
 			}
 			seenMsgTypes[msg.Type] = true
 		}
-	}
-
-	if totalWeight != 1 {
-		return fmt.Errorf("total message weights must add up to 1.0, got %f", totalWeight)
 	}
 
 	if s.GasDenom == "" {

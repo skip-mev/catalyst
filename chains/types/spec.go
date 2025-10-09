@@ -12,8 +12,6 @@ type LoadTestSpec struct {
 	Description  string        `yaml:"description" json:"description"`
 	Kind         string        `yaml:"kind" json:"kind"` // "cosmos" | "evm" (discriminator)
 	ChainID      string        `yaml:"chain_id" json:"chain_id"`
-	NumOfTxs     int           `yaml:"num_of_txs,omitempty" json:"num_of_txs,omitempty"`
-	NumOfBlocks  int           `yaml:"num_of_blocks" json:"num_of_blocks"`
 	SendInterval time.Duration `yaml:"send_interval" json:"send_interval"`
 	NumBatches   int           `yaml:"num_batches" json:"num_batches"`
 	BaseMnemonic string        `yaml:"base_mnemonic" json:"base_mnemonic"`
