@@ -318,12 +318,6 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 		batchLoads = txs
 	}
 
-	if r.spec.TxCache != "" && len(batchLoads) > 0 {
-		if err := CacheTxs(r.spec.TxCache, batchLoads); err != nil {
-			r.logger.Error("writing cached txs", zap.Error(err), zap.String("file", r.spec.TxCache))
-		}
-	}
-
 	amountPerBatch := len(batchLoads[0])
 	total := len(batchLoads) * amountPerBatch
 
