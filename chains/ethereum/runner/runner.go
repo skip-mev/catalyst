@@ -2,10 +2,12 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net"
 	"net/http"
+	"os"
 	"slices"
 	"sync"
 	"time"
@@ -297,11 +299,31 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	if err := r.deployInitialContracts(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
-	// we build the full load upfront. that is, num_batches * [msg * msg spec amount].
-	batchLoads, err := r.buildFullLoad(ctx)
-	if err != nil {
-		return loadtesttypes.LoadTestResult{}, err
+
+	var batchLoads [][]*gethtypes.Transaction
+	if r.spec.TxCache != "" {
+		txs, err := CachedTxs(r.spec.TxCache)
+		if err != nil {
+			r.logger.Error("getting cached txs", zap.Error(err), zap.String("file", r.spec.TxCache))
+		}
+		batchLoads = txs
 	}
+
+	if len(batchLoads) == 0 {
+		// we build the full load upfront. that is, num_batches * [msg * msg spec amount].
+		txs, err := r.buildFullLoad(ctx)
+		if err != nil {
+			return loadtesttypes.LoadTestResult{}, err
+		}
+		batchLoads = txs
+	}
+
+	if r.spec.TxCache != "" && len(batchLoads) > 0 {
+		if err := CacheTxs(r.spec.TxCache, batchLoads); err != nil {
+			r.logger.Error("writing cached txs", zap.Error(err), zap.String("file", r.spec.TxCache))
+		}
+	}
+
 	amountPerBatch := len(batchLoads[0])
 	total := len(batchLoads) * amountPerBatch
 
@@ -410,6 +432,32 @@ loop:
 	r.logger.Debug("collector running time",
 		zap.Float64("duration_seconds", time.Since(collectorStartTime).Seconds()))
 	return *collectorResults, nil
+}
+
+func CachedTxs(name string) ([][]*gethtypes.Transaction, error) {
+	bz, err := os.ReadFile(name)
+	if err != nil {
+		return nil, fmt.Errorf("could not read cache file %s: %w", name, err)
+	}
+
+	var txs [][]*gethtypes.Transaction
+	if err := json.Unmarshal(bz, &txs); err != nil {
+		return nil, fmt.Errorf("unmarshalling txs: %w", err)
+	}
+
+	return txs, nil
+}
+
+func CacheTxs(name string, txs [][]*gethtypes.Transaction) error {
+	bz, err := json.Marshal(txs)
+	if err != nil {
+		return fmt.Errorf("json marshalling txs: %w", err)
+	}
+
+	if err := os.WriteFile(name, bz, 0777); err != nil {
+		return fmt.Errorf("writing txs to cache file %s: %w", name, err)
+	}
+	return nil
 }
 
 func getTxType(tx *gethtypes.Transaction) loadtesttypes.MsgType {
