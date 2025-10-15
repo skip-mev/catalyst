@@ -7,6 +7,10 @@ import (
 )
 
 func PrintResults(result loadtesttypes.LoadTestResult) {
+	if result.Error != "" {
+		fmt.Printf("Load test failed. Error: %s\n", result.Error)
+		return
+	}
 	fmt.Println("\n=== Load Test Results ===")
 
 	fmt.Println("\n🎯 Overall Statistics:")
@@ -38,21 +42,25 @@ func PrintResults(result loadtesttypes.LoadTestResult) {
 
 	fmt.Println("\n📦 Block Statistics Summary:")
 	fmt.Printf("Total Blocks: %d\n", len(result.ByBlock))
-	var maxGasUtilization float64
-	minGasUtilization := result.ByBlock[0].GasUtilization // set first block as min initially
-	maxGasBlock := result.ByBlock[0].BlockHeight
-	minGasBlock := result.ByBlock[0].BlockHeight
-	for _, block := range result.ByBlock {
-		if block.GasUtilization > maxGasUtilization {
-			maxGasUtilization = block.GasUtilization
-			maxGasBlock = block.BlockHeight
+	if len(result.ByBlock) > 0 {
+		var maxGasUtilization float64
+		minGasUtilization := result.ByBlock[0].GasUtilization // set first block as min initially
+		maxGasBlock := result.ByBlock[0].BlockHeight
+		minGasBlock := result.ByBlock[0].BlockHeight
+		for _, block := range result.ByBlock {
+			if block.GasUtilization > maxGasUtilization {
+				maxGasUtilization = block.GasUtilization
+				maxGasBlock = block.BlockHeight
+			}
+			if block.GasUtilization < minGasUtilization {
+				minGasUtilization = block.GasUtilization
+				minGasBlock = block.BlockHeight
+			}
 		}
-		if block.GasUtilization < minGasUtilization {
-			minGasUtilization = block.GasUtilization
-			minGasBlock = block.BlockHeight
-		}
+		fmt.Printf("Average Gas Utilization: %.2f%%\n", result.Overall.AvgBlockGasUtilization*100)
+		fmt.Printf("Min Gas Utilization: %.2f%% (Block %d)\n", minGasUtilization*100, minGasBlock)
+		fmt.Printf("Max Gas Utilization: %.2f%% (Block %d)\n", maxGasUtilization*100, maxGasBlock)
+	} else {
+		fmt.Println("⚠️  No blocks processed - unable to calculate block statistics")
 	}
-	fmt.Printf("Average Gas Utilization: %.2f%%\n", result.Overall.AvgBlockGasUtilization*100)
-	fmt.Printf("Min Gas Utilization: %.2f%% (Block %d)\n", minGasUtilization*100, minGasBlock)
-	fmt.Printf("Max Gas Utilization: %.2f%% (Block %d)\n", maxGasUtilization*100, maxGasBlock)
 }

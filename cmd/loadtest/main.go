@@ -40,7 +40,7 @@ func main() {
 	}
 
 	if err := spec.Validate(); err != nil {
-		saveConfigError("failed to validate config file", logger)
+		saveConfigError("failed to validate config file: "+err.Error(), logger)
 		logger.Fatal("failed to validate config file", zap.Error(err))
 	}
 
