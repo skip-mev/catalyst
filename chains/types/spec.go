@@ -21,6 +21,8 @@ type LoadTestSpec struct {
 	Msgs         []LoadTestMsg `yaml:"msgs" json:"msgs"`
 	TxTimeout    time.Duration `yaml:"tx_timeout,omitempty" json:"tx_timeout,omitempty"`
 	ChainCfg     ChainConfig   `yaml:"-" json:"-"` // decoded via custom UnmarshalYAML
+	WalletCache  string        `yaml:"wallet_cache" json:"wallet_cache"`
+	TxCache      string        `yaml:"tx_cache" json:"tx_cache"`
 }
 
 type loadTestSpecAlias LoadTestSpec
@@ -50,7 +52,7 @@ func (s LoadTestSpec) MarshalYAML() (any, error) {
 	type Alias LoadTestSpec
 	out := struct {
 		Alias       `yaml:",inline"`
-		ChainConfig any `yaml:"chain_config,omitempty"`
+		ChainConfig any `yaml:"chain_config,omitempty" json:"chain_config"`
 	}{
 		Alias:       Alias(s),
 		ChainConfig: s.ChainCfg, // concrete value behind the interface
