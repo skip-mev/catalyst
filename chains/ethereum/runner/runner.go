@@ -305,8 +305,10 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 		txs, err := CachedTxs(r.spec.TxCache)
 		if err != nil {
 			r.logger.Error("getting cached txs", zap.Error(err), zap.String("file", r.spec.TxCache))
+		} else {
+			r.logger.Info("successfully got txs from cache", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.TxCache))
+			batchLoads = txs
 		}
-		batchLoads = txs
 	}
 
 	if len(batchLoads) == 0 {
@@ -316,6 +318,13 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 			return loadtesttypes.LoadTestResult{}, err
 		}
 		batchLoads = txs
+	}
+
+	if len(batchLoads) > 0 && r.spec.TxCache != "" {
+		if err := CacheTxs(r.spec.TxCache, batchLoads); err != nil {
+			r.logger.Error("caching txs", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.TxCache))
+		}
+		r.logger.Info("successfully cached txs", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.TxCache))
 	}
 
 	amountPerBatch := len(batchLoads[0])
