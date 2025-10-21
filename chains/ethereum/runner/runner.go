@@ -452,7 +452,7 @@ func CachedTxs(name string) ([][]*gethtypes.Transaction, error) {
 	defer zr.Close()
 
 	var txs [][]*gethtypes.Transaction
-	if err := json.NewDecoder(zr).Decode(txs); err != nil {
+	if err := json.NewDecoder(zr).Decode(&txs); err != nil {
 		return nil, fmt.Errorf("json decoding gzipped txs: %w", err)
 	}
 
@@ -469,7 +469,7 @@ func CacheTxs(name string, txs [][]*gethtypes.Transaction) error {
 	zw := gzip.NewWriter(f)
 	defer zw.Close()
 
-	if err := json.NewEncoder(zw).Encode(txs); err != nil {
+	if err := json.NewEncoder(zw).Encode(&txs); err != nil {
 		return fmt.Errorf("json encoding txs: %w", err)
 	}
 
