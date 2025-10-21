@@ -462,7 +462,7 @@ func CachedTxs(name string) ([][]*gethtypes.Transaction, error) {
 }
 
 func CacheTxs(name string, txs [][]*gethtypes.Transaction) error {
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0777)
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o777)
 	if err != nil {
 		return fmt.Errorf("could not open cache file %s: %w", name, err)
 	}
