@@ -307,8 +307,11 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 		if err != nil {
 			r.logger.Error("getting cached txs", zap.Error(err), zap.String("file", r.spec.Cache.TxsFile))
 		} else {
-			r.logger.Info("successfully got txs from cache", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.TxsFile))
 			batchLoads = txs
+			r.logger.Info("got txs from cache", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.TxsFile))
+			if len(batchLoads) == 0 {
+				r.logger.Error("no transactions in cache file", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.TxsFile))
+			}
 		}
 	}
 	if len(batchLoads) == 0 {
