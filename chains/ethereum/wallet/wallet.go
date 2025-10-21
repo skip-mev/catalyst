@@ -109,14 +109,16 @@ func CachedWallets(name string, clients []*ethclient.Client) ([]*InteractingWall
 }
 
 func CacheWallets(name string, wallets []*InteractingWallet) error {
-	bz, err := json.Marshal(wallets)
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0777)
 	if err != nil {
+		return fmt.Errorf("could not open cache file %s: %w", name, err)
+	}
+	defer f.Close()
+
+	if err := json.NewEncoder(f).Encode(wallets); err != nil {
 		return fmt.Errorf("json marshalling wallets: %w", err)
 	}
 
-	if err := os.WriteFile(name, bz, 0777); err != nil {
-		return fmt.Errorf("writing wallets to cache file %s: %w", name, err)
-	}
 	return nil
 }
 

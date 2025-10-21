@@ -311,7 +311,6 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 			batchLoads = txs
 		}
 	}
-
 	if len(batchLoads) == 0 {
 		// we build the full load upfront. that is, num_batches * [msg * msg spec amount].
 		txs, err := r.buildFullLoad(ctx)
@@ -460,7 +459,7 @@ func CachedTxs(name string) ([][]*gethtypes.Transaction, error) {
 }
 
 func CacheTxs(name string, txs [][]*gethtypes.Transaction) error {
-	f, err := os.OpenFile(name, os.O_RDWR, 0)
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0777)
 	if err != nil {
 		return fmt.Errorf("could not open cache file %s: %w", name, err)
 	}
@@ -469,7 +468,7 @@ func CacheTxs(name string, txs [][]*gethtypes.Transaction) error {
 	zw := gzip.NewWriter(f)
 	defer zw.Close()
 
-	if err := json.NewEncoder(zw).Encode(&txs); err != nil {
+	if err := json.NewEncoder(zw).Encode(txs); err != nil {
 		return fmt.Errorf("json encoding txs: %w", err)
 	}
 
