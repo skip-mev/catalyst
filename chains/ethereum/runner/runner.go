@@ -301,12 +301,12 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	}
 
 	var batchLoads [][]*gethtypes.Transaction
-	if r.spec.TxCache != "" {
-		txs, err := CachedTxs(r.spec.TxCache)
+	if r.spec.Cache.TxsFile != "" {
+		txs, err := CachedTxs(r.spec.Cache.TxsFile)
 		if err != nil {
-			r.logger.Error("getting cached txs", zap.Error(err), zap.String("file", r.spec.TxCache))
+			r.logger.Error("getting cached txs", zap.Error(err), zap.String("file", r.spec.Cache.TxsFile))
 		} else {
-			r.logger.Info("successfully got txs from cache", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.TxCache))
+			r.logger.Info("successfully got txs from cache", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.TxsFile))
 			batchLoads = txs
 		}
 	}
@@ -320,11 +320,11 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 		batchLoads = txs
 	}
 
-	if len(batchLoads) > 0 && r.spec.TxCache != "" {
-		if err := CacheTxs(r.spec.TxCache, batchLoads); err != nil {
-			r.logger.Error("caching txs", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.TxCache))
+	if len(batchLoads) > 0 && (r.spec.Cache.TxsFile != "" && r.spec.Cache.ShouldCacheTxs) {
+		if err := CacheTxs(r.spec.Cache.TxsFile, batchLoads); err != nil {
+			r.logger.Error("caching txs", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.TxsFile))
 		}
-		r.logger.Info("successfully cached txs", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.TxCache))
+		r.logger.Info("successfully cached txs", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.TxsFile))
 	}
 
 	amountPerBatch := len(batchLoads[0])
