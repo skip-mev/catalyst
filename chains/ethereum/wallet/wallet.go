@@ -44,8 +44,6 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 		if len(wallets) > 0 {
 			logger.Info("found wallets in cache", zap.Int("num_wallets", len(wallets)))
 			return wallets, nil
-		} else {
-			logger.Error("no wallets in cache file", zap.Int("num_wallets", len(wallets)), zap.String("file", spec.Cache.TxsFile))
 		}
 	}
 
