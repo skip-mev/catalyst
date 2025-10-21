@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -438,28 +439,40 @@ loop:
 }
 
 func CachedTxs(name string) ([][]*gethtypes.Transaction, error) {
-	bz, err := os.ReadFile(name)
+	f, err := os.Open(name)
 	if err != nil {
-		return nil, fmt.Errorf("could not read cache file %s: %w", name, err)
+		return nil, fmt.Errorf("could not open cache file %s: %w", name, err)
 	}
+	defer f.Close()
+
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		return nil, fmt.Errorf("creating gzip reader: %w", err)
+	}
+	defer zr.Close()
 
 	var txs [][]*gethtypes.Transaction
-	if err := json.Unmarshal(bz, &txs); err != nil {
-		return nil, fmt.Errorf("unmarshalling txs: %w", err)
+	if err := json.NewDecoder(zr).Decode(txs); err != nil {
+		return nil, fmt.Errorf("json decoding gzipped txs: %w", err)
 	}
 
 	return txs, nil
 }
 
 func CacheTxs(name string, txs [][]*gethtypes.Transaction) error {
-	bz, err := json.Marshal(txs)
+	f, err := os.Open(name)
 	if err != nil {
-		return fmt.Errorf("json marshalling txs: %w", err)
+		return fmt.Errorf("could not open cache file %s: %w", name, err)
+	}
+	defer f.Close()
+
+	zw := gzip.NewWriter(f)
+	defer zw.Close()
+
+	if err := json.NewEncoder(zw).Encode(txs); err != nil {
+		return fmt.Errorf("json encoding txs: %w", err)
 	}
 
-	if err := os.WriteFile(name, bz, 0777); err != nil {
-		return fmt.Errorf("writing txs to cache file %s: %w", name, err)
-	}
 	return nil
 }
 
