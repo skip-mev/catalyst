@@ -28,9 +28,9 @@ func TestTxCaching(t *testing.T) {
 		}
 	}
 
-	assert.NoError(t, CacheTxs(f.Name(), originalBatches))
+	assert.NoError(t, WriteTxnsToCache(f.Name(), originalBatches))
 
-	cachedBatches, err := CachedTxs(f.Name(), numBatches)
+	cachedBatches, err := ReadTxnsFromCache(f.Name(), numBatches)
 	assert.NoError(t, err)
 
 	assert.Len(t, cachedBatches, numBatches)

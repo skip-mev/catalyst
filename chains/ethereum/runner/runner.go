@@ -22,12 +22,13 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
+	"go.uber.org/zap"
+
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
 )
 
 type Runner struct {
@@ -307,7 +308,7 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 
 	var batchLoads [][]*gethtypes.Transaction
 	if r.spec.Cache.TxsFile != "" {
-		txs, err := CachedTxs(r.spec.Cache.TxsFile, r.spec.NumBatches)
+		txs, err := ReadTxnsFromCache(r.spec.Cache.TxsFile, r.spec.NumBatches)
 		if err != nil {
 			r.logger.Error("getting cached txs", zap.Error(err), zap.String("file", r.spec.Cache.TxsFile))
 		} else {
@@ -328,7 +329,7 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	}
 
 	if len(batchLoads) > 0 && (r.spec.Cache.TxsFile != "" && r.spec.Cache.ShouldCacheTxs) {
-		if err := CacheTxs(r.spec.Cache.TxsFile, batchLoads); err != nil {
+		if err := WriteTxnsToCache(r.spec.Cache.TxsFile, batchLoads); err != nil {
 			r.logger.Error("caching txs", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.TxsFile))
 		}
 		r.logger.Info("successfully cached txs", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.TxsFile))
@@ -444,7 +445,7 @@ loop:
 	return *collectorResults, nil
 }
 
-func CachedTxs(name string, numBatches int) ([][]*gethtypes.Transaction, error) {
+func ReadTxnsFromCache(name string, numBatches int) ([][]*gethtypes.Transaction, error) {
 	f, err := os.Open(name)
 	if err != nil {
 		return nil, fmt.Errorf("could not open cache file %s: %w", name, err)
@@ -505,7 +506,7 @@ func CachedTxs(name string, numBatches int) ([][]*gethtypes.Transaction, error) 
 	}
 }
 
-func CacheTxs(name string, txs [][]*gethtypes.Transaction) error {
+func WriteTxnsToCache(name string, txs [][]*gethtypes.Transaction) error {
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o777)
 	if err != nil {
 		return fmt.Errorf("could not open cache file %s: %w", name, err)

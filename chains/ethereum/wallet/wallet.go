@@ -19,8 +19,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"go.uber.org/zap"
+
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
 // InteractingWallet represents a wallet that can interact with the Ethereum chain
@@ -37,7 +38,7 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 	}
 
 	if spec.Cache.WalletsFile != "" {
-		wallets, err := CachedWallets(spec.Cache.WalletsFile, clients)
+		wallets, err := ReadWalletsFromCache(spec.Cache.WalletsFile, clients)
 		if err != nil {
 			logger.Error("getting cached wallets", zap.Error(err))
 		}
@@ -83,14 +84,14 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 	}
 
 	if spec.Cache.WalletsFile != "" && spec.Cache.ShouldCacheWallets {
-		if err := CacheWallets(spec.Cache.WalletsFile, ws); err != nil {
+		if err := WriteWalletsToCache(spec.Cache.WalletsFile, ws); err != nil {
 			logger.Error("caching wallets", zap.Int("num_wallets", len(ws)), zap.String("file", spec.Cache.WalletsFile), zap.Error(err))
 		}
 	}
 	return ws, nil
 }
 
-func CachedWallets(name string, clients []*ethclient.Client) ([]*InteractingWallet, error) {
+func ReadWalletsFromCache(name string, clients []*ethclient.Client) ([]*InteractingWallet, error) {
 	bz, err := os.ReadFile(name)
 	if err != nil {
 		return nil, fmt.Errorf("could not read cache file %s: %w", name, err)
@@ -108,7 +109,7 @@ func CachedWallets(name string, clients []*ethclient.Client) ([]*InteractingWall
 	return wallets, nil
 }
 
-func CacheWallets(name string, wallets []*InteractingWallet) error {
+func WriteWalletsToCache(name string, wallets []*InteractingWallet) error {
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o777)
 	if err != nil {
 		return fmt.Errorf("could not open cache file %s: %w", name, err)
