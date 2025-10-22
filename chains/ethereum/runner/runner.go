@@ -471,28 +471,30 @@ func CachedTxs(name string, numBatches int) ([][]*gethtypes.Transaction, error) 
 	}
 	defer zr.Close()
 
-	dec := base64.NewDecoder(base64.RawStdEncoding, zr)
-	reader := bufio.NewReader(dec)
+	reader := bufio.NewReader(zr)
 
 	batches := make([][]*gethtypes.Transaction, numBatches)
 	batchIdx := 0
 	i := 1
 	for {
-		// read a line, which is a gzipped, base64 encoded, binary encoded tx.
-		// unzipping and unbase64ing will happen automatically by the reader
-		// chain, so we just have to binary decode it once the bytes are read
-		bz, err := reader.ReadBytes('\n')
+		// read a line, which is a gzipped, base64 encoded, binary encoded tx
+		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
 				return batches, nil
 			}
-			return nil, fmt.Errorf("reading bytes: %w", err)
+			return nil, fmt.Errorf("reading line: %w", err)
 		}
-		bz = bz[0 : len(bz)-1] // remove trailing \n
+		line = line[0 : len(line)-1] // remove trailing \n
+
+		bz, err := base64.RawStdEncoding.DecodeString(line)
+		if err != nil {
+			return nil, fmt.Errorf("base64 decoding: %w", err)
+		}
 
 		var tx gethtypes.Transaction
 		if err := tx.UnmarshalBinary(bz); err != nil {
-			return nil, fmt.Errorf("unmarshalling tx: %w", err)
+			return nil, fmt.Errorf("unmarshal binary tx: %w", err)
 		}
 
 		batches[batchIdx] = append(batches[batchIdx], &tx)
@@ -522,8 +524,8 @@ func CacheTxs(name string, txs [][]*gethtypes.Transaction) error {
 	zw := gzip.NewWriter(f)
 	defer zw.Close()
 
-	enc := base64.NewEncoder(base64.RawStdEncoding, zw)
-	defer enc.Close()
+	writer := bufio.NewWriter(zw)
+	defer writer.Flush()
 
 	for _, batch := range txs {
 		for _, tx := range batch {
@@ -532,8 +534,9 @@ func CacheTxs(name string, txs [][]*gethtypes.Transaction) error {
 				return fmt.Errorf("binary marshalling tx: %w", err)
 			}
 
-			if _, err := enc.Write(append(bn, '\n')); err != nil {
-				return fmt.Errorf("writing tx binary to base64 encoder: %w", err)
+			enc := base64.RawStdEncoding.EncodeToString(bn)
+			if _, err := writer.WriteString(enc + "\n"); err != nil {
+				return fmt.Errorf("writing tx binary to file: %w", err)
 			}
 		}
 	}
