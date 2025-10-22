@@ -1,15 +1,19 @@
 package runner
 
 import (
+	"bufio"
 	"compress/gzip"
 	"context"
-	"encoding/json"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
 	"os"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -303,7 +307,7 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 
 	var batchLoads [][]*gethtypes.Transaction
 	if r.spec.Cache.TxsFile != "" {
-		txs, err := CachedTxs(r.spec.Cache.TxsFile)
+		txs, err := CachedTxs(r.spec.Cache.TxsFile, r.spec.NumBatches)
 		if err != nil {
 			r.logger.Error("getting cached txs", zap.Error(err), zap.String("file", r.spec.Cache.TxsFile))
 		} else {
@@ -440,25 +444,63 @@ loop:
 	return *collectorResults, nil
 }
 
-func CachedTxs(name string) ([][]*gethtypes.Transaction, error) {
+func CachedTxs(name string, numBatches int) ([][]*gethtypes.Transaction, error) {
 	f, err := os.Open(name)
 	if err != nil {
 		return nil, fmt.Errorf("could not open cache file %s: %w", name, err)
 	}
 	defer f.Close()
 
+	header, err := bufio.NewReader(f).ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("reading file header: %w", err)
+	}
+
+	numTxs, err := strconv.Atoi(strings.TrimSuffix(header, "\n"))
+	if err != nil {
+		return nil, fmt.Errorf("converting header to int: %w", err)
+	}
+	batchSize := numTxs / numBatches
+
+	if _, err := f.Seek(int64(len(header)), 0); err != nil {
+		return nil, fmt.Errorf("seeking: %w", err)
+	}
 	zr, err := gzip.NewReader(f)
 	if err != nil {
 		return nil, fmt.Errorf("creating gzip reader: %w", err)
 	}
 	defer zr.Close()
 
-	var txs [][]*gethtypes.Transaction
-	if err := json.NewDecoder(zr).Decode(&txs); err != nil {
-		return nil, fmt.Errorf("json decoding gzipped txs: %w", err)
-	}
+	dec := base64.NewDecoder(base64.RawStdEncoding, zr)
+	reader := bufio.NewReader(dec)
 
-	return txs, nil
+	batches := make([][]*gethtypes.Transaction, numBatches)
+	batchIdx := 0
+	i := 1
+	for {
+		// read a line, which is a gzipped, base64 encoded, binary encoded tx.
+		// unzipping and unbase64ing will happen automatically by the reader
+		// chain, so we just have to binary decode it once the bytes are read
+		bz, err := reader.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				return batches, nil
+			}
+			return nil, fmt.Errorf("reading bytes: %w", err)
+		}
+		bz = bz[0 : len(bz)-1] // remove trailing \n
+
+		var tx gethtypes.Transaction
+		if err := tx.UnmarshalBinary(bz); err != nil {
+			return nil, fmt.Errorf("unmarshalling tx: %w", err)
+		}
+
+		batches[batchIdx] = append(batches[batchIdx], &tx)
+		if i%batchSize == 0 {
+			batchIdx++
+		}
+		i++
+	}
 }
 
 func CacheTxs(name string, txs [][]*gethtypes.Transaction) error {
@@ -468,11 +510,32 @@ func CacheTxs(name string, txs [][]*gethtypes.Transaction) error {
 	}
 	defer f.Close()
 
+	// assumes the number of txs in each batch is equal
+	numTxs := len(txs) * len(txs[0])
+	if _, err := f.WriteString(strconv.Itoa(numTxs) + "\n"); err != nil {
+		return fmt.Errorf("writing header of num txs to file: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("syncing file: %w", err)
+	}
+
 	zw := gzip.NewWriter(f)
 	defer zw.Close()
 
-	if err := json.NewEncoder(zw).Encode(txs); err != nil {
-		return fmt.Errorf("json encoding txs: %w", err)
+	enc := base64.NewEncoder(base64.RawStdEncoding, zw)
+	defer enc.Close()
+
+	for _, batch := range txs {
+		for _, tx := range batch {
+			bn, err := tx.MarshalBinary()
+			if err != nil {
+				return fmt.Errorf("binary marshalling tx: %w", err)
+			}
+
+			if _, err := enc.Write(append(bn, '\n')); err != nil {
+				return fmt.Errorf("writing tx binary to base64 encoder: %w", err)
+			}
+		}
 	}
 
 	return nil
