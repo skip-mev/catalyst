@@ -23,7 +23,7 @@ FROM alpine:latest
 RUN apk add --no-cache ca-certificates libc6-compat gcompat
 
 COPY --from=builder /app/wallets.json /usr/local/wallets.json
-COPY --from=builder /app/txs.bin.gz /usr/local/txs.bin.gz
+COPY --from=builder /app/txs.gz /usr/local/txs.gz
 COPY --from=builder /app/build/loadtest /usr/local/bin/loadtest
 
 ENTRYPOINT ["loadtest", "-config"]
