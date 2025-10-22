@@ -14,11 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/ethereum/go-ethereum/core/types"
-	gethtypes "github.com/ethereum/go-ethereum/core/types"
 )
 
 func TestTxCaching(t *testing.T) {
-	txs := [][]*gethtypes.Transaction{
+	txs := [][]*types.Transaction{
 		{
 			newTx(), newTx(), newTx(),
 		},
@@ -36,7 +35,7 @@ func TestTxCacheReading(t *testing.T) {
 	assert.Len(t, txs, 2)
 }
 
-func newTx() *gethtypes.Transaction {
+func newTx() *types.Transaction {
 	chainID := big.NewInt(1337) // Example Chain ID for a local network.
 	nonce := big.NewInt(1)
 	gasLimit := uint64(21000)
@@ -60,7 +59,7 @@ func newTx() *gethtypes.Transaction {
 	}
 
 	// 3. Create the EIP-1559 transaction.
-	return gethtypes.NewTx(&types.DynamicFeeTx{
+	return types.NewTx(&types.DynamicFeeTx{
 		ChainID:   chainID,
 		Nonce:     nonce.Uint64(),
 		To:        &to,
