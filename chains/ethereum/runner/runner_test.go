@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"os"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -15,22 +16,33 @@ import (
 )
 
 func TestTxCaching(t *testing.T) {
-	txs := [][]*types.Transaction{
-		{
-			newTx(), newTx(), newTx(),
-		},
-		{
-			newTx(), newTx(), newTx(),
-		},
+	f, err := os.CreateTemp(t.TempDir(), "tx_cache")
+	assert.NoError(t, err)
+
+	numBatches := 200
+	perBatch := 20
+	originalBatches := make([][]*types.Transaction, numBatches)
+	for i := range numBatches {
+		for range perBatch {
+			originalBatches[i] = append(originalBatches[i], newTx())
+		}
 	}
 
-	assert.NoError(t, CacheTxs("txs-test.bin.gz", txs))
-}
+	assert.NoError(t, CacheTxs(f.Name(), originalBatches))
 
-func TestTxCacheReading(t *testing.T) {
-	txs, err := CachedTxs("txs-test.bin.gz", 2)
+	cachedBatches, err := CachedTxs(f.Name(), numBatches)
 	assert.NoError(t, err)
-	assert.Len(t, txs, 2)
+
+	assert.Len(t, cachedBatches, numBatches)
+	for _, batch := range cachedBatches {
+		assert.Len(t, batch, 20)
+	}
+
+	for i, batch := range cachedBatches {
+		for j, tx := range batch {
+			assert.Equal(t, originalBatches[i][j].Hash(), tx.Hash(), fmt.Sprintf("mismatch between tx in batch %d index %d", i, j))
+		}
+	}
 }
 
 func newTx() *types.Transaction {
