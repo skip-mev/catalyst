@@ -36,8 +36,8 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 		return nil, fmt.Errorf("no clients provided")
 	}
 
-	if spec.Cache.WalletsFile != "" {
-		wallets, err := ReadWalletsFromCache(spec.Cache.WalletsFile, clients)
+	if spec.Cache.ReadWalletsFrom != "" {
+		wallets, err := ReadWalletsFromCache(spec.Cache.ReadWalletsFrom, clients)
 		if err != nil {
 			logger.Error("getting cached wallets", zap.Error(err))
 		}
@@ -82,9 +82,9 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 		}
 	}
 
-	if spec.Cache.WalletsFile != "" && spec.Cache.ShouldCacheWallets {
-		if err := WriteWalletsToCache(spec.Cache.WalletsFile, ws); err != nil {
-			logger.Error("caching wallets", zap.Int("num_wallets", len(ws)), zap.String("file", spec.Cache.WalletsFile), zap.Error(err))
+	if spec.Cache.WriteWalletsTo != "" {
+		if err := WriteWalletsToCache(spec.Cache.WriteWalletsTo, ws); err != nil {
+			logger.Error("caching wallets", zap.Int("num_wallets", len(ws)), zap.String("file", spec.Cache.WriteWalletsTo), zap.Error(err))
 		}
 	}
 	return ws, nil

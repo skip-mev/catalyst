@@ -306,15 +306,15 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	}
 
 	var batchLoads [][]*gethtypes.Transaction
-	if r.spec.Cache.TxsFile != "" {
-		txs, err := ReadTxnsFromCache(r.spec.Cache.TxsFile, r.spec.NumBatches)
+	if r.spec.Cache.ReadTxsFrom != "" {
+		txs, err := ReadTxnsFromCache(r.spec.Cache.ReadTxsFrom, r.spec.NumBatches)
 		if err != nil {
-			r.logger.Error("getting cached txs", zap.Error(err), zap.String("file", r.spec.Cache.TxsFile))
+			r.logger.Error("getting cached txs", zap.Error(err), zap.String("file", r.spec.Cache.ReadTxsFrom))
 		} else {
 			batchLoads = txs
-			r.logger.Info("got txs from cache", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.TxsFile))
+			r.logger.Info("got txs from cache", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.ReadTxsFrom))
 			if len(batchLoads) == 0 {
-				r.logger.Error("no transactions in cache file", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.TxsFile))
+				r.logger.Error("no transactions in cache file", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.ReadTxsFrom))
 			}
 		}
 	}
@@ -327,11 +327,11 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 		batchLoads = txs
 	}
 
-	if len(batchLoads) > 0 && (r.spec.Cache.TxsFile != "" && r.spec.Cache.ShouldCacheTxs) {
-		if err := WriteTxnsToCache(r.spec.Cache.TxsFile, batchLoads); err != nil {
-			r.logger.Error("caching txs", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.TxsFile))
+	if len(batchLoads) > 0 && r.spec.Cache.WriteTxsTo != "" {
+		if err := WriteTxnsToCache(r.spec.Cache.WriteTxsTo, batchLoads); err != nil {
+			r.logger.Error("caching txs", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.WriteTxsTo))
 		}
-		r.logger.Info("successfully cached txs", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.TxsFile))
+		r.logger.Info("successfully cached txs", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.WriteTxsTo))
 	}
 
 	amountPerBatch := len(batchLoads[0])

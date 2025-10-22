@@ -25,20 +25,19 @@ type LoadTestSpec struct {
 }
 
 type CacheConfig struct {
-	WalletsFile        string `yaml:"wallets_file" json:"wallets_file"`
-	TxsFile            string `yaml:"txs_file" json:"txs_file"`
-	ShouldCacheTxs     bool   `yaml:"should_cache_txs" json:"should_cache_txs"`
-	ShouldCacheWallets bool   `yaml:"should_cache_wallets" json:"should_cache_wallets"`
-}
+	// ReadWalletsFrom is the file that cached wallets will be read from. If
+	// this file does not exist or contain wallets, catalyst will error
+	ReadWalletsFrom string `yaml:"read_wallets_from" json:"read_wallets_from"`
 
-func (cc CacheConfig) Validate() error {
-	if cc.ShouldCacheWallets && cc.WalletsFile == "" {
-		return fmt.Errorf("wallets_file must be specified if should_cache_wallets is true")
-	}
-	if cc.ShouldCacheTxs && cc.TxsFile == "" {
-		return fmt.Errorf("txs_file must be specified if should_cache_txs is true")
-	}
-	return nil
+	// ReadTxsFrom is the file that cached txs will be read from. If this file
+	// does not exist or contain wallets, catalyst will return an error.
+	ReadTxsFrom string `yaml:"read_txs_from" json:"read_txs_from"`
+
+	// WriteWalletsTo is the that generated txs will be written to
+	WriteWalletsTo string `yaml:"write_wallets_to" json:"write_wallets_to"`
+
+	// WriteTxsTo is the file that generated txs will be written to
+	WriteTxsTo string `yaml:"write_txs_to" json:"write_txs_to"`
 }
 
 type loadTestSpecAlias LoadTestSpec
@@ -96,10 +95,6 @@ func (s *LoadTestSpec) Validate() error {
 
 	if err := s.ChainCfg.Validate(*s); err != nil {
 		return fmt.Errorf("validating chain config: %w", err)
-	}
-
-	if err := s.Cache.Validate(); err != nil {
-		return fmt.Errorf("validating cache config: %w", err)
 	}
 
 	return nil
