@@ -39,12 +39,13 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 	if spec.Cache.ReadWalletsFrom != "" {
 		wallets, err := ReadWalletsFromCache(spec.Cache.ReadWalletsFrom, clients)
 		if err != nil {
-			logger.Error("getting cached wallets", zap.Error(err))
+			return nil, fmt.Errorf("reading wallets from cache at %s: %w", spec.Cache.ReadWalletsFrom, err)
 		}
-		if len(wallets) > 0 {
-			logger.Info("found wallets in cache", zap.Int("num_wallets", len(wallets)))
-			return wallets, nil
+		if len(wallets) == 0 {
+			return nil, fmt.Errorf("no wallets found in cache at %s", spec.Cache.ReadWalletsFrom)
 		}
+		logger.Info("loaded wallets from cache", zap.Int("num_wallets", len(wallets)), zap.String("file", spec.Cache.ReadWalletsFrom))
+		return wallets, nil
 	}
 
 	chainIDStr := strings.TrimSpace(spec.ChainID)
@@ -85,6 +86,8 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 	if spec.Cache.WriteWalletsTo != "" {
 		if err := WriteWalletsToCache(spec.Cache.WriteWalletsTo, ws); err != nil {
 			logger.Error("caching wallets", zap.Int("num_wallets", len(ws)), zap.String("file", spec.Cache.WriteWalletsTo), zap.Error(err))
+		} else {
+			logger.Info("successfully cached wallets", zap.Int("num_wallets", len(ws)), zap.String("file", spec.Cache.WriteWalletsTo))
 		}
 	}
 	return ws, nil

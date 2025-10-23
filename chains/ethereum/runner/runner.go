@@ -309,15 +309,15 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	if r.spec.Cache.ReadTxsFrom != "" {
 		txs, err := ReadTxnsFromCache(r.spec.Cache.ReadTxsFrom, r.spec.NumBatches)
 		if err != nil {
-			r.logger.Error("getting cached txs", zap.Error(err), zap.String("file", r.spec.Cache.ReadTxsFrom))
-		} else {
-			batchLoads = txs
-			r.logger.Info("got txs from cache", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.ReadTxsFrom))
-			if len(batchLoads) == 0 {
-				r.logger.Error("no transactions in cache file", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.ReadTxsFrom))
-			}
+			return loadtesttypes.LoadTestResult{}, fmt.Errorf("reading txs from cache at %s with batch size %d: %w", r.spec.Cache.ReadTxsFrom, r.spec.NumBatches, err)
 		}
+		if len(batchLoads) == 0 {
+			return loadtesttypes.LoadTestResult{}, fmt.Errorf("no txs in cache at %s with batch size %d", r.spec.Cache.ReadTxsFrom, r.spec.NumBatches)
+		}
+		batchLoads = txs
+		r.logger.Info("loaded txs from cache", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.ReadTxsFrom))
 	}
+
 	if len(batchLoads) == 0 {
 		// we build the full load upfront. that is, num_batches * [msg * msg spec amount].
 		txs, err := r.buildFullLoad(ctx)
@@ -330,8 +330,9 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	if len(batchLoads) > 0 && r.spec.Cache.WriteTxsTo != "" {
 		if err := WriteTxnsToCache(r.spec.Cache.WriteTxsTo, batchLoads); err != nil {
 			r.logger.Error("caching txs", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.WriteTxsTo))
+		} else {
+			r.logger.Info("successfully cached txs", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.WriteTxsTo))
 		}
-		r.logger.Info("successfully cached txs", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.WriteTxsTo))
 	}
 
 	amountPerBatch := len(batchLoads[0])
