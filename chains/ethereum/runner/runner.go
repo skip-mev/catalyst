@@ -311,7 +311,7 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 		if err != nil {
 			return loadtesttypes.LoadTestResult{}, fmt.Errorf("reading txs from cache at %s with batch size %d: %w", r.spec.Cache.ReadTxsFrom, r.spec.NumBatches, err)
 		}
-		if len(batchLoads) == 0 {
+		if len(txs) == 0 {
 			return loadtesttypes.LoadTestResult{}, fmt.Errorf("no txs in cache at %s with batch size %d", r.spec.Cache.ReadTxsFrom, r.spec.NumBatches)
 		}
 		batchLoads = txs
