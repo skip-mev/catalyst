@@ -486,6 +486,17 @@ func ReadTxnsFromCache(name string, numBatches int) ([][]*gethtypes.Transaction,
 			}
 			return nil, fmt.Errorf("reading line: %w", err)
 		}
+		if len(line) == 0 {
+			return batches, nil
+		}
+		if batchIdx == numBatches {
+			// this can happen if they have specified an amount of batches that
+			// does not divide evenly into the total amount of txns in the
+			// cache. in this case we simply return early (without bringing all
+			// of the txs in the cache into their batches), so we respect the
+			// amount of batches that they wanted and do not create extras.
+			return batches, nil
+		}
 		line = line[0 : len(line)-1] // remove trailing \n
 
 		bz, err := base64.RawStdEncoding.DecodeString(line)

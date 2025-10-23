@@ -18,6 +18,7 @@ import (
 func TestTxCaching(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "tx_cache")
 	assert.NoError(t, err)
+	defer f.Close()
 
 	numBatches := 200
 	perBatch := 20
@@ -43,6 +44,27 @@ func TestTxCaching(t *testing.T) {
 			assert.Equal(t, originalBatches[i][j].Hash(), tx.Hash(), fmt.Sprintf("mismatch between tx in batch %d index %d", i, j))
 		}
 	}
+}
+
+func TestTxCachingMismatchNumBatches(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "tx_cache")
+	assert.NoError(t, err)
+	defer f.Close()
+
+	numBatches := 3
+	perBatch := 3
+	originalBatches := make([][]*types.Transaction, numBatches)
+	for i := range numBatches {
+		for range perBatch {
+			originalBatches[i] = append(originalBatches[i], newTx())
+		}
+	}
+
+	assert.NoError(t, WriteTxnsToCache(f.Name(), originalBatches))
+
+	cachedBatches, err := ReadTxnsFromCache(f.Name(), 2)
+	assert.NoError(t, err)
+	assert.Len(t, cachedBatches, 2)
 }
 
 func newTx() *types.Transaction {
