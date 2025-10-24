@@ -26,5 +26,6 @@ go.work.sum
 .env
 
 .idea
+.vscode
 
 chains/cosmos/.DS_Store
