@@ -3,9 +3,11 @@ package wallet
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +25,7 @@ import (
 
 // InteractingWallet represents a wallet that can interact with the Ethereum chain
 type InteractingWallet struct {
-	signer *Signer
+	Signer *Signer
 	client Client
 }
 
@@ -32,6 +34,18 @@ type InteractingWallet struct {
 func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) ([]*InteractingWallet, error) {
 	if len(clients) == 0 {
 		return nil, fmt.Errorf("no clients provided")
+	}
+
+	if spec.Cache.ReadWalletsFrom != "" {
+		wallets, err := ReadWalletsFromCache(spec.Cache.ReadWalletsFrom, clients)
+		if err != nil {
+			return nil, fmt.Errorf("reading wallets from cache at %s: %w", spec.Cache.ReadWalletsFrom, err)
+		}
+		if len(wallets) == 0 {
+			return nil, fmt.Errorf("no wallets found in cache at %s", spec.Cache.ReadWalletsFrom)
+		}
+		logger.Info("loaded wallets from cache", zap.Int("num_wallets", len(wallets)), zap.String("file", spec.Cache.ReadWalletsFrom))
+		return wallets, nil
 	}
 
 	chainIDStr := strings.TrimSpace(spec.ChainID)
@@ -68,14 +82,53 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 			logger.Info("wallets built", zap.Int("num_wallets", i))
 		}
 	}
-	logger.Info("completed building wallets")
+
+	if spec.Cache.WriteWalletsTo != "" {
+		if err := WriteWalletsToCache(spec.Cache.WriteWalletsTo, ws); err != nil {
+			logger.Error("caching wallets", zap.Int("num_wallets", len(ws)), zap.String("file", spec.Cache.WriteWalletsTo), zap.Error(err))
+		} else {
+			logger.Info("successfully cached wallets", zap.Int("num_wallets", len(ws)), zap.String("file", spec.Cache.WriteWalletsTo))
+		}
+	}
 	return ws, nil
+}
+
+func ReadWalletsFromCache(name string, clients []*ethclient.Client) ([]*InteractingWallet, error) {
+	bz, err := os.ReadFile(name)
+	if err != nil {
+		return nil, fmt.Errorf("could not read cache file %s: %w", name, err)
+	}
+
+	var wallets []*InteractingWallet
+	if err := json.Unmarshal(bz, &wallets); err != nil {
+		return nil, fmt.Errorf("unmarshalling wallets: %w", err)
+	}
+
+	for i, wallet := range wallets {
+		c := clients[i%len(clients)]
+		wallet.client = c
+	}
+	return wallets, nil
+}
+
+func WriteWalletsToCache(name string, wallets []*InteractingWallet) error {
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o777)
+	if err != nil {
+		return fmt.Errorf("could not open cache file %s: %w", name, err)
+	}
+	defer f.Close()
+
+	if err := json.NewEncoder(f).Encode(wallets); err != nil {
+		return fmt.Errorf("json marshalling wallets: %w", err)
+	}
+
+	return nil
 }
 
 // NewInteractingWallet creates a new Ethereum wallet
 func NewInteractingWallet(privKey *ecdsa.PrivateKey, chainID *big.Int, client Client) *InteractingWallet {
 	return &InteractingWallet{
-		signer: NewSigner(privKey, chainID),
+		Signer: NewSigner(privKey, chainID),
 		client: client,
 	}
 }
@@ -104,7 +157,7 @@ func (w *InteractingWallet) getNonce(ctx context.Context, nonce *uint64) (uint64
 		return *nonce, nil
 	}
 
-	txNonce, err := w.client.PendingNonceAt(ctx, w.signer.Address())
+	txNonce, err := w.client.PendingNonceAt(ctx, w.Signer.Address())
 	if err != nil {
 		return 0, fmt.Errorf("failed to get nonce: %w", err)
 	}
@@ -119,16 +172,16 @@ func (w *InteractingWallet) estimateGasWithBuffer(ctx context.Context, msg ether
 	}
 
 	// add a 20% buffer to limit (common practice)
-	buffer := gasLimit / 20
+	buffer := gasLimit / 2
 	return gasLimit + buffer, nil
 }
 
 func (w *InteractingWallet) SignerFn() bind.SignerFn {
-	return w.signer.SignerFn()
+	return w.Signer.SignerFn()
 }
 
 func (w *InteractingWallet) SignerFnLegacy() bind.SignerFn {
-	return w.signer.SignLegacyTxFn()
+	return w.Signer.SignLegacyTxFn()
 }
 
 // CreateSignedTransaction creates and signs an Ethereum transaction
@@ -153,7 +206,7 @@ func (w *InteractingWallet) CreateSignedTransaction(ctx context.Context, to *com
 	// Estimate gas if not provided
 	if gasLimit == 0 {
 		msg := ethereum.CallMsg{
-			From:     w.signer.Address(),
+			From:     w.Signer.Address(),
 			To:       to, // nil for contract creation
 			Value:    value,
 			Data:     data,
@@ -175,7 +228,7 @@ func (w *InteractingWallet) CreateSignedTransaction(ctx context.Context, to *com
 	}
 
 	// Sign transaction
-	signedTx, err := w.signer.SignTx(tx)
+	signedTx, err := w.Signer.SignTx(tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
@@ -216,7 +269,7 @@ func (w *InteractingWallet) CreateSignedDynamicFeeTx(ctx context.Context, to *co
 	// Estimate gas if not provided
 	if gasLimit == 0 {
 		msg := ethereum.CallMsg{
-			From:      w.signer.Address(),
+			From:      w.Signer.Address(),
 			To:        to, // nil for contract creation
 			Value:     value,
 			Data:      data,
@@ -231,10 +284,10 @@ func (w *InteractingWallet) CreateSignedDynamicFeeTx(ctx context.Context, to *co
 	}
 
 	// Create EIP-1559 transaction
-	tx := w.signer.CreateDynamicFeeTransaction(to, value, gasLimit, gasFeeCap, gasTipCap, data, txNonce)
+	tx := w.Signer.CreateDynamicFeeTransaction(to, value, gasLimit, gasFeeCap, gasTipCap, data, txNonce)
 
 	// Sign transaction
-	signedTx, err := w.signer.SignDynamicFeeTx(tx)
+	signedTx, err := w.Signer.SignDynamicFeeTx(tx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
@@ -305,12 +358,12 @@ func (w *InteractingWallet) WaitForTxReceipt(ctx context.Context, txHash common.
 
 // FormattedAddress returns the hex-encoded Ethereum address
 func (w *InteractingWallet) FormattedAddress() string {
-	return w.signer.FormattedAddress()
+	return w.Signer.FormattedAddress()
 }
 
 // Address returns the Ethereum address
 func (w *InteractingWallet) Address() common.Address {
-	return w.signer.Address()
+	return w.Signer.Address()
 }
 
 // GetClient returns the Ethereum client
@@ -320,12 +373,12 @@ func (w *InteractingWallet) GetClient() Client {
 
 // GetBalance returns the account balance
 func (w *InteractingWallet) GetBalance(ctx context.Context) (*big.Int, error) {
-	return w.client.BalanceAt(ctx, w.signer.Address(), nil)
+	return w.client.BalanceAt(ctx, w.Signer.Address(), nil)
 }
 
 // GetNonce returns the current nonce for the account
 func (w *InteractingWallet) GetNonce(ctx context.Context) (uint64, error) {
-	return w.client.PendingNonceAt(ctx, w.signer.Address())
+	return w.client.PendingNonceAt(ctx, w.Signer.Address())
 }
 
 // GetGasPrice returns the current suggested gas price
