@@ -313,7 +313,7 @@ func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.
 	}
 	tx, err := loaderInstance.TestStorageWrites(txOpts, big.NewInt(int64(iterations)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to build tx for writeTo function at %s: %w", contractAddr.String(), err)
+		return nil, fmt.Errorf("failed to build tx for %s at %s: %w", ethtypes.MsgWriteTo.String(), contractAddr.String(), err)
 	}
 	return tx, nil
 }
@@ -353,7 +353,7 @@ func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *ethw
 	}
 	tx, err := loaderInstance.TestLargeCalldata(txOpts, randomBytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build tx for testLargeCallData function at %s: %w", contractAddr.String(), err)
+		return nil, fmt.Errorf("failed to build tx for %s at %s: %w", ethtypes.MsgCallDataBlast.String(), contractAddr.String(), err)
 	}
 	return tx, nil
 }
@@ -389,7 +389,7 @@ func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *
 	}
 	tx, err := loaderInstance.TestCrossContractCalls(txOpts, big.NewInt(int64(iterations)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to build tx for writeTo function at %s: %w", contractAddr.String(), err)
+		return nil, fmt.Errorf("failed to build tx for %s at %s: %w", ethtypes.MsgCrossContractCall.String(), contractAddr.String(), err)
 	}
 	return tx, nil
 }
@@ -449,7 +449,7 @@ func (f *TxFactory) createMsgTransferERC20(ctx context.Context, fromWallet *ethw
 	}
 	tx, err := wethInstance.Transfer(txOpts, recipient, wad)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build tx for writeTo function at %s: %w", contractAddr.String(), err)
+		return nil, fmt.Errorf("failed to build tx for %s at %s: %w", ethtypes.MsgTransferERC0.String(), contractAddr.String(), err)
 	}
 	return tx, nil
 }
@@ -486,7 +486,7 @@ func (f *TxFactory) createMsgNativeTransferERC20(ctx context.Context, fromWallet
 	}
 	tx, err := wethInstance.Transfer(txOpts, recipient, wad)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build tx for writeTo function at %s: %w", f.nativeERC20PrecompileAddress.String(), err)
+		return nil, fmt.Errorf("failed to build tx for %s at %s: %w", ethtypes.MsgNativeTransferERC20.String(), f.nativeERC20PrecompileAddress.String(), err)
 	}
 	return tx, nil
 }
