@@ -1,12 +1,19 @@
 package runner
 
 import (
+	"bufio"
+	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
+	"os"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -297,11 +304,37 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	if err := r.deployInitialContracts(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
-	// we build the full load upfront. that is, num_batches * [msg * msg spec amount].
-	batchLoads, err := r.buildFullLoad(ctx)
-	if err != nil {
-		return loadtesttypes.LoadTestResult{}, err
+
+	var batchLoads [][]*gethtypes.Transaction
+	if r.spec.Cache.ReadTxsFrom != "" {
+		txs, err := ReadTxnsFromCache(r.spec.Cache.ReadTxsFrom, r.spec.NumBatches)
+		if err != nil {
+			return loadtesttypes.LoadTestResult{}, fmt.Errorf("reading txs from cache at %s with batch size %d: %w", r.spec.Cache.ReadTxsFrom, r.spec.NumBatches, err)
+		}
+		if len(txs) == 0 {
+			return loadtesttypes.LoadTestResult{}, fmt.Errorf("no txs in cache at %s with batch size %d", r.spec.Cache.ReadTxsFrom, r.spec.NumBatches)
+		}
+		batchLoads = txs
+		r.logger.Info("loaded txs from cache", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.ReadTxsFrom))
 	}
+
+	if len(batchLoads) == 0 {
+		// we build the full load upfront. that is, num_batches * [msg * msg spec amount].
+		txs, err := r.buildFullLoad(ctx)
+		if err != nil {
+			return loadtesttypes.LoadTestResult{}, err
+		}
+		batchLoads = txs
+	}
+
+	if len(batchLoads) > 0 && r.spec.Cache.WriteTxsTo != "" {
+		if err := WriteTxnsToCache(r.spec.Cache.WriteTxsTo, batchLoads); err != nil {
+			r.logger.Error("caching txs", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.WriteTxsTo))
+		} else {
+			r.logger.Info("successfully cached txs", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.WriteTxsTo))
+		}
+	}
+
 	amountPerBatch := len(batchLoads[0])
 	total := len(batchLoads) * amountPerBatch
 
@@ -410,6 +443,117 @@ loop:
 	r.logger.Debug("collector running time",
 		zap.Float64("duration_seconds", time.Since(collectorStartTime).Seconds()))
 	return *collectorResults, nil
+}
+
+func ReadTxnsFromCache(name string, numBatches int) ([][]*gethtypes.Transaction, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, fmt.Errorf("could not open cache file %s: %w", name, err)
+	}
+	defer f.Close()
+
+	header, err := bufio.NewReader(f).ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("reading file header: %w", err)
+	}
+
+	numTxs, err := strconv.Atoi(strings.TrimSuffix(header, "\n"))
+	if err != nil {
+		return nil, fmt.Errorf("converting header to int: %w", err)
+	}
+	batchSize := numTxs / numBatches
+
+	if _, err := f.Seek(int64(len(header)), 0); err != nil {
+		return nil, fmt.Errorf("seeking: %w", err)
+	}
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		return nil, fmt.Errorf("creating gzip reader: %w", err)
+	}
+	defer zr.Close()
+
+	reader := bufio.NewReader(zr)
+
+	batches := make([][]*gethtypes.Transaction, numBatches)
+	batchIdx := 0
+	i := 1
+	for {
+		// read a line, which is a gzipped, base64 encoded, binary encoded tx
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF {
+				return batches, nil
+			}
+			return nil, fmt.Errorf("reading line: %w", err)
+		}
+		if len(line) == 0 {
+			return batches, nil
+		}
+		if batchIdx == numBatches {
+			// this can happen if they have specified an amount of batches that
+			// does not divide evenly into the total amount of txns in the
+			// cache. in this case we simply return early (without bringing all
+			// of the txs in the cache into their batches), so we respect the
+			// amount of batches that they wanted and do not create extras.
+			return batches, nil
+		}
+		line = line[0 : len(line)-1] // remove trailing \n
+
+		bz, err := base64.RawStdEncoding.DecodeString(line)
+		if err != nil {
+			return nil, fmt.Errorf("base64 decoding: %w", err)
+		}
+
+		var tx gethtypes.Transaction
+		if err := tx.UnmarshalBinary(bz); err != nil {
+			return nil, fmt.Errorf("unmarshal binary tx: %w", err)
+		}
+
+		batches[batchIdx] = append(batches[batchIdx], &tx)
+		if i%batchSize == 0 {
+			batchIdx++
+		}
+		i++
+	}
+}
+
+func WriteTxnsToCache(name string, txs [][]*gethtypes.Transaction) error {
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o777)
+	if err != nil {
+		return fmt.Errorf("could not open cache file %s: %w", name, err)
+	}
+	defer f.Close()
+
+	// assumes the number of txs in each batch is equal
+	numTxs := len(txs) * len(txs[0])
+	if _, err := f.WriteString(strconv.Itoa(numTxs) + "\n"); err != nil {
+		return fmt.Errorf("writing header of num txs to file: %w", err)
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("syncing file: %w", err)
+	}
+
+	zw := gzip.NewWriter(f)
+	defer zw.Close()
+
+	writer := bufio.NewWriter(zw)
+	defer writer.Flush()
+
+	for _, batch := range txs {
+		for _, tx := range batch {
+			bn, err := tx.MarshalBinary()
+			if err != nil {
+				return fmt.Errorf("binary marshalling tx: %w", err)
+			}
+
+			enc := base64.RawStdEncoding.EncodeToString(bn)
+			if _, err := writer.WriteString(enc + "\n"); err != nil {
+				return fmt.Errorf("writing tx binary to file: %w", err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func getTxType(tx *gethtypes.Transaction) loadtesttypes.MsgType {
