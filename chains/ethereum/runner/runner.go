@@ -424,7 +424,7 @@ loop:
 
 	r.waitForEmptyMempool(ctx, 1*time.Minute)
 	// sleep here for a sec because, even though the mempool may be empty, we could still be in process of executing those txs.
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Minute)
 	blockNum, err = r.wallets[0].GetClient().BlockNumber(ctx)
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get ending block number: %w", err)
