@@ -20,9 +20,15 @@ import (
 	"go.uber.org/zap"
 )
 
+type TxDistribution interface {
+	GetNextSender() *ethwallet.InteractingWallet
+	GetNextReceiver() common.Address
+	GetBaselineWallet() *ethwallet.InteractingWallet
+	ResetWalletAllocation()
+}
+
 type TxFactory struct {
 	logger          *zap.Logger
-	wallets         []*ethwallet.InteractingWallet
 	loaderAddresses []common.Address
 	wethAddresses   []common.Address
 	mu              sync.Mutex
@@ -37,27 +43,19 @@ type TxFactory struct {
 	// Be sure to call txFactory.SetBaseLines before using this.
 	baseLines map[loadtesttypes.MsgType][]*types.Transaction
 
-	// Wallet allocation tracking for minimizing reuse with role rotation
-	senderIndex    int
-	receiverIndex  int
-	loadGeneration int // tracks which load we're on for role rotation
-	numWallets     int // cached number of wallets for pool calculations
+	txDistribution TxDistribution
 }
 
-func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet, txOpts ethtypes.TxOpts) *TxFactory {
+func NewTxFactory(logger *zap.Logger, txOpts ethtypes.TxOpts, txDistribution TxDistribution) *TxFactory {
 	return &TxFactory{
 		logger:                       logger.With(zap.String("module", "tx_factory")),
-		wallets:                      wallets,
 		mu:                           sync.Mutex{},
 		txOpts:                       txOpts,
 		baseLines:                    map[loadtesttypes.MsgType][]*types.Transaction{},
 		nativeERC20PrecompileAddress: common.HexToAddress("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"), // see: evmd
 		loaderAddresses:              []common.Address{},
 		wethAddresses:                []common.Address{},
-		senderIndex:                  0,
-		receiverIndex:                0,
-		loadGeneration:               0,
-		numWallets:                   len(wallets),
+		txDistribution:               txDistribution,
 	}
 }
 
@@ -66,7 +64,7 @@ func NewTxFactory(logger *zap.Logger, wallets []*ethwallet.InteractingWallet, tx
 func (f *TxFactory) SetBaselines(ctx context.Context, msgs []loadtesttypes.LoadTestMsg) error {
 	f.logger.Info("Setting baselines for transactions...")
 	for _, msg := range msgs {
-		wallet := f.wallets[rand.Intn(len(f.wallets))]
+		wallet := f.txDistribution.GetBaselineWallet()
 		nonce, err := wallet.GetNonce(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get nonce of %s: %w", wallet.FormattedAddress(), err)
@@ -143,6 +141,12 @@ func (f *TxFactory) BuildTxs(msgSpec loadtesttypes.LoadTestMsg, fromWallet *ethw
 			return nil, err
 		}
 		return []*types.Transaction{tx}, nil
+	case ethtypes.MsgNativeGasTransfer:
+		tx, err := f.createMsgNativeGasTransfer(ctx, fromWallet, nonce, useBaseline)
+		if err != nil {
+			return nil, err
+		}
+		return []*types.Transaction{tx}, nil
 	default:
 		return nil, fmt.Errorf("unsupported message type: %q", msgSpec.Type)
 	}
@@ -158,76 +162,11 @@ func (f *TxFactory) SetWETHAddresses(addrs ...common.Address) {
 
 // ResetWalletAllocation resets wallet allocation for a new load and rotates roles
 func (f *TxFactory) ResetWalletAllocation() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	f.senderIndex = 0
-	f.receiverIndex = 0
-	f.loadGeneration++
+	f.txDistribution.ResetWalletAllocation()
 }
 
-// getCurrentSenderPool returns the current sender pool with role rotation
-func (f *TxFactory) getCurrentSenderPool() []*ethwallet.InteractingWallet {
-	if f.numWallets < 2 {
-		return f.wallets
-	}
-
-	// Rotate roles: wallets that were receivers in previous loads become senders
-	// This ensures balance distribution over time
-	offset := (f.loadGeneration * (f.numWallets / 2)) % f.numWallets
-	midpoint := f.numWallets / 2
-
-	senderPool := make([]*ethwallet.InteractingWallet, 0, midpoint)
-	for i := 0; i < midpoint; i++ {
-		idx := (offset + i) % f.numWallets
-		senderPool = append(senderPool, f.wallets[idx])
-	}
-
-	return senderPool
-}
-
-// getCurrentReceiverPool returns the current receiver pool with role rotation
-func (f *TxFactory) getCurrentReceiverPool() []*ethwallet.InteractingWallet {
-	if f.numWallets < 2 {
-		return f.wallets
-	}
-
-	// Receivers are the complement of senders in this load
-	offset := (f.loadGeneration * (f.numWallets / 2)) % f.numWallets
-	midpoint := f.numWallets / 2
-	receiverOffset := (offset + midpoint) % f.numWallets
-
-	receiverPool := make([]*ethwallet.InteractingWallet, 0, f.numWallets-midpoint)
-	for i := 0; i < f.numWallets-midpoint; i++ {
-		idx := (receiverOffset + i) % f.numWallets
-		receiverPool = append(receiverPool, f.wallets[idx])
-	}
-
-	return receiverPool
-}
-
-// GetNextSender returns the next sender wallet using round-robin within the current load
 func (f *TxFactory) GetNextSender() *ethwallet.InteractingWallet {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	senderPool := f.getCurrentSenderPool()
-	sender := senderPool[f.senderIndex]
-	f.senderIndex = (f.senderIndex + 1) % len(senderPool)
-
-	return sender
-}
-
-// getNextReceiver returns the next receiver wallet using round-robin within the current load
-func (f *TxFactory) getNextReceiver() common.Address {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	receiverPool := f.getCurrentReceiverPool()
-	receiver := receiverPool[f.receiverIndex]
-	f.receiverIndex = (f.receiverIndex + 1) % len(receiverPool)
-
-	return receiver.Address()
+	return f.txDistribution.GetNextSender()
 }
 
 func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *ethwallet.InteractingWallet, targets *int, nonce uint64, useBaseline bool) ([]*types.Transaction, error) {
@@ -421,11 +360,7 @@ func (f *TxFactory) createMsgTransferERC20(ctx context.Context, fromWallet *ethw
 	contractAddr := f.wethAddresses[rand.Intn(len(f.wethAddresses))]
 
 	// Use optimal recipient selection to minimize reuse and prevent self-transfers
-	recipient := f.getNextReceiver()
-	// Ensure sender != receiver if we have more than one wallet
-	for recipient == fromWallet.Address() && f.numWallets > 1 {
-		recipient = f.getNextReceiver()
-	}
+	recipient := f.txDistribution.GetNextReceiver()
 
 	// random amount. weth calls amounts wad for some reason.
 	wad := big.NewInt(int64(rand.Intn(10_000)))
@@ -456,11 +391,7 @@ func (f *TxFactory) createMsgTransferERC20(ctx context.Context, fromWallet *ethw
 
 func (f *TxFactory) createMsgNativeTransferERC20(ctx context.Context, fromWallet *ethwallet.InteractingWallet, nonce uint64, useBaseline bool) (*types.Transaction, error) {
 	// Use optimal recipient selection to minimize reuse and prevent self-transfers
-	recipient := f.getNextReceiver()
-	// Ensure sender != receiver if we have more than one wallet
-	for recipient == fromWallet.Address() && f.numWallets > 1 {
-		recipient = f.getNextReceiver()
-	}
+	recipient := f.txDistribution.GetNextReceiver()
 
 	// random amount. weth calls amounts wad for some reason. we continue that trend here.
 	wad := big.NewInt(int64(rand.Intn(10_000)))
@@ -489,4 +420,57 @@ func (f *TxFactory) createMsgNativeTransferERC20(ctx context.Context, fromWallet
 		return nil, fmt.Errorf("failed to build tx for %s at %s: %w", ethtypes.MsgNativeTransferERC20.String(), f.nativeERC20PrecompileAddress.String(), err)
 	}
 	return tx, nil
+}
+
+func (f *TxFactory) createMsgNativeGasTransfer(ctx context.Context, fromWallet *ethwallet.InteractingWallet,
+	nonce uint64, useBaseline bool,
+) (*types.Transaction, error) {
+	// Use optimal recipient selection to minimize reuse and prevent self-transfers
+	recipient := f.txDistribution.GetNextReceiver()
+
+	// Get balance and transfer half of it
+	bal, err := fromWallet.GetBalance(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get balance of %s: %w", fromWallet.FormattedAddress(), err)
+	}
+	transferAmount := new(big.Int).Div(bal, big.NewInt(2))
+
+	// Create a simple native gas transfer transaction
+	var gasLimit uint64
+	var gasTipCap, gasFeeCap *big.Int
+
+	if useBaseline {
+		baseLineTx := f.baseLines[ethtypes.MsgNativeGasTransfer][0]
+		gasLimit = baseLineTx.Gas()
+		gasTipCap = baseLineTx.GasTipCap()
+		gasFeeCap = baseLineTx.GasFeeCap()
+	} else {
+		gasLimit = 21000 // Standard gas limit for simple ETH transfers
+		gasTipCap = f.txOpts.GasTipCap
+		gasFeeCap = f.txOpts.GasFeeCap
+	}
+
+	chainID, err := fromWallet.GetClient().ChainID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chain ID: %w", err)
+	}
+
+	tx := types.NewTx(&types.DynamicFeeTx{
+		ChainID:   chainID,
+		Nonce:     nonce,
+		GasTipCap: gasTipCap,
+		GasFeeCap: gasFeeCap,
+		Gas:       gasLimit,
+		To:        &recipient,
+		Value:     transferAmount,
+		Data:      nil,
+	})
+
+	// Sign the transaction
+	signedTx, err := fromWallet.Signer.SignDynamicFeeTx(tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign transaction: %w", err)
+	}
+
+	return signedTx, nil
 }

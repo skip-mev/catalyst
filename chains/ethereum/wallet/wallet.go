@@ -3,6 +3,7 @@ package wallet
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,10 +65,19 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 	}
 	logger.Info("building wallets", zap.Int("num_wallets", spec.NumWallets))
 	for i := range spec.NumWallets {
+		// First wallet uses "" instead of int for passphrase
 		// derive raw 32-byte private key from mnemonic at ETH path .../0
-		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, strconv.Itoa(i), evmDerivationPath)
+		passPhrase := strconv.Itoa(i)
+		if i == 0 {
+			passPhrase = ""
+		}
+		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, passPhrase, evmDerivationPath)
 		if err != nil {
 			return nil, fmt.Errorf("mnemonic[%d]: derive failed: %w", i, err)
+		}
+
+		if i == 0 {
+			logger.Info("logging privKey", zap.String("privKey", hex.EncodeToString(derivedPrivKey)))
 		}
 
 		pk, err := crypto.ToECDSA(derivedPrivKey)

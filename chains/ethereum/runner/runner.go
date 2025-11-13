@@ -1,24 +1,16 @@
 package runner
 
 import (
-	"bufio"
-	"compress/gzip"
 	"context"
-	"encoding/base64"
 	"fmt"
-	"io"
 	"math/rand"
 	"net"
 	"net/http"
-	"os"
 	"slices"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -92,7 +84,14 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		return nil, err
 	}
 
-	txf := txfactory.NewTxFactory(logger, wallets, chainCfg.TxOpts)
+	var distribution txfactory.TxDistribution
+	if spec.InitialWallets > 0 && spec.InitialWallets < spec.NumWallets {
+		distribution = txfactory.NewTxDistributionBootstrapped(wallets, spec.InitialWallets)
+	} else {
+		distribution = txfactory.NewTxDistributionEven(wallets)
+	}
+
+	txf := txfactory.NewTxFactory(logger, chainCfg.TxOpts, distribution)
 	nonces := sync.Map{}
 	for _, wallet := range wallets {
 		nonces.Store(wallet.Address(), uint64(0))
@@ -253,470 +252,28 @@ func (r *Runner) deployInitialContracts(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction, error) {
-	if err := r.txFactory.SetBaselines(ctx, r.spec.Msgs); err != nil {
-		return nil, fmt.Errorf("failed to set Baseline txs: %w", err)
-	}
-
-	r.logger.Info("Building load...", zap.Int("num_batches", r.spec.NumBatches))
-	batchLoads := make([][]*gethtypes.Transaction, 0, 100)
-	total := 0
-	for i := range r.spec.NumBatches {
-		// Reset wallet allocation for each batch to enable role rotation
-		r.txFactory.ResetWalletAllocation()
-
-		batch := make([]*gethtypes.Transaction, 0)
-		for _, msgSpec := range r.spec.Msgs {
-			select {
-			case <-ctx.Done():
-				return nil, fmt.Errorf("ctx cancelled during load building: %w", ctx.Err())
-			default:
-			}
-			for range msgSpec.NumMsgs {
-				txs, err := r.buildLoad(msgSpec, true)
-				if err != nil {
-					return nil, fmt.Errorf("failed to build load for %s: %w", msgSpec.Type, err)
-				}
-				batch = append(batch, txs...)
-				total += len(txs)
-			}
-		}
-		r.logger.Info(fmt.Sprintf("built batch %d/%d", i+1, r.spec.NumBatches))
-		batchLoads = append(batchLoads, batch)
-	}
-	r.logger.Info("Load built, starting loadtest", zap.Int("total_txs", total))
-	return batchLoads, nil
-}
-
 func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
 	// when batches and interval are specified, user wants to run on a timed interval
 	if r.spec.NumBatches > 0 && r.spec.SendInterval > 0 {
 		r.logger.Info("Running loadtest on interval", zap.Duration("interval", r.spec.SendInterval), zap.Int("num_batches", r.spec.NumBatches))
 		return r.runOnInterval(ctx)
+	} else if r.spec.NumOfBlocks > 0 {
+		r.logger.Info("Running loadtest on blocks", zap.Int("blocks", r.spec.NumOfBlocks))
+		return r.runOnBlocks(ctx)
 	}
-	// otherwise we run on blocks
-	return r.runOnBlocks(ctx)
-}
-
-// runOnInterval starts the runner configured for interval load sending.
-func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
-	// deploy the initial contracts needed by the runner.
-	if err := r.deployInitialContracts(ctx); err != nil {
-		return loadtesttypes.LoadTestResult{}, err
-	}
-
-	var batchLoads [][]*gethtypes.Transaction
-	if r.spec.Cache.ReadTxsFrom != "" {
-		txs, err := ReadTxnsFromCache(r.spec.Cache.ReadTxsFrom, r.spec.NumBatches)
-		if err != nil {
-			return loadtesttypes.LoadTestResult{}, fmt.Errorf("reading txs from cache at %s with batch size %d: %w", r.spec.Cache.ReadTxsFrom, r.spec.NumBatches, err)
-		}
-		if len(txs) == 0 {
-			return loadtesttypes.LoadTestResult{}, fmt.Errorf("no txs in cache at %s with batch size %d", r.spec.Cache.ReadTxsFrom, r.spec.NumBatches)
-		}
-		batchLoads = txs
-		r.logger.Info("loaded txs from cache", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.ReadTxsFrom))
-	}
-
-	if len(batchLoads) == 0 {
-		// we build the full load upfront. that is, num_batches * [msg * msg spec amount].
-		txs, err := r.buildFullLoad(ctx)
-		if err != nil {
-			return loadtesttypes.LoadTestResult{}, err
-		}
-		batchLoads = txs
-	}
-
-	if len(batchLoads) > 0 && r.spec.Cache.WriteTxsTo != "" {
-		if err := WriteTxnsToCache(r.spec.Cache.WriteTxsTo, batchLoads); err != nil {
-			r.logger.Error("caching txs", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.WriteTxsTo))
-		} else {
-			r.logger.Info("successfully cached txs", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.WriteTxsTo))
-		}
-	}
-
-	amountPerBatch := len(batchLoads[0])
-	total := len(batchLoads) * amountPerBatch
-
-	crank := time.NewTicker(r.spec.SendInterval)
-	defer crank.Stop()
-
-	// sleeping once before we start, as the initial contracts were showing up in results.
-	time.Sleep(2 * time.Second)
-	blockNum, err := r.wallets[0].GetClient().BlockNumber(ctx)
-	if err != nil {
-		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get block number: %w", err)
-	}
-	startingBlock := blockNum
-
-	// load index is the index into the batchLoads slice.
-	loadIndex := 0
-
-	// go routines will send transactions and then push results to collectionChannel.
-	mu := &sync.Mutex{}
-	sentTxs := make([]*inttypes.SentTx, 0, total)
-	collectionChannel := make(chan *inttypes.SentTx, amountPerBatch)
-	collectionDone := make(chan struct{})
-	go func() {
-		defer close(collectionDone)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case tx, ok := <-collectionChannel:
-				if !ok { // channel closed
-					return
-				}
-				mu.Lock()
-				sentTxs = append(sentTxs, tx)
-				mu.Unlock()
-			}
-		}
-	}()
-
-	// waitgroup for every tx
-	wg := sync.WaitGroup{}
-
-loop:
-	for {
-		select {
-		case <-crank.C:
-			// get the load, initialize result slice.
-			load := batchLoads[loadIndex]
-			r.logger.Info("Sending txs", zap.Int("num_txs", len(load)))
-
-			// send each tx in a go routine.
-			for i, tx := range load {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: getTxType(tx)}
-					// send the tx from the wallet assigned to this transaction's sender
-					wallet := r.getWalletForTx(tx)
-					err = wallet.SendTransaction(ctx, tx)
-					if err != nil {
-						r.logger.Error("failed to send tx", zap.Error(err), zap.Int("index", i), zap.Int("load_index", loadIndex))
-						sentTx.Err = err
-					}
-					collectionChannel <- &sentTx
-				}()
-			}
-
-			loadIndex++
-			if loadIndex >= len(batchLoads) {
-				// exit the loadtest loop. we have finished.
-				break loop
-			}
-		case <-ctx.Done(): // A channel to signal stopping the ticker
-			return loadtesttypes.LoadTestResult{}, fmt.Errorf("ctx cancelled during load firing: %w", ctx.Err())
-		}
-	}
-
-	r.logger.Info("All transactions sent. Waiting for go routines to finish")
-	wg.Wait()
-	close(collectionChannel)
-	<-collectionDone // wait for collection to finish
-
-	r.logger.Info("go routines have completed", zap.Int("total_txs", len(sentTxs)))
-	r.sentTxs = sentTxs
-
-	r.logger.Info("Loadtest complete. Waiting for mempool to clear")
-
-	r.waitForEmptyMempool(ctx, 1*time.Minute)
-	// sleep here for a sec because, even though the mempool may be empty, we could still be in process of executing those txs.
-	time.Sleep(5 * time.Second)
-	blockNum, err = r.wallets[0].GetClient().BlockNumber(ctx)
-	if err != nil {
-		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get ending block number: %w", err)
-	}
-	endingBlock := blockNum
-
-	// collect metrics.
-	r.logger.Info("Collecting metrics", zap.Int("num_txs", len(r.sentTxs)))
-	// we pass in 0 for the numOfBlockRequested, because we are not running a block based loadtest.
-	// The collector understands that 0 means we are on a time interval loadtest.
-	collectorStartTime := time.Now()
-	collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, r.clients)
-	if err != nil {
-		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to collect metrics: %w", err)
-	}
-	r.logger.Debug("collector running time",
-		zap.Float64("duration_seconds", time.Since(collectorStartTime).Seconds()))
-	return *collectorResults, nil
-}
-
-func ReadTxnsFromCache(name string, numBatches int) ([][]*gethtypes.Transaction, error) {
-	f, err := os.Open(name)
-	if err != nil {
-		return nil, fmt.Errorf("could not open cache file %s: %w", name, err)
-	}
-	defer f.Close()
-
-	header, err := bufio.NewReader(f).ReadString('\n')
-	if err != nil {
-		return nil, fmt.Errorf("reading file header: %w", err)
-	}
-
-	numTxs, err := strconv.Atoi(strings.TrimSuffix(header, "\n"))
-	if err != nil {
-		return nil, fmt.Errorf("converting header to int: %w", err)
-	}
-	batchSize := numTxs / numBatches
-
-	if _, err := f.Seek(int64(len(header)), 0); err != nil {
-		return nil, fmt.Errorf("seeking: %w", err)
-	}
-	zr, err := gzip.NewReader(f)
-	if err != nil {
-		return nil, fmt.Errorf("creating gzip reader: %w", err)
-	}
-	defer zr.Close()
-
-	reader := bufio.NewReader(zr)
-
-	batches := make([][]*gethtypes.Transaction, numBatches)
-	batchIdx := 0
-	i := 1
-	for {
-		// read a line, which is a gzipped, base64 encoded, binary encoded tx
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				return batches, nil
-			}
-			return nil, fmt.Errorf("reading line: %w", err)
-		}
-		if len(line) == 0 {
-			return batches, nil
-		}
-		if batchIdx == numBatches {
-			// this can happen if they have specified an amount of batches that
-			// does not divide evenly into the total amount of txns in the
-			// cache. in this case we simply return early (without bringing all
-			// of the txs in the cache into their batches), so we respect the
-			// amount of batches that they wanted and do not create extras.
-			return batches, nil
-		}
-		line = line[0 : len(line)-1] // remove trailing \n
-
-		bz, err := base64.RawStdEncoding.DecodeString(line)
-		if err != nil {
-			return nil, fmt.Errorf("base64 decoding: %w", err)
-		}
-
-		var tx gethtypes.Transaction
-		if err := tx.UnmarshalBinary(bz); err != nil {
-			return nil, fmt.Errorf("unmarshal binary tx: %w", err)
-		}
-
-		batches[batchIdx] = append(batches[batchIdx], &tx)
-		if i%batchSize == 0 {
-			batchIdx++
-		}
-		i++
-	}
-}
-
-func WriteTxnsToCache(name string, txs [][]*gethtypes.Transaction) error {
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o777)
-	if err != nil {
-		return fmt.Errorf("could not open cache file %s: %w", name, err)
-	}
-	defer f.Close()
-
-	// assumes the number of txs in each batch is equal
-	numTxs := len(txs) * len(txs[0])
-	if _, err := f.WriteString(strconv.Itoa(numTxs) + "\n"); err != nil {
-		return fmt.Errorf("writing header of num txs to file: %w", err)
-	}
-	if err := f.Sync(); err != nil {
-		return fmt.Errorf("syncing file: %w", err)
-	}
-
-	zw := gzip.NewWriter(f)
-	defer zw.Close()
-
-	writer := bufio.NewWriter(zw)
-	defer writer.Flush()
-
-	for _, batch := range txs {
-		for _, tx := range batch {
-			bn, err := tx.MarshalBinary()
-			if err != nil {
-				return fmt.Errorf("binary marshalling tx: %w", err)
-			}
-
-			enc := base64.RawStdEncoding.EncodeToString(bn)
-			if _, err := writer.WriteString(enc + "\n"); err != nil {
-				return fmt.Errorf("writing tx binary to file: %w", err)
-			}
-		}
-	}
-
-	return nil
-}
-
-func getTxType(tx *gethtypes.Transaction) loadtesttypes.MsgType {
-	if tx.To() == nil {
-		return inttypes.ContractCreate
-	}
-	return inttypes.ContractCall
-}
-
-// runOnBlocks runs the loadtest via block signal.
-// It sets up a subscription to block headers, then builds and deploys the load when it receives a header.
-func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
-	if err := r.deployInitialContracts(ctx); err != nil {
-		return loadtesttypes.LoadTestResult{}, err
-	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel() // Ensure cancel is always called
-
-	blockCh := make(chan *gethtypes.Header, 1)
-	subscription, err := r.wsClients[0].SubscribeNewHead(ctx, blockCh)
-	if err != nil {
-		return loadtesttypes.LoadTestResult{}, err
-	}
-
-	defer subscription.Unsubscribe()
-	done := make(chan struct{}, 1)
-	defer close(done)
-	gotStartingBlock := false
-	startingBlock := uint64(0)
-	endingBlock := uint64(0)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				r.logger.Debug("ctx cancelled")
-				return
-			case err := <-subscription.Err():
-				if err != nil {
-					r.logger.Error("subscription error", zap.Error(err))
-				}
-				cancel()
-				return
-			case block, ok := <-blockCh:
-				if !ok {
-					r.logger.Error("block header channel closed")
-					cancel()
-					return
-				}
-				if !gotStartingBlock {
-					startingBlock = block.Number.Uint64()
-					gotStartingBlock = true
-				}
-				r.blocksProcessed++
-				r.logger.Debug(
-					"processing block",
-					zap.Uint64("height", block.Number.Uint64()),
-					zap.Uint64("time", block.Time),
-					zap.Uint64("gas_used", block.GasUsed),
-					zap.Uint64("gas_limit", block.GasLimit),
-				)
-				numTxsSubmitted, err := r.submitLoad(ctx)
-				if err != nil {
-					r.logger.Error("error during tx submission", zap.Error(err), zap.Uint64("height", block.Number.Uint64()))
-				}
-
-				r.logger.Debug("submitted transactions", zap.Uint64("height", block.Number.Uint64()), zap.Int("num_submitted", numTxsSubmitted))
-
-				r.logger.Info("processed block", zap.Uint64("height", block.Number.Uint64()), zap.Uint64("num_blocks_processed", r.blocksProcessed))
-				if r.blocksProcessed >= uint64(r.spec.NumOfBlocks) { //nolint:gosec // G115: overflow unlikely in practice
-					endingBlock = block.Number.Uint64()
-					r.logger.Info("load test completed - number of blocks desired reached",
-						zap.Uint64("blocks", r.blocksProcessed))
-					done <- struct{}{}
-					return
-				}
-			}
-		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		r.logger.Info("ctx cancelled")
-		return loadtesttypes.LoadTestResult{}, ctx.Err()
-	case <-done:
-		r.logger.Info("load test completed. sleeping 30s for final txs to complete")
-
-		r.waitForEmptyMempool(ctx, 1*time.Minute)
-
-		collectorStartTime := time.Now()
-		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, r.clients)
-		if err != nil {
-			return loadtesttypes.LoadTestResult{Error: err.Error()}, fmt.Errorf("failed to collect metrics: %w", err)
-		}
-		collectorEndTime := time.Now()
-		r.logger.Debug("collector running time",
-			zap.Float64("duration_seconds", collectorEndTime.Sub(collectorStartTime).Seconds()))
-
-		return *collectorResults, nil
-	}
-}
-
-func (r *Runner) submitLoad(ctx context.Context) (int, error) {
-	// Reset wallet allocation for each block/load to enable role rotation
-	r.txFactory.ResetWalletAllocation()
-
-	// first we build the tx load. this constructs all the ethereum txs based in the spec.
-	r.logger.Debug("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
-	txs := make([]*gethtypes.Transaction, 0, len(r.spec.Msgs))
-	for _, msgSpec := range r.spec.Msgs {
-		for i := 0; i < msgSpec.NumMsgs; i++ {
-			load, err := r.buildLoad(msgSpec, false)
-			if err != nil {
-				return 0, fmt.Errorf("failed to build load: %w", err)
-			}
-			if len(load) == 0 {
-				continue
-			}
-			txs = append(txs, load...)
-		}
-	}
-
-	// submit each tx in a go routine
-	wg := sync.WaitGroup{}
-	sentTxs := make([]*inttypes.SentTx, len(txs))
-	for i, tx := range txs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			// send the tx from the wallet assigned to this transaction's sender
-			fromWallet := r.getWalletForTx(tx)
-			err := fromWallet.SendTransaction(ctx, tx)
-			if err != nil {
-				r.logger.Debug("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
-			}
-
-			// TODO: for now its just easier to differ based on contract creation. ethereum txs dont really have
-			// obvious "msgtypes" inside the tx object itself. we would have to map txhash to the spec that built the tx to get anything more specific.
-			txType := inttypes.ContractCall
-			if tx.To() == nil {
-				txType = inttypes.ContractCreate
-			}
-			sentTxs[i] = &inttypes.SentTx{
-				TxHash:      tx.Hash(),
-				NodeAddress: "", // TODO: figure out what to do here.
-				MsgType:     txType,
-				Err:         err,
-				Tx:          tx,
-			}
-		}()
-	}
-
-	wg.Wait()
-
-	r.sentTxs = append(r.sentTxs, sentTxs...)
-	return len(sentTxs), nil
+	r.logger.Info("Running loadtest persistently")
+	return r.runPersistent(ctx)
 }
 
 func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
 	// For ERC20 transactions, use optimal sender selection from factory
 	var fromWallet *wallet.InteractingWallet
-	if msgSpec.Type == inttypes.MsgTransferERC0 || msgSpec.Type == inttypes.MsgNativeTransferERC20 {
+	switch msgSpec.Type {
+	case inttypes.MsgTransferERC0, inttypes.MsgNativeTransferERC20:
 		fromWallet = r.txFactory.GetNextSender()
-	} else {
+	case inttypes.MsgDeployERC20, inttypes.MsgCreateContract:
+		fromWallet = r.wallets[0]
+	default:
 		// For non-ERC20 transactions, keep random selection
 		fromWallet = r.wallets[rand.Intn(len(r.wallets))]
 	}
@@ -743,52 +300,4 @@ func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) 
 	}
 	r.nonces.Store(fromWallet.Address(), lastTx.Nonce()+1)
 	return txs, nil
-}
-
-func (r *Runner) waitForEmptyMempool(ctx context.Context, timeout time.Duration) {
-	wg := sync.WaitGroup{}
-	for _, c := range r.clients {
-		wg.Add(1)
-		go func(ethClient *ethclient.Client) {
-			client := ethClient.Client()
-			defer wg.Done()
-			type TxPoolStatus struct {
-				Pending hexutil.Uint64 `json:"pending"`
-				Queued  hexutil.Uint64 `json:"queued"`
-			}
-			type TxPoolStatusResponse struct {
-				JSONRPC string       `json:"jsonrpc"`
-				ID      int          `json:"id"`
-				Result  TxPoolStatus `json:"result"`
-			}
-
-			started := time.Now()
-			timer := time.NewTicker(500 * time.Millisecond)
-			timout := time.NewTimer(timeout)
-			defer timer.Stop()
-			defer timout.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-timer.C:
-					var res TxPoolStatusResponse
-					err := client.CallContext(ctx, &res, "txpool_status")
-					if err == nil {
-						if res.Result.Pending == 0 {
-							r.logger.Debug("mempool clear. done waiting for mempool", zap.Duration("waited", time.Since(started)))
-							return
-						}
-					} else {
-						r.logger.Debug("error calling txpool status", zap.Error(err))
-					}
-				case <-timout.C:
-					r.logger.Debug("timed out waiting for mempool to clear", zap.Duration("waited", timeout))
-					return
-				}
-			}
-		}(c)
-	}
-	wg.Wait()
 }
