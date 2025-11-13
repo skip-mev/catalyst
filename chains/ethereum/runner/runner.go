@@ -94,7 +94,11 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 	txf := txfactory.NewTxFactory(logger, chainCfg.TxOpts, distribution)
 	nonces := sync.Map{}
 	for _, wallet := range wallets {
-		nonces.Store(wallet.Address(), uint64(0))
+		nonce, err := wallet.GetClient().PendingNonceAt(ctx, wallet.Address())
+		if err != nil {
+			logger.Warn("Failed getting nonce for wallet setting to 0", zap.String("address", wallet.Address().String()))
+		}
+		nonces.Store(wallet.Address(), nonce)
 	}
 
 	// Create sender to wallet mapping for consistent endpoint usage
