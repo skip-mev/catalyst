@@ -54,18 +54,24 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 		return nil, fmt.Errorf("failed to parse chain id: %q", spec.ChainID)
 	}
 
-	// EXACT path used by 'eth_secp256k1' default account in Ethermint-based chains.
-	const evmDerivationPath = "m/44'/60'/0'/0/0"
-
-	ws := make([]*InteractingWallet, spec.NumWallets)
 	m := strings.TrimSpace(spec.BaseMnemonic)
 	if m == "" {
 		return nil, errors.New("BaseMnemonic is empty")
 	}
+
+	// EXACT path used by 'eth_secp256k1' default account in Ethermint-based chains.
+	const evmDerivationPath = "m/44'/60'/0'/0/0"
+
+	ws := make([]*InteractingWallet, spec.NumWallets)
 	logger.Info("building wallets", zap.Int("num_wallets", spec.NumWallets))
 	for i := range spec.NumWallets {
+		// First wallet uses "" instead of int for passphrase
 		// derive raw 32-byte private key from mnemonic at ETH path .../0
-		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, strconv.Itoa(i), evmDerivationPath)
+		passPhrase := strconv.Itoa(i)
+		if i == 0 {
+			passPhrase = ""
+		}
+		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, passPhrase, evmDerivationPath)
 		if err != nil {
 			return nil, fmt.Errorf("mnemonic[%d]: derive failed: %w", i, err)
 		}

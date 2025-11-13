@@ -22,13 +22,14 @@ func TestWalletAllocationMinimizesReuse(t *testing.T) {
 
 	logger := zap.NewNop()
 	txOpts := ethtypes.TxOpts{}
-	factory := NewTxFactory(logger, mockWallets, txOpts)
+	distr := NewTxDistributionEven(mockWallets)
+	factory := NewTxFactory(logger, txOpts, distr)
 
 	// Test 1: Verify that sender and receiver pools are non-overlapping within a load
 	factory.ResetWalletAllocation()
 
-	senderPool := factory.getCurrentSenderPool()
-	receiverPool := factory.getCurrentReceiverPool()
+	senderPool := distr.getCurrentSenderPool()
+	receiverPool := distr.getCurrentReceiverPool()
 
 	// Ensure pools have expected sizes
 	expectedSenderSize := numWallets / 2
@@ -37,16 +38,16 @@ func TestWalletAllocationMinimizesReuse(t *testing.T) {
 	assert.Equal(t, expectedReceiverSize, len(receiverPool), "Receiver pool should be the remaining wallets")
 
 	// Test 2: Verify load generation increments
-	initialGeneration := factory.loadGeneration
+	initialGeneration := distr.loadGeneration
 	factory.ResetWalletAllocation()
-	assert.Equal(t, initialGeneration+1, factory.loadGeneration, "Load generation should increment")
+	assert.Equal(t, initialGeneration+1, distr.loadGeneration, "Load generation should increment")
 
 	// Test 3: Verify round-robin within pools
 	factory.ResetWalletAllocation()
 
 	// Get all senders in the pool
 	senders := make([]*ethwallet.InteractingWallet, 0)
-	poolSize := len(factory.getCurrentSenderPool())
+	poolSize := len(distr.getCurrentSenderPool())
 
 	for i := 0; i < poolSize*2; i++ { // Go through the pool twice
 		sender := factory.GetNextSender()
@@ -65,11 +66,12 @@ func TestWalletAllocationHandlesEdgeCases(t *testing.T) {
 	// Test with single wallet
 	t.Run("single wallet", func(t *testing.T) {
 		singleWallet := []*ethwallet.InteractingWallet{{}}
-		factory := NewTxFactory(logger, singleWallet, txOpts)
+		distr := NewTxDistributionEven(singleWallet)
+		factory := NewTxFactory(logger, txOpts, distr)
 		factory.ResetWalletAllocation()
 
-		senderPool := factory.getCurrentSenderPool()
-		receiverPool := factory.getCurrentReceiverPool()
+		senderPool := distr.getCurrentSenderPool()
+		receiverPool := distr.getCurrentReceiverPool()
 
 		// With a single wallet, both pools should contain the same wallet
 		require.Len(t, senderPool, 1)
@@ -82,11 +84,12 @@ func TestWalletAllocationHandlesEdgeCases(t *testing.T) {
 			{},
 			{},
 		}
-		factory := NewTxFactory(logger, twoWallets, txOpts)
+		distr := NewTxDistributionEven(twoWallets)
+		factory := NewTxFactory(logger, txOpts, distr)
 		factory.ResetWalletAllocation()
 
-		senderPool := factory.getCurrentSenderPool()
-		receiverPool := factory.getCurrentReceiverPool()
+		senderPool := distr.getCurrentSenderPool()
+		receiverPool := distr.getCurrentReceiverPool()
 
 		// With two wallets, each pool should have one wallet
 		assert.Len(t, senderPool, 1)
@@ -104,13 +107,14 @@ func TestLoadGenerationProgression(t *testing.T) {
 
 	logger := zap.NewNop()
 	txOpts := ethtypes.TxOpts{}
-	factory := NewTxFactory(logger, mockWallets, txOpts)
+	distr := NewTxDistributionEven(mockWallets)
+	factory := NewTxFactory(logger, txOpts, distr)
 
 	// Test that load generation progresses
-	initialGeneration := factory.loadGeneration
+	initialGeneration := distr.loadGeneration
 
 	for i := 0; i < 5; i++ {
 		factory.ResetWalletAllocation()
-		assert.Equal(t, initialGeneration+i+1, factory.loadGeneration, "Load generation should increment with each reset")
+		assert.Equal(t, initialGeneration+i+1, distr.loadGeneration, "Load generation should increment with each reset")
 	}
 }

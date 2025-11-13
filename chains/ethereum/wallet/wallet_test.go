@@ -24,7 +24,7 @@ func TestBuildWallets(t *testing.T) {
 	baseMnemonic := "copper push brief egg scan entry inform record adjust fossil boss egg comic alien upon aspect dry avoid interest fury window hint race symptom"
 
 	expectedAddrs := []string{
-		"0x9359cdfd29EbFA924c0a29972C9b8f69d26a0bF1",
+		"0xC6Fe5D33615a1C52c08018c47E8Bc53646A0E101",
 		"0x9A271A6A9C60936f2E6E32e460Fda5d2C92e4368",
 		"0xBf2B5547C06662DdEB4b1D43542fb65BFd4e6330",
 		"0x6dE3b4C24cef32bEA6D0dCa96727A5BDAEa56D22",
