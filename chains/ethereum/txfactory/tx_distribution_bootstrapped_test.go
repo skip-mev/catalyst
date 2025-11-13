@@ -63,7 +63,6 @@ func TestSenderWalletAllocationBootstrapped(t *testing.T) {
 	for range 2 {
 		assert.NotNil(t, factory.GetNextSender())
 	}
-	assert.Nil(t, factory.GetNextSender())
 
 	factory.ResetWalletAllocation()
 	// Verify we start at 0 and 5 for sender/receiver

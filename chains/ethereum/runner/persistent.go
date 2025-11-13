@@ -98,6 +98,7 @@ func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int) (int
 	wg := sync.WaitGroup{}
 	sentTxs := make([]*inttypes.SentTx, len(txs))
 	for i, tx := range txs {
+		i, tx := i, tx
 		wg.Go(func() {
 			// send the tx from the wallet assigned to this transaction's sender
 			fromWallet := r.getWalletForTx(tx)
