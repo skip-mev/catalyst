@@ -54,14 +54,15 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 		return nil, fmt.Errorf("failed to parse chain id: %q", spec.ChainID)
 	}
 
-	// EXACT path used by 'eth_secp256k1' default account in Ethermint-based chains.
-	const evmDerivationPath = "m/44'/60'/0'/0/0"
-
-	ws := make([]*InteractingWallet, spec.NumWallets)
 	m := strings.TrimSpace(spec.BaseMnemonic)
 	if m == "" {
 		return nil, errors.New("BaseMnemonic is empty")
 	}
+
+	// EXACT path used by 'eth_secp256k1' default account in Ethermint-based chains.
+	const evmDerivationPath = "m/44'/60'/0'/0/0"
+
+	ws := make([]*InteractingWallet, spec.NumWallets)
 	logger.Info("building wallets", zap.Int("num_wallets", spec.NumWallets))
 	for i := range spec.NumWallets {
 		// First wallet uses "" instead of int for passphrase
