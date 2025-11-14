@@ -86,8 +86,10 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 
 	var distribution txfactory.TxDistribution
 	if spec.InitialWallets > 0 && spec.InitialWallets < spec.NumWallets {
+		logger.Info("Using TxDistributionBootstrapped", zap.Int("initial_wallets", spec.InitialWallets), zap.Int("num_wallets", spec.NumWallets))
 		distribution = txfactory.NewTxDistributionBootstrapped(logger, wallets, spec.InitialWallets)
 	} else {
+		logger.Info("Using TxDistributionEven")
 		distribution = txfactory.NewTxDistributionEven(wallets)
 	}
 
