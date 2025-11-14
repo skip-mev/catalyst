@@ -433,7 +433,7 @@ func (f *TxFactory) createMsgNativeGasTransfer(ctx context.Context, fromWallet *
 	// Get balance and transfer half of it
 	bal := f.txDistribution.GetAccountBalance(fromWallet.Address())
 	if bal == nil {
-		return nil, fmt.Errorf("failed to get balance of %s: %w", fromWallet.FormattedAddress())
+		return nil, fmt.Errorf("failed to get balance of %s", fromWallet.FormattedAddress())
 	}
 	transferAmount := new(big.Int).Div(bal, big.NewInt(2))
 

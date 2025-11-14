@@ -2,6 +2,7 @@ package txfactory
 
 import (
 	"context"
+	"go.uber.org/zap"
 	"math/big"
 	"sync"
 
@@ -13,6 +14,7 @@ var _ TxDistribution = &TxDistributionBootstrapped{}
 
 type TxDistributionBootstrapped struct {
 	mu      sync.Mutex
+	logger  *zap.Logger
 	wallets []*ethwallet.InteractingWallet
 
 	// Wallet allocation tracking for minimizing reuse with role rotation
@@ -24,21 +26,31 @@ type TxDistributionBootstrapped struct {
 	balanceCache *sync.Map
 }
 
-func NewTxDistributionBootstrapped(wallets []*ethwallet.InteractingWallet, fundedWallets int) *TxDistributionBootstrapped {
+func NewTxDistributionBootstrapped(logger *zap.Logger, wallets []*ethwallet.InteractingWallet,
+	fundedWallets int) *TxDistributionBootstrapped {
 	numWallets := len(wallets)
 	receiverIndex := fundedWallets
 	if fundedWallets == numWallets {
 		receiverIndex = numWallets / 2
 	}
 	balanceCache := &sync.Map{}
-	for _, w := range wallets {
+	for i, w := range wallets {
+		if i%10000 == 0 {
+			logger.Info("initializing balances", zap.Int("progress", i))
+		}
 		bal, err := w.GetBalance(context.Background())
 		if err != nil {
+			logger.Info("Failed to bootstrap balance", zap.String("account", w.Address().String()), zap.Error(err))
+			// Break out early if we're getting 0 balances for non-funded wallets--assume the rest are 0
+			if i > fundedWallets {
+				break
+			}
 			continue
 		}
 		balanceCache.Store(w.Address(), bal)
 	}
 	return &TxDistributionBootstrapped{
+		logger:        logger,
 		wallets:       wallets,
 		fundedWallets: fundedWallets,
 		senderIndex:   0,
