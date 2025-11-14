@@ -126,29 +126,49 @@ func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int) (int
 func (r *Runner) buildLoadPersistent(msgSpec loadtesttypes.LoadTestMsg, maxLoadSize int, useBaseline bool) ([]*gethtypes.Transaction, error) {
 	r.logger.Info("building load", zap.Int("maxLoadSize", maxLoadSize))
 	var txnLoad []*gethtypes.Transaction
+	var wg sync.WaitGroup
+	txChan := make(chan *gethtypes.Transaction, maxLoadSize)
 	for range maxLoadSize {
-		sender := r.txFactory.GetNextSender()
+		wg.Go(func() {
+			sender := r.txFactory.GetNextSender()
 
-		if sender == nil {
-			r.logger.Info("failed to get sender")
-			break
-		}
-		nonce, ok := r.nonces.Load(sender.Address())
-		if !ok {
-			// this really should not happen ever. better safe than sorry.
-			return nil, fmt.Errorf("nonce for wallet %s not found", sender.Address())
-		}
-		tx, err := r.txFactory.BuildTxs(msgSpec, sender, nonce.(uint64), useBaseline)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build txs %w", err)
-		}
-		lastTx := tx[len(tx)-1]
-		if lastTx == nil {
-			return nil, nil
-		}
-		r.nonces.Store(sender.Address(), lastTx.Nonce()+1)
-		// Only use single txn builders here
-		txnLoad = append(txnLoad, tx...)
+			if sender == nil {
+				return
+			}
+			nonce, ok := r.nonces.Load(sender.Address())
+			if !ok {
+				// this really should not happen ever. better safe than sorry.
+				r.logger.Error("nonce for wallet not found", zap.String("wallet", sender.Address().String()))
+				return
+			}
+			tx, err := r.txFactory.BuildTxs(msgSpec, sender, nonce.(uint64), useBaseline)
+			if err != nil {
+				r.logger.Error("failed to build txs", zap.Error(err))
+				return
+			}
+			lastTx := tx[len(tx)-1]
+			if lastTx == nil {
+				return
+			}
+			r.nonces.Store(sender.Address(), lastTx.Nonce()+1)
+			// Only use single txn builders here
+			for _, txn := range tx {
+				txChan <- txn
+			}
+		})
 	}
-	return txnLoad, nil
+	doneChan := make(chan struct{})
+	go func() {
+		wg.Wait()
+		doneChan <- struct{}{}
+	}()
+	for {
+		select {
+		case txn := <-txChan:
+			txnLoad = append(txnLoad, txn)
+		case <-doneChan:
+			r.logger.Info("Generated load txs", zap.Int("num_txs", len(txnLoad)))
+			return txnLoad, nil
+		}
+	}
 }

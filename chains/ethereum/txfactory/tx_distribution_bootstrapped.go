@@ -1,6 +1,8 @@
 package txfactory
 
 import (
+	"context"
+	"math/big"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -18,6 +20,8 @@ type TxDistributionBootstrapped struct {
 	senderIndex   int // Next wallet to use as a sender
 	receiverIndex int // Next wallet to use as a receiver
 	numWallets    int // the length of wallets
+	// Map of address to balance (common.Address => *big.Int)
+	balanceCache *sync.Map
 }
 
 func NewTxDistributionBootstrapped(wallets []*ethwallet.InteractingWallet, fundedWallets int) *TxDistributionBootstrapped {
@@ -26,13 +30,34 @@ func NewTxDistributionBootstrapped(wallets []*ethwallet.InteractingWallet, funde
 	if fundedWallets == numWallets {
 		receiverIndex = numWallets / 2
 	}
+	balanceCache := &sync.Map{}
+	for _, w := range wallets {
+		bal, err := w.GetBalance(context.Background())
+		if err != nil {
+			continue
+		}
+		balanceCache.Store(w.Address(), bal)
+	}
 	return &TxDistributionBootstrapped{
 		wallets:       wallets,
 		fundedWallets: fundedWallets,
 		senderIndex:   0,
 		receiverIndex: receiverIndex,
 		numWallets:    numWallets,
+		balanceCache:  balanceCache,
 	}
+}
+
+func (d *TxDistributionBootstrapped) GetAccountBalance(addr common.Address) *big.Int {
+	bal, ok := d.balanceCache.Load(addr)
+	if !ok {
+		return nil
+	}
+	return bal.(*big.Int)
+}
+
+func (d *TxDistributionBootstrapped) SetAccountBalance(addr common.Address, bal *big.Int) {
+	d.balanceCache.Store(addr, bal)
 }
 
 // GetNextSender returns the next sender wallet

@@ -25,6 +25,8 @@ type TxDistribution interface {
 	GetNextReceiver() common.Address
 	GetBaselineWallet() *ethwallet.InteractingWallet
 	ResetWalletAllocation()
+	GetAccountBalance(common.Address) *big.Int
+	SetAccountBalance(common.Address, *big.Int)
 }
 
 type TxFactory struct {
@@ -429,9 +431,9 @@ func (f *TxFactory) createMsgNativeGasTransfer(ctx context.Context, fromWallet *
 	recipient := f.txDistribution.GetNextReceiver()
 
 	// Get balance and transfer half of it
-	bal, err := fromWallet.GetBalance(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get balance of %s: %w", fromWallet.FormattedAddress(), err)
+	bal := f.txDistribution.GetAccountBalance(fromWallet.Address())
+	if bal == nil {
+		return nil, fmt.Errorf("failed to get balance of %s: %w", fromWallet.FormattedAddress())
 	}
 	transferAmount := new(big.Int).Div(bal, big.NewInt(2))
 
@@ -471,6 +473,13 @@ func (f *TxFactory) createMsgNativeGasTransfer(ctx context.Context, fromWallet *
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
+	f.txDistribution.SetAccountBalance(fromWallet.Address(), transferAmount)
+	recBal := f.txDistribution.GetAccountBalance(recipient)
+	newRecBal := new(big.Int).Set(transferAmount)
+	if recBal != nil {
+		newRecBal = newRecBal.Add(newRecBal, recBal)
+	}
+	f.txDistribution.SetAccountBalance(recipient, newRecBal)
 
 	return signedTx, nil
 }

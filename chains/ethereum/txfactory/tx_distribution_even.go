@@ -1,6 +1,7 @@
 package txfactory
 
 import (
+	"math/big"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -28,6 +29,12 @@ func NewTxDistributionEven(wallets []*ethwallet.InteractingWallet) *TxDistributi
 		numWallets:     len(wallets),
 	}
 }
+
+func (d *TxDistributionEven) GetAccountBalance(addr common.Address) *big.Int {
+	return nil
+}
+
+func (d *TxDistributionEven) SetAccountBalance(addr common.Address, bal *big.Int) {}
 
 // GetNextSender returns the next sender wallet using round-robin within the current load
 func (d *TxDistributionEven) GetNextSender() *ethwallet.InteractingWallet {
