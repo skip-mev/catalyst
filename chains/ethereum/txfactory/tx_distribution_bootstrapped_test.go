@@ -21,7 +21,7 @@ func TestBootstrapping(t *testing.T) {
 		// Note: In real implementation, we would need to mock the Address() method
 		// For this test, we'll focus on the logic
 	}
-	distr := NewTxDistributionBootstrapped(mockWallets, initialWallets)
+	distr := NewTxDistributionBootstrapped(zap.NewNop(), mockWallets, initialWallets)
 	for range numBlocks {
 		for range numMsgs {
 			if sender := distr.GetNextSender(); sender == nil {
@@ -45,7 +45,7 @@ func TestSenderWalletAllocationBootstrapped(t *testing.T) {
 
 	logger := zap.NewNop()
 	txOpts := ethtypes.TxOpts{}
-	distr := NewTxDistributionBootstrapped(mockWallets, 1)
+	distr := NewTxDistributionBootstrapped(zap.NewNop(), mockWallets, 1)
 	factory := NewTxFactory(logger, txOpts, distr)
 
 	// 1 starting wallet and 10 total wallets should take 3 full loads and 1 partial
