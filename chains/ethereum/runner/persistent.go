@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -17,6 +18,13 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 	if err := r.deployInitialContracts(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
+
+	// We fund InitialWallets * 2^N wallets every block where N == the number of bootstrap loads sent.
+	// We therefore require (log(num_wallets) - log(initial_wallets))/log(2) bootstrap loads to full fund.
+	requiredBootstrapLoads := uint64((math.Log10(float64(r.spec.NumWallets))-math.Log10(float64(r.spec.InitialWallets)))/math.Log10(2)) + 1
+	var blocksProcessed uint64
+	// boostrapBackoff controls how many blocks are between load publication while we're still bootstrapping (funding wallets).
+	bootstrapBackoff := uint64(5)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -53,6 +61,7 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 				cancel()
 				return
 			case block, ok := <-blockCh:
+				blocksProcessed++
 				if !ok {
 					r.logger.Error("block header channel closed")
 					cancel()
@@ -65,6 +74,13 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 					zap.Uint64("gas_used", block.GasUsed),
 					zap.Uint64("gas_limit", block.GasLimit),
 				)
+
+				sentBootstrapLoads := blocksProcessed / bootstrapBackoff
+				// Only throttle load creation if we're still bootstrapping.
+				// In that case we publish load every bootstrapBackoff blocks.
+				if (sentBootstrapLoads <= requiredBootstrapLoads) && (blocksProcessed%bootstrapBackoff != 0) {
+					continue
+				}
 				numTxsSubmitted, err := r.submitLoadPersistent(ctx, maxLoadSize)
 				if err != nil {
 					r.logger.Error("error during tx submission", zap.Error(err), zap.Uint64("height", block.Number.Uint64()))
