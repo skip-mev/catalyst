@@ -101,7 +101,8 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		}
 		nonce, err := wallet.GetClient().PendingNonceAt(ctx, wallet.Address())
 		if err != nil {
-			logger.Warn("Failed getting nonce for wallet setting to 0", zap.String("address", wallet.Address().String()))
+			logger.Warn("Failed getting nonce for wallet setting to 0", zap.String("address",
+				wallet.Address().String()), zap.Error(err))
 		}
 		nonces.Store(wallet.Address(), nonce)
 	}
