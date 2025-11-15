@@ -99,7 +99,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		if i%10000 == 0 {
 			logger.Info("Initializing nonces for accounts", zap.Int("progress", i))
 		}
-		nonce, err := wallet.GetClient().PendingNonceAt(ctx, wallet.Address())
+		nonce, err := wallet.GetNonce(ctx)
 		if err != nil {
 			logger.Warn("Failed getting nonce for wallet setting to 0", zap.String("address",
 				wallet.Address().String()), zap.Error(err))
