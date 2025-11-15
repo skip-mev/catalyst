@@ -1,10 +1,9 @@
 package txfactory
 
 import (
-	"context"
-	"go.uber.org/zap"
-	"math/big"
 	"sync"
+
+	"go.uber.org/zap"
 
 	"github.com/ethereum/go-ethereum/common"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
@@ -22,32 +21,15 @@ type TxDistributionBootstrapped struct {
 	senderIndex   int // Next wallet to use as a sender
 	receiverIndex int // Next wallet to use as a receiver
 	numWallets    int // the length of wallets
-	// Map of address to balance (common.Address => *big.Int)
-	balanceCache *sync.Map
 }
 
 func NewTxDistributionBootstrapped(logger *zap.Logger, wallets []*ethwallet.InteractingWallet,
-	fundedWallets int) *TxDistributionBootstrapped {
+	fundedWallets int,
+) *TxDistributionBootstrapped {
 	numWallets := len(wallets)
 	receiverIndex := fundedWallets
 	if fundedWallets == numWallets {
 		receiverIndex = numWallets / 2
-	}
-	balanceCache := &sync.Map{}
-	for i, w := range wallets {
-		if i%10000 == 0 {
-			logger.Info("initializing balances", zap.Int("progress", i))
-		}
-		bal, err := w.GetBalance(context.Background())
-		if err != nil {
-			logger.Info("Failed to bootstrap balance", zap.String("account", w.Address().String()), zap.Error(err))
-			// Break out early if we're getting 0 balances for non-funded wallets--assume the rest are 0
-			if i > fundedWallets {
-				break
-			}
-			continue
-		}
-		balanceCache.Store(w.Address(), bal)
 	}
 	return &TxDistributionBootstrapped{
 		logger:        logger,
@@ -56,20 +38,7 @@ func NewTxDistributionBootstrapped(logger *zap.Logger, wallets []*ethwallet.Inte
 		senderIndex:   0,
 		receiverIndex: receiverIndex,
 		numWallets:    numWallets,
-		balanceCache:  balanceCache,
 	}
-}
-
-func (d *TxDistributionBootstrapped) GetAccountBalance(addr common.Address) *big.Int {
-	bal, ok := d.balanceCache.Load(addr)
-	if !ok {
-		return nil
-	}
-	return bal.(*big.Int)
-}
-
-func (d *TxDistributionBootstrapped) SetAccountBalance(addr common.Address, bal *big.Int) {
-	d.balanceCache.Store(addr, bal)
 }
 
 // GetNextSender returns the next sender wallet
