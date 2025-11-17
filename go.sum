@@ -243,8 +243,8 @@ github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06/go.mod h1:
 github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd/go.mod h1:sE/e/2PUdi/liOCUjSTXgM1o87ZssimdTWN964YiIeI=
 github.com/coder/websocket v1.8.12 h1:5bUXkEPPIbewrnkU8LTCLVaxi4N4J8ahufH2vlo4NAo=
 github.com/coder/websocket v1.8.12/go.mod h1:LNVeNrXQZfe5qhS9ALED3uA+l5pPqvwXg3CKoDBB2gs=
-github.com/cometbft/cometbft v0.38.17 h1:FkrQNbAjiFqXydeAO81FUzriL4Bz0abYxN/eOHrQGOk=
-github.com/cometbft/cometbft v0.38.17/go.mod h1:5l0SkgeLRXi6bBfQuevXjKqML1jjfJJlvI1Ulp02/o4=
+github.com/cometbft/cometbft v0.38.19 h1:vNdtCkvhuwUlrcLPAyigV7lQpmmo+tAq8CsB8gZjEYw=
+github.com/cometbft/cometbft v0.38.19/go.mod h1:UCu8dlHqvkAsmAFmWDRWNZJPlu6ya2fTWZlDrWsivwo=
 github.com/cometbft/cometbft-db v1.0.1 h1:SylKuLseMLQKw3+i8y8KozZyJcQSL98qEe2CGMCGTYE=
 github.com/cometbft/cometbft-db v1.0.1/go.mod h1:EBrFs1GDRiTqrWXYi4v90Awf/gcdD5ExzdPbg4X8+mk=
 github.com/consensys/gnark-crypto v0.18.1 h1:RyLV6UhPRoYYzaFnPQA4qK3DyuDgkTgskDdoGqFt3fI=
@@ -265,8 +265,8 @@ github.com/cosmos/cosmos-proto v1.0.0-beta.5 h1:eNcayDLpip+zVLRLYafhzLvQlSmyab+R
 github.com/cosmos/cosmos-proto v1.0.0-beta.5/go.mod h1:hQGLpiIUloJBMdQMMWb/4wRApmI9hjHH05nefC0Ojec=
 github.com/cosmos/cosmos-sdk v0.53.4 h1:kPF6vY68+/xi1/VebSZGpoxQqA52qkhUzqkrgeBn3Mg=
 github.com/cosmos/cosmos-sdk v0.53.4/go.mod h1:7U3+WHZtI44dEOnU46+lDzBb2tFh1QlMvi8Z5JugopI=
-github.com/cosmos/evm v0.3.1 h1:Hj0c3wBZJGCZ8dd/5lVC0FLwooboycN2txeZkY9Zn+Q=
-github.com/cosmos/evm v0.3.1/go.mod h1:hWf38CXlH6id8GAECtMo7Sg66q04kBlY5HZlPQ19LI8=
+github.com/cosmos/evm v0.3.2 h1:Bw0ZqFmAkYyyWALkzzAdEFbY9fqQtqWXx/mSaj8/i5M=
+github.com/cosmos/evm v0.3.2/go.mod h1:hWf38CXlH6id8GAECtMo7Sg66q04kBlY5HZlPQ19LI8=
 github.com/cosmos/go-bip39 v1.0.0 h1:pcomnQdrdH22njcAatO0yWojsUnCO3y2tNoV1cb6hHY=
 github.com/cosmos/go-bip39 v1.0.0/go.mod h1:RNJv0H/pOIVgxw6KS7QeX2a0Uo0aKUlfhZ4xuwvCdJw=
 github.com/cosmos/gogogateway v1.2.0 h1:Ae/OivNhp8DqBi/sh2A8a1D0y638GpL3tkmLQAiKxTE=

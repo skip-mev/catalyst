@@ -4,9 +4,9 @@ go 1.25.0
 
 require (
 	cosmossdk.io/math v1.5.3
-	github.com/cometbft/cometbft v0.38.17
+	github.com/cometbft/cometbft v0.38.19
 	github.com/cosmos/cosmos-sdk v0.53.4
-	github.com/cosmos/evm v0.3.1
+	github.com/cosmos/evm v0.3.2
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/skip-mev/ironbird v0.0.0-20251024154444-c72f64c42974
 	github.com/stretchr/testify v1.10.0
