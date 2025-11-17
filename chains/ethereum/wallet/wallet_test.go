@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	loadtesttypes "github.com/skip-mev/catalyst/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 )

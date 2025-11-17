@@ -11,7 +11,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/skip-mev/catalyst/chains"
 	cosmoslttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"github.com/skip-mev/catalyst/types"
 	"github.com/skip-mev/ironbird/petri/core/provider"
 	"github.com/skip-mev/ironbird/petri/core/provider/docker"
 	petritypes "github.com/skip-mev/ironbird/petri/core/types"
@@ -115,12 +115,12 @@ func TestPetriDockerIntegration(t *testing.T) {
 		})
 	}
 
-	msgs := []loadtesttypes.LoadTestMsg{
+	msgs := []types.LoadTestMsg{
 		{Weight: 1, Type: cosmoslttypes.MsgMultiSend},
 		// {Weight: 1, Type: cosmoslttypes.MsgSend},
 	}
 
-	spec := loadtesttypes.LoadTestSpec{
+	spec := types.LoadTestSpec{
 		ChainID:      defaultChainConfig.ChainId,
 		NumOfBlocks:  5,
 		BaseMnemonic: defaultChainOptions.BaseMnemonic,
@@ -204,10 +204,10 @@ func TestPetriDockerfileIntegration(t *testing.T) {
 		})
 	}
 
-	msgs := []loadtesttypes.LoadTestMsg{
+	msgs := []types.LoadTestMsg{
 		{Weight: 1, Type: cosmoslttypes.MsgMultiSend},
 	}
-	spec := loadtesttypes.LoadTestSpec{
+	spec := types.LoadTestSpec{
 		ChainID:      defaultChainConfig.ChainId,
 		NumOfBlocks:  20,
 		BaseMnemonic: defaultChainOptions.BaseMnemonic,

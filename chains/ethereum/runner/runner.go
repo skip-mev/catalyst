@@ -18,7 +18,7 @@ import (
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"github.com/skip-mev/catalyst/types"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +28,7 @@ type Runner struct {
 	clients   []*ethclient.Client
 	wsClients []*ethclient.Client
 
-	spec        loadtesttypes.LoadTestSpec
+	spec        types.LoadTestSpec
 	chainConfig inttypes.ChainConfig
 	nonces      *sync.Map
 	wallets     []*wallet.InteractingWallet
@@ -42,7 +42,7 @@ type Runner struct {
 	senderToWallet map[common.Address]*wallet.InteractingWallet
 }
 
-func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
+func NewRunner(ctx context.Context, logger *zap.Logger, spec types.LoadTestSpec) (*Runner, error) {
 	chainCfg := spec.ChainCfg.(*inttypes.ChainConfig)
 	clients := make([]*ethclient.Client, 0, len(chainCfg.NodesAddresses))
 	wsClients := make([]*ethclient.Client, 0, len(chainCfg.NodesAddresses))
@@ -145,13 +145,13 @@ func (r *Runner) getWalletForTx(tx *gethtypes.Transaction) *wallet.InteractingWa
 	return wallet
 }
 
-func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
+func (r *Runner) PrintResults(result types.LoadTestResult) {
 	metrics.PrintResults(result)
 }
 
 // ContractDeployer encapsulates the contract deployment configuration
 type ContractDeployer struct {
-	msgType        loadtesttypes.MsgType
+	msgType        types.MsgType
 	setAddressFunc func(...common.Address)
 }
 
@@ -162,7 +162,7 @@ func (r *Runner) deployContracts(ctx context.Context, deployer ContractDeployer)
 		numInitialDeploy = 5
 	}
 
-	contractDeploy := loadtesttypes.LoadTestMsg{Type: deployer.msgType}
+	contractDeploy := types.LoadTestMsg{Type: deployer.msgType}
 	deployedTxs := make([]*gethtypes.Transaction, 0)
 
 	// Deploy contracts
@@ -235,10 +235,10 @@ func (r *Runner) deployLoader(ctx context.Context) error {
 
 // deployInitialContracts deploys the contracts needed for the messages in the spec.
 func (r *Runner) deployInitialContracts(ctx context.Context) error {
-	hasLoaderDependencies := slices.ContainsFunc(r.spec.Msgs, func(msg loadtesttypes.LoadTestMsg) bool {
+	hasLoaderDependencies := slices.ContainsFunc(r.spec.Msgs, func(msg types.LoadTestMsg) bool {
 		return slices.Contains(inttypes.LoaderDependencies, msg.Type)
 	})
-	hasERC20Dependencies := slices.ContainsFunc(r.spec.Msgs, func(msg loadtesttypes.LoadTestMsg) bool {
+	hasERC20Dependencies := slices.ContainsFunc(r.spec.Msgs, func(msg types.LoadTestMsg) bool {
 		return slices.Contains(inttypes.ERC20Dependencies, msg.Type)
 	})
 	r.logger.Info("deploy loader?", zap.Bool("hasLoaderDependencies", hasLoaderDependencies))
@@ -256,7 +256,7 @@ func (r *Runner) deployInitialContracts(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
+func (r *Runner) Run(ctx context.Context) (types.LoadTestResult, error) {
 	// when batches and interval are specified, user wants to run on a timed interval
 	if r.spec.NumBatches > 0 && r.spec.SendInterval > 0 {
 		r.logger.Info("Running loadtest on interval", zap.Duration("interval", r.spec.SendInterval), zap.Int("num_batches", r.spec.NumBatches))
@@ -269,7 +269,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 	return r.runPersistent(ctx)
 }
 
-func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
+func (r *Runner) buildLoad(msgSpec types.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
 	// For ERC20 transactions, use optimal sender selection from factory
 	var fromWallet *wallet.InteractingWallet
 	switch msgSpec.Type {

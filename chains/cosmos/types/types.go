@@ -11,18 +11,18 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	types2 "github.com/skip-mev/catalyst/types"
 )
 
 const (
-	MsgSend      loadtesttypes.MsgType = "MsgSend"
-	MsgMultiSend loadtesttypes.MsgType = "MsgMultiSend"
-	MsgArr       loadtesttypes.MsgType = "MsgArr"
+	MsgSend      types2.MsgType = "MsgSend"
+	MsgMultiSend types2.MsgType = "MsgMultiSend"
+	MsgArr       types2.MsgType = "MsgArr"
 )
 
 var (
-	validMsgTypes       = []loadtesttypes.MsgType{MsgSend, MsgMultiSend, MsgArr}
-	validContainedTypes = []loadtesttypes.MsgType{MsgSend, MsgMultiSend}
+	validMsgTypes       = []types2.MsgType{MsgSend, MsgMultiSend, MsgArr}
+	validContainedTypes = []types2.MsgType{MsgSend, MsgMultiSend}
 )
 
 type EncodingConfig struct {
@@ -58,17 +58,17 @@ type NodeAddress struct {
 
 // BroadcastError represents errors during broadcasting transactions
 type BroadcastError struct {
-	BlockHeight int64                 // Block height where the error occurred (0 indicates tx did not make it to a block)
-	TxHash      string                // Hash of the transaction that failed
-	Error       string                // Error message
-	MsgType     loadtesttypes.MsgType // Type of message that failed
-	NodeAddress string                // Address of the node that returned the error
+	BlockHeight int64          // Block height where the error occurred (0 indicates tx did not make it to a block)
+	TxHash      string         // Hash of the transaction that failed
+	Error       string         // Error message
+	MsgType     types2.MsgType // Type of message that failed
+	NodeAddress string         // Address of the node that returned the error
 }
 
 type SentTx struct {
 	TxHash            string
 	NodeAddress       string
-	MsgType           loadtesttypes.MsgType
+	MsgType           types2.MsgType
 	Err               error
 	TxResponse        *sdk.TxResponse
 	InitialTxResponse *sdk.TxResponse
@@ -81,15 +81,15 @@ type ChainConfig struct {
 	NodesAddresses []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
 }
 
-func (s ChainConfig) Validate(mainCfg loadtesttypes.LoadTestSpec) error {
+func (s ChainConfig) Validate(mainCfg types2.LoadTestSpec) error {
 	if len(s.NodesAddresses) == 0 {
 		return fmt.Errorf("no node addresses provided")
 	}
 	if s.UnorderedTxs && mainCfg.TxTimeout == 0 {
 		return fmt.Errorf("tx_timeout must be set if unordered txs is set to true")
 	}
-	seenMsgTypes := make(map[loadtesttypes.MsgType]bool)
-	seenMsgArrTypes := make(map[loadtesttypes.MsgType]bool)
+	seenMsgTypes := make(map[types2.MsgType]bool)
+	seenMsgArrTypes := make(map[types2.MsgType]bool)
 
 	var totalWeight float64
 	for _, msg := range mainCfg.Msgs {
@@ -145,10 +145,10 @@ func init() {
 }
 
 func Register() {
-	loadtesttypes.Register("cosmos", func() loadtesttypes.ChainConfig { return &ChainConfig{} })
+	types2.Register("cosmos", func() types2.ChainConfig { return &ChainConfig{} })
 }
 
-func validateMsgType(msg loadtesttypes.LoadTestMsg) error {
+func validateMsgType(msg types2.LoadTestMsg) error {
 	if !slices.Contains(validMsgTypes, msg.Type) {
 		return fmt.Errorf("invalid msg type %s", msg.Type)
 	}

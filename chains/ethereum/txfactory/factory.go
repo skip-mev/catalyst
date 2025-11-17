@@ -16,7 +16,7 @@ import (
 	"github.com/skip-mev/catalyst/chains/ethereum/contracts/load/weth"
 	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	loadtesttypes "github.com/skip-mev/catalyst/types"
 	"go.uber.org/zap"
 )
 

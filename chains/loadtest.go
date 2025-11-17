@@ -2,14 +2,11 @@ package chains
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	cosmosrunner "github.com/skip-mev/catalyst/chains/cosmos/runner"
 	ethrunner "github.com/skip-mev/catalyst/chains/ethereum/runner"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"github.com/skip-mev/catalyst/types"
 	"go.uber.org/zap"
 )
 
@@ -20,8 +17,8 @@ const (
 
 // Runner defines the interface that all chain-specific runners must implement
 type Runner interface {
-	Run(ctx context.Context) (loadtesttypes.LoadTestResult, error)
-	PrintResults(result loadtesttypes.LoadTestResult)
+	Run(ctx context.Context) (types.LoadTestResult, error)
+	PrintResults(result types.LoadTestResult)
 }
 
 // LoadTest represents a unified load test that can be executed for any chain kind
@@ -31,7 +28,7 @@ type LoadTest struct {
 }
 
 // NewLoadTest creates a new load test from a specification
-func NewLoadTest(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*LoadTest, error) {
+func NewLoadTest(ctx context.Context, logger *zap.Logger, spec types.LoadTestSpec) (*LoadTest, error) {
 	var runner Runner
 
 	switch spec.Kind {
@@ -60,7 +57,7 @@ func NewLoadTest(ctx context.Context, logger *zap.Logger, spec loadtesttypes.Loa
 }
 
 // Run executes the load test and returns the results
-func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (loadtesttypes.LoadTestResult, error) {
+func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (types.LoadTestResult, error) {
 	logger.Info("starting new load test run")
 	results, err := lt.runner.Run(ctx)
 	if err != nil {
@@ -72,40 +69,9 @@ func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (loadtesttypes.
 
 	logger.Info("load test run completed, saving results")
 
-	if saveErr := SaveResults(results, logger); saveErr != nil {
+	if saveErr := results.Save(logger); saveErr != nil {
 		return results, fmt.Errorf("failed to save results: %w", saveErr)
 	}
 
 	return results, err
-}
-
-// SaveResults saves the load test results to /tmp/catalyst/load_test.json
-func SaveResults(results loadtesttypes.LoadTestResult, logger *zap.Logger) error {
-	dir := "/tmp/catalyst"
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		logger.Error("failed to create results directory",
-			zap.String("dir", dir),
-			zap.Error(err))
-		return err
-	}
-
-	jsonData, err := json.MarshalIndent(results, "", "  ")
-	if err != nil {
-		logger.Error("failed to marshal results to JSON",
-			zap.Error(err))
-		return err
-	}
-
-	filePath := filepath.Join(dir, "load_test.json")
-	if err := os.WriteFile(filePath, jsonData, 0o600); err != nil {
-		logger.Error("failed to write results to file",
-			zap.String("path", filePath),
-			zap.Error(err))
-		return err
-	}
-
-	logger.Debug("successfully saved load test results",
-		zap.String("path", filePath))
-
-	return nil
 }

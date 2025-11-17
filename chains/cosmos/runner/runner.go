@@ -20,8 +20,8 @@ import (
 	"github.com/skip-mev/catalyst/chains/cosmos/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
-	logging "github.com/skip-mev/catalyst/chains/log"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"github.com/skip-mev/catalyst/log"
+	types2 "github.com/skip-mev/catalyst/types"
 	"go.uber.org/zap"
 )
 
@@ -34,11 +34,11 @@ type MsgGasEstimation struct {
 
 // Runner represents a load test runner that executes a single LoadTestSpec
 type Runner struct {
-	spec               loadtesttypes.LoadTestSpec
+	spec               types2.LoadTestSpec
 	clients            []*client.Chain
 	wallets            []*wallet.InteractingWallet
 	blockGasLimit      int64
-	gasEstimations     map[loadtesttypes.LoadTestMsg]MsgGasEstimation
+	gasEstimations     map[types2.LoadTestMsg]MsgGasEstimation
 	totalTxsPerBlock   int
 	mu                 sync.Mutex
 	numBlocksProcessed int
@@ -55,7 +55,7 @@ type Runner struct {
 }
 
 // NewRunner creates a new load test runner for a given spec
-func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
+func NewRunner(ctx context.Context, spec types2.LoadTestSpec) (*Runner, error) {
 	logger, _ := zap.NewDevelopment()
 	chainCfg := spec.ChainCfg.(*inttypes.ChainConfig)
 
@@ -135,7 +135,7 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 	}
 	r.blockGasLimit = blockGasLimit
 
-	r.gasEstimations = make(map[loadtesttypes.LoadTestMsg]MsgGasEstimation)
+	r.gasEstimations = make(map[types2.LoadTestMsg]MsgGasEstimation)
 	r.totalTxsPerBlock = 0
 
 	gasEstimations, err := r.calculateMsgGasEstimations(ctx, client)
@@ -147,9 +147,9 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 }
 
 // calculateMsgGasEstimations calculates gas estimations for all message types
-func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.Chain) (map[loadtesttypes.LoadTestMsg]uint64, error) {
+func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.Chain) (map[types2.LoadTestMsg]uint64, error) {
 	fromWallet := r.wallets[0]
-	gasEstimations := make(map[loadtesttypes.LoadTestMsg]uint64)
+	gasEstimations := make(map[types2.LoadTestMsg]uint64)
 
 	for _, msgSpec := range r.spec.Msgs {
 		var msgs []sdk.Msg
@@ -198,7 +198,7 @@ func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.
 }
 
 // initNumOfTxsWorkflow initializes the gas estimations based on number of transactions
-func (r *Runner) initNumOfTxsWorkflow(gasEstimations map[loadtesttypes.LoadTestMsg]uint64) error {
+func (r *Runner) initNumOfTxsWorkflow(gasEstimations map[types2.LoadTestMsg]uint64) error {
 	for _, msgSpec := range r.spec.Msgs {
 		gasUsed := gasEstimations[msgSpec]
 
@@ -226,9 +226,9 @@ func (r *Runner) initNumOfTxsWorkflow(gasEstimations map[loadtesttypes.LoadTestM
 }
 
 // Run executes the load test
-func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
+func (r *Runner) Run(ctx context.Context) (types2.LoadTestResult, error) {
 	if err := r.initAccountNumbers(ctx); err != nil {
-		return loadtesttypes.LoadTestResult{}, err
+		return types2.LoadTestResult{}, err
 	}
 
 	startTime := time.Now()
@@ -287,10 +287,10 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 	select {
 	case <-ctx.Done():
 		r.logger.Info("load test interrupted")
-		return loadtesttypes.LoadTestResult{}, ctx.Err()
+		return types2.LoadTestResult{}, ctx.Err()
 	case <-done:
 		if err := <-subscriptionErr; err != nil && err != context.Canceled {
-			return loadtesttypes.LoadTestResult{}, fmt.Errorf("subscription error: %w", err)
+			return types2.LoadTestResult{}, fmt.Errorf("subscription error: %w", err)
 		}
 
 		// Make sure all txs are processed
@@ -306,9 +306,9 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 		return collectorResults, nil
 	case err := <-subscriptionErr:
 		if err != context.Canceled {
-			return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to subscribe to blocks: %w", err)
+			return types2.LoadTestResult{}, fmt.Errorf("failed to subscribe to blocks: %w", err)
 		}
-		return loadtesttypes.LoadTestResult{}, fmt.Errorf("subscription ended unexpectedly. error: %w", err)
+		return types2.LoadTestResult{}, fmt.Errorf("subscription ended unexpectedly. error: %w", err)
 	}
 }
 
@@ -338,7 +338,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) { //nol
 	for mspSpec, estimation := range r.gasEstimations {
 		for i := 0; i < estimation.numTxs; i++ {
 			wg.Add(1)
-			go func(msgSpec loadtesttypes.LoadTestMsg, txIndex int) { //nolint:unparam // txIndex may be used in future versions
+			go func(msgSpec types2.LoadTestMsg, txIndex int) { //nolint:unparam // txIndex may be used in future versions
 				defer wg.Done()
 
 				if sentTx, _ := r.processSingleTransaction(ctx, msgSpec, getLatestNonce, updateNonce, &txsSentMu, &txsSent); sentTx != (inttypes.SentTx{}) {
@@ -366,7 +366,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) { //nol
 // processSingleTransaction handles creating, signing, and broadcasting a single transaction
 func (r *Runner) processSingleTransaction(
 	ctx context.Context,
-	msgSpec loadtesttypes.LoadTestMsg,
+	msgSpec types2.LoadTestMsg,
 	getLatestNonce func(string, *client.Chain) uint64,
 	updateNonce func(string),
 	txsSentMu *sync.Mutex,
@@ -410,7 +410,7 @@ func (r *Runner) processSingleTransaction(
 }
 
 // createMessagesForType creates the appropriate messages based on message type
-func (r *Runner) createMessagesForType(msgSpec loadtesttypes.LoadTestMsg, fromWallet *wallet.InteractingWallet) ([]sdk.Msg, error) {
+func (r *Runner) createMessagesForType(msgSpec types2.LoadTestMsg, fromWallet *wallet.InteractingWallet) ([]sdk.Msg, error) {
 	var msgs []sdk.Msg
 	var err error
 
@@ -433,7 +433,7 @@ func (r *Runner) createMessagesForType(msgSpec loadtesttypes.LoadTestMsg, fromWa
 // createAndSendTransaction creates and sends a transaction, handling the response
 func (r *Runner) createAndSendTransaction(
 	ctx context.Context,
-	mspSpec loadtesttypes.LoadTestMsg,
+	mspSpec types2.LoadTestMsg,
 	fromWallet *wallet.InteractingWallet,
 	client *client.Chain,
 	msgs []sdk.Msg,
@@ -476,7 +476,7 @@ func (r *Runner) broadcastAndHandleResponse(
 	ctx context.Context,
 	client *client.Chain,
 	txBytes []byte,
-	msgType loadtesttypes.MsgType,
+	msgType types2.MsgType,
 	walletAddress string,
 	nonce uint64,
 	updateNonce func(string),
@@ -538,7 +538,7 @@ func (r *Runner) GetCollector() *metrics.Collector {
 	return &r.collector
 }
 
-func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {
+func (r *Runner) PrintResults(result types2.LoadTestResult) {
 	r.collector.PrintResults(result)
 }
 

@@ -1,7 +1,12 @@
 package types
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // LoadTestResult represents the results of a load test
@@ -11,6 +16,37 @@ type LoadTestResult struct {
 	ByNode    map[string]NodeStats
 	ByBlock   []BlockStat
 	Error     string `json:"error,omitempty"`
+}
+
+// Save saves the load test results to /tmp/catalyst/load_test.json
+func (res *LoadTestResult) Save(logger *zap.Logger) error {
+	dir := "/tmp/catalyst"
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		logger.Error("failed to create results directory",
+			zap.String("dir", dir),
+			zap.Error(err))
+		return err
+	}
+
+	jsonData, err := json.MarshalIndent(res, "", "  ")
+	if err != nil {
+		logger.Error("failed to marshal results to JSON",
+			zap.Error(err))
+		return err
+	}
+
+	filePath := filepath.Join(dir, "load_test.json")
+	if err := os.WriteFile(filePath, jsonData, 0o600); err != nil {
+		logger.Error("failed to write results to file",
+			zap.String("path", filePath),
+			zap.Error(err))
+		return err
+	}
+
+	logger.Debug("successfully saved load test results",
+		zap.String("path", filePath))
+
+	return nil
 }
 
 // OverallStats represents the overall statistics of the load test

@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/skip-mev/catalyst/chains"
-	logging "github.com/skip-mev/catalyst/chains/log"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"github.com/skip-mev/catalyst/log"
+	"github.com/skip-mev/catalyst/types"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
@@ -33,7 +33,7 @@ func main() {
 	}
 
 	// unmarshal into the single shared spec (with custom UnmarshalYAML).
-	var spec loadtesttypes.LoadTestSpec
+	var spec types.LoadTestSpec
 	if err := yaml.Unmarshal(data, &spec); err != nil {
 		saveConfigError("failed to parse config file", logger)
 		logger.Fatal("failed to parse config file", zap.Error(err))
@@ -64,9 +64,10 @@ func main() {
 }
 
 func saveConfigError(err string, logger *zap.Logger) {
-	if saveErr := chains.SaveResults(loadtesttypes.LoadTestResult{
+	errorResult := types.LoadTestResult{
 		Error: err,
-	}, logger); saveErr != nil {
+	}
+	if saveErr := errorResult.Save(logger); saveErr != nil {
 		logger.Fatal("failed to save results", zap.Error(saveErr))
 	}
 }

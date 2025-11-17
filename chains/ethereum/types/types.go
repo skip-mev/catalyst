@@ -6,51 +6,51 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	types2 "github.com/skip-mev/catalyst/types"
 )
 
 // Types to delineate txs/receipts.
 const (
-	ContractCreate loadtesttypes.MsgType = "contract_create"
-	ContractCall   loadtesttypes.MsgType = "contract_call"
+	ContractCreate types2.MsgType = "contract_create"
+	ContractCall   types2.MsgType = "contract_call"
 )
 
 const (
 	// MsgCreateContract deploys a contract
-	MsgCreateContract loadtesttypes.MsgType = "MsgCreateContract"
+	MsgCreateContract types2.MsgType = "MsgCreateContract"
 	// MsgWriteTo makes the contract iterate a number of times and write to a mapping each time.
-	MsgWriteTo loadtesttypes.MsgType = "MsgWriteTo"
+	MsgWriteTo types2.MsgType = "MsgWriteTo"
 	// MsgCrossContractCall calls a contract method that calls another contract.
-	MsgCrossContractCall loadtesttypes.MsgType = "MsgCrossContractCall"
+	MsgCrossContractCall types2.MsgType = "MsgCrossContractCall"
 	// MsgCallDataBlast sends a bunch of calldata to the contract
-	MsgCallDataBlast loadtesttypes.MsgType = "MsgCallDataBlast"
+	MsgCallDataBlast types2.MsgType = "MsgCallDataBlast"
 
 	// MsgDeployERC20 deploys a weth ERC20 contract. The contract is modified to never fail.
 	// That is, you do not need to modify or initiate balances. Every call always passes.
-	MsgDeployERC20 loadtesttypes.MsgType = "MsgDeployERC20"
+	MsgDeployERC20 types2.MsgType = "MsgDeployERC20"
 	// MsgTransferERC0 transfers a random number of tokens to a random address.
 	// Transfers always succeed, no matter the balance.
-	MsgTransferERC0 loadtesttypes.MsgType = "MsgTransferERC0"
+	MsgTransferERC0 types2.MsgType = "MsgTransferERC0"
 
 	// MsgNativeTransferERC20 calls the cosmos/evm native ERC20 precompile contract.
-	MsgNativeTransferERC20 loadtesttypes.MsgType = "MsgNativeTransferERC20"
+	MsgNativeTransferERC20 types2.MsgType = "MsgNativeTransferERC20"
 
-	MsgNativeGasTransfer loadtesttypes.MsgType = "MsgNativeGasTransfer"
+	MsgNativeGasTransfer types2.MsgType = "MsgNativeGasTransfer"
 )
 
 var (
-	ValidMessages = []loadtesttypes.MsgType{MsgCreateContract, MsgWriteTo, MsgCrossContractCall, MsgCallDataBlast, MsgDeployERC20, MsgTransferERC0}
+	ValidMessages = []types2.MsgType{MsgCreateContract, MsgWriteTo, MsgCrossContractCall, MsgCallDataBlast, MsgDeployERC20, MsgTransferERC0}
 
 	// LoaderDependencies are the msg types that require the presence of the Loader contract.
-	LoaderDependencies = []loadtesttypes.MsgType{MsgWriteTo, MsgCrossContractCall, MsgCallDataBlast}
+	LoaderDependencies = []types2.MsgType{MsgWriteTo, MsgCrossContractCall, MsgCallDataBlast}
 	// ERC20Dependencies are the msg types that require the presence of the WETH contract.
-	ERC20Dependencies = []loadtesttypes.MsgType{MsgTransferERC0}
+	ERC20Dependencies = []types2.MsgType{MsgTransferERC0}
 )
 
 type SentTx struct {
 	TxHash      common.Hash
 	NodeAddress string
-	MsgType     loadtesttypes.MsgType
+	MsgType     types2.MsgType
 	Err         error
 	Tx          *gethtypes.Transaction
 	Receipt     *gethtypes.Receipt
@@ -79,7 +79,7 @@ func init() {
 	Register()
 }
 
-func (s ChainConfig) Validate(_ loadtesttypes.LoadTestSpec) error {
+func (s ChainConfig) Validate(_ types2.LoadTestSpec) error {
 	if len(s.NodesAddresses) == 0 {
 		return fmt.Errorf("no node addresses provided")
 	}
@@ -93,5 +93,5 @@ func (s ChainConfig) Validate(_ loadtesttypes.LoadTestSpec) error {
 func (ChainConfig) IsChainConfig() {}
 
 func Register() {
-	loadtesttypes.Register("eth", func() loadtesttypes.ChainConfig { return &ChainConfig{} })
+	types2.Register("eth", func() types2.ChainConfig { return &ChainConfig{} })
 }

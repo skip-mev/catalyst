@@ -3,7 +3,7 @@ package metrics
 import (
 	"fmt"
 
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	loadtesttypes "github.com/skip-mev/catalyst/types"
 )
 
 func PrintResults(result loadtesttypes.LoadTestResult) {

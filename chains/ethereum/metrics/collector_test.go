@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	loadtesttypes "github.com/skip-mev/catalyst/types"
 	"github.com/stretchr/testify/require"
 )
 

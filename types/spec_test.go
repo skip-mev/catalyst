@@ -7,13 +7,13 @@ import (
 
 	cosmostypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"github.com/skip-mev/catalyst/types"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 
 func TestLoadTestSpec_Marshal_Unmarshal_Eth(t *testing.T) {
-	var spec loadtesttypes.LoadTestSpec
+	var spec types.LoadTestSpec
 	spec.Name = "worker"
 	spec.Description = "eth load test"
 	spec.Kind = "eth"
@@ -24,7 +24,7 @@ func TestLoadTestSpec_Marshal_Unmarshal_Eth(t *testing.T) {
 	spec.ChainCfg = &ethtypes.ChainConfig{NodesAddresses: []ethtypes.NodeAddress{
 		{RPC: "https://foobar:8545", Websocket: "ws://foobar:8546"},
 	}}
-	spec.Msgs = []loadtesttypes.LoadTestMsg{
+	spec.Msgs = []types.LoadTestMsg{
 		{Weight: 0, NumMsgs: 20, Type: ethtypes.MsgCreateContract},
 		{Weight: 0, NumMsgs: 20, Type: ethtypes.MsgWriteTo},
 		{Weight: 0, NumMsgs: 20, Type: ethtypes.MsgCrossContractCall},
@@ -36,7 +36,7 @@ func TestLoadTestSpec_Marshal_Unmarshal_Eth(t *testing.T) {
 		t.Fatalf("yaml.Marshal failed: %v", err)
 	}
 
-	var otherLoadtestSpec loadtesttypes.LoadTestSpec
+	var otherLoadtestSpec types.LoadTestSpec
 	err = yaml.Unmarshal(msgBytes, &otherLoadtestSpec)
 	require.NoError(t, err)
 
@@ -59,7 +59,7 @@ chain_config:
     gas_tip_cap: 1000000000000
 `)
 
-	var spec loadtesttypes.LoadTestSpec
+	var spec types.LoadTestSpec
 
 	if err := yaml.Unmarshal(yml, &spec); err != nil {
 		t.Fatalf("yaml.Unmarshal failed: %v", err)
@@ -91,7 +91,7 @@ chain_config:
   nodes_addresses: []
 `)
 
-	expectedSpec := loadtesttypes.LoadTestSpec{
+	expectedSpec := types.LoadTestSpec{
 		Name:         "worker",
 		Description:  "cosmos load test",
 		Kind:         "cosmos",
@@ -107,7 +107,7 @@ chain_config:
 			NodesAddresses: []cosmostypes.NodeAddress{},
 		},
 	}
-	var spec loadtesttypes.LoadTestSpec
+	var spec types.LoadTestSpec
 
 	if err := yaml.Unmarshal(yml, &spec); err != nil {
 		t.Fatalf("yaml.Unmarshal failed: %v", err)
@@ -125,7 +125,7 @@ num_of_blocks: 1
 chain_config: {}
 `)
 
-	var spec loadtesttypes.LoadTestSpec
+	var spec types.LoadTestSpec
 
 	if err := yaml.Unmarshal(yml, &spec); err == nil {
 		t.Fatalf("expected error for unknown kind, got nil")

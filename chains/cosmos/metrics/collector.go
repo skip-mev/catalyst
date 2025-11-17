@@ -12,8 +12,8 @@ import (
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
 	"github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
-	logging "github.com/skip-mev/catalyst/chains/log"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"github.com/skip-mev/catalyst/log"
+	loadtesttypes "github.com/skip-mev/catalyst/types"
 	"go.uber.org/zap"
 )
 
