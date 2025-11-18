@@ -423,17 +423,21 @@ func (f *TxFactory) createMsgNativeTransferERC20(ctx context.Context, fromWallet
 }
 
 func (f *TxFactory) createMsgNativeGasTransfer(ctx context.Context, fromWallet *ethwallet.InteractingWallet,
-	nonce uint64, useBaseline bool,
+	_ uint64, useBaseline bool,
 ) (*types.Transaction, error) {
 	// Use optimal recipient selection to minimize reuse and prevent self-transfers
 	recipient := f.txDistribution.GetNextReceiver()
 
 	// Get balance and transfer half of it
-	bal, err := fromWallet.GetBalance(ctx)
+	bal, err := fromWallet.GetClient().PendingBalanceAt(ctx, fromWallet.Address())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get balance of %s: %w", fromWallet.FormattedAddress(), err)
 	}
 	transferAmount := new(big.Int).Div(bal, big.NewInt(2))
+	nonce, err := fromWallet.GetNonce(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get nonce of %s: %w", fromWallet.FormattedAddress(), err)
+	}
 
 	// Create a simple native gas transfer transaction
 	var gasLimit uint64
