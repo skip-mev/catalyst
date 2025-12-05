@@ -48,7 +48,6 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		defer wg.Done()
 		for {
 			select {
 			case <-ctx.Done():
