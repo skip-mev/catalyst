@@ -3,10 +3,9 @@ package txfactory
 import (
 	"sync"
 
-	"go.uber.org/zap"
-
 	"github.com/ethereum/go-ethereum/common"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
+	"go.uber.org/zap"
 )
 
 var _ TxDistribution = &TxDistributionBootstrapped{}

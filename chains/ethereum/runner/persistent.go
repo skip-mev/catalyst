@@ -81,10 +81,7 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 				if (sentBootstrapLoads <= requiredBootstrapLoads) && (blocksProcessed%bootstrapBackoff != 0) {
 					continue
 				}
-				numTxsSubmitted, err := r.submitLoadPersistent(ctx, maxLoadSize)
-				if err != nil {
-					r.logger.Error("error during tx submission", zap.Error(err), zap.Uint64("height", block.Number.Uint64()))
-				}
+				numTxsSubmitted := r.submitLoadPersistent(ctx, maxLoadSize)
 				r.logger.Info("submitted transactions", zap.Uint64("height", block.Number.Uint64()), zap.Int("num_submitted", numTxsSubmitted))
 			}
 		}
@@ -95,15 +92,12 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 	return loadtesttypes.LoadTestResult{}, nil
 }
 
-func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int) (int, error) {
+func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int) int {
 	// first we build the tx load. this constructs all the ethereum txs based in the spec.
 	r.logger.Info("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
 	var txs []*gethtypes.Transaction
 	for _, msgSpec := range r.spec.Msgs {
-		load, err := r.buildLoadPersistent(msgSpec, maxLoadSize, false)
-		if err != nil {
-			return 0, fmt.Errorf("failed to build load: %w", err)
-		}
+		load := r.buildLoadPersistent(msgSpec, maxLoadSize, false)
 		if len(load) == 0 {
 			continue
 		}
@@ -136,10 +130,10 @@ func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int) (int
 
 	r.sentTxs = append(r.sentTxs, sentTxs...)
 	r.txFactory.ResetWalletAllocation()
-	return len(sentTxs), nil
+	return len(sentTxs)
 }
 
-func (r *Runner) buildLoadPersistent(msgSpec loadtesttypes.LoadTestMsg, maxLoadSize int, useBaseline bool) ([]*gethtypes.Transaction, error) {
+func (r *Runner) buildLoadPersistent(msgSpec loadtesttypes.LoadTestMsg, maxLoadSize int, useBaseline bool) []*gethtypes.Transaction {
 	r.logger.Info("building load", zap.Int("maxLoadSize", maxLoadSize))
 	var txnLoad []*gethtypes.Transaction
 	var wg sync.WaitGroup
@@ -184,7 +178,7 @@ func (r *Runner) buildLoadPersistent(msgSpec loadtesttypes.LoadTestMsg, maxLoadS
 			txnLoad = append(txnLoad, txn)
 		case <-doneChan:
 			r.logger.Info("Generated load txs", zap.Int("num_txs", len(txnLoad)))
-			return txnLoad, nil
+			return txnLoad
 		}
 	}
 }
