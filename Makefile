@@ -50,7 +50,7 @@ format:
 ###############################################################################
 
 golangci_lint_cmd=golangci-lint
-golangci_version=v2.2.2
+golangci_version=v2.6.2
 
 lint:
 	@echo "--> Running linter"
