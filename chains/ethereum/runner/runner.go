@@ -86,17 +86,23 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 
 	var distribution txfactory.TxDistribution
 	if spec.InitialWallets > 0 && spec.InitialWallets < spec.NumWallets {
-		distribution = txfactory.NewTxDistributionBootstrapped(wallets, spec.InitialWallets)
+		logger.Info("Using TxDistributionBootstrapped", zap.Int("initial_wallets", spec.InitialWallets), zap.Int("num_wallets", spec.NumWallets))
+		distribution = txfactory.NewTxDistributionBootstrapped(logger, wallets, spec.InitialWallets)
 	} else {
+		logger.Info("Using TxDistributionEven")
 		distribution = txfactory.NewTxDistributionEven(wallets)
 	}
 
 	txf := txfactory.NewTxFactory(logger, chainCfg.TxOpts, distribution)
 	nonces := sync.Map{}
-	for _, wallet := range wallets {
-		nonce, err := wallet.GetClient().PendingNonceAt(ctx, wallet.Address())
+	for i, wallet := range wallets {
+		if i%10000 == 0 {
+			logger.Info("Initializing nonces for accounts", zap.Int("progress", i))
+		}
+		nonce, err := wallet.GetNonce(ctx)
 		if err != nil {
-			logger.Warn("Failed getting nonce for wallet setting to 0", zap.String("address", wallet.Address().String()))
+			logger.Warn("Failed getting nonce for wallet setting to 0", zap.String("address",
+				wallet.Address().String()), zap.Error(err))
 		}
 		nonces.Store(wallet.Address(), nonce)
 	}

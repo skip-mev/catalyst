@@ -5,12 +5,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
+	"go.uber.org/zap"
 )
 
 var _ TxDistribution = &TxDistributionBootstrapped{}
 
 type TxDistributionBootstrapped struct {
 	mu      sync.Mutex
+	logger  *zap.Logger
 	wallets []*ethwallet.InteractingWallet
 
 	// Wallet allocation tracking for minimizing reuse with role rotation
@@ -20,13 +22,16 @@ type TxDistributionBootstrapped struct {
 	numWallets    int // the length of wallets
 }
 
-func NewTxDistributionBootstrapped(wallets []*ethwallet.InteractingWallet, fundedWallets int) *TxDistributionBootstrapped {
+func NewTxDistributionBootstrapped(logger *zap.Logger, wallets []*ethwallet.InteractingWallet,
+	fundedWallets int,
+) *TxDistributionBootstrapped {
 	numWallets := len(wallets)
 	receiverIndex := fundedWallets
 	if fundedWallets == numWallets {
 		receiverIndex = numWallets / 2
 	}
 	return &TxDistributionBootstrapped{
+		logger:        logger,
 		wallets:       wallets,
 		fundedWallets: fundedWallets,
 		senderIndex:   0,
