@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"go.uber.org/zap"
 )
+
+const PersistentBlockTimeout = time.Minute
 
 func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
 	// TODO Eric -- all runners do this--refactor it out
@@ -48,6 +51,7 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 
 	var wg sync.WaitGroup
 	wg.Go(func() {
+		timeout := time.NewTicker(PersistentBlockTimeout)
 		for {
 			select {
 			case <-ctx.Done():
@@ -60,6 +64,7 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 				cancel()
 				return
 			case block, ok := <-blockCh:
+				timeout.Reset(PersistentBlockTimeout)
 				blocksProcessed++
 				if !ok {
 					r.logger.Error("block header channel closed")
@@ -82,6 +87,10 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 				}
 				numTxsSubmitted := r.submitLoadPersistent(ctx, maxLoadSize)
 				r.logger.Info("submitted transactions", zap.Uint64("height", block.Number.Uint64()), zap.Int("num_submitted", numTxsSubmitted))
+			case <-timeout.C:
+				r.logger.Error("timed out waiting for a new block to be processed")
+				cancel()
+				return
 			}
 		}
 	})
