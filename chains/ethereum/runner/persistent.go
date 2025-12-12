@@ -159,10 +159,11 @@ func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int, trac
 			// send the tx from the wallet assigned to this transaction's sender
 			fromWallet := r.getWalletForTx(tx)
 			err := fromWallet.SendTransaction(ctx, tx)
-			r.promMetrics.BroadcastSuccess.Add(1)
 			if err != nil {
 				r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
 				r.promMetrics.BroadcastFailure.Add(1)
+			} else {
+				r.promMetrics.BroadcastSuccess.Add(1)
 			}
 
 			txType := inttypes.ContractCall
