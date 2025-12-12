@@ -7,13 +7,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"go.uber.org/zap"
 )
 
-const PersistentBlockTimeout = time.Minute
+const (
+	PersistentBlockTimeout    = time.Minute
+	TxInclusionTrackerTimeout = time.Minute * 5
+)
 
 func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
 	// TODO Eric -- all runners do this--refactor it out
@@ -49,6 +55,8 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 		maxLoadSize += msgSpec.NumMsgs
 	}
 
+	trackedTxs := orderedmap.New[common.Hash, time.Time]()
+
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		timeout := time.NewTicker(PersistentBlockTimeout)
@@ -79,13 +87,15 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 					zap.Uint64("gas_limit", block.GasLimit),
 				)
 
+				r.recordBlockTxs(block, trackedTxs)
+
 				sentBootstrapLoads := blocksProcessed / bootstrapBackoff
 				// Only throttle load creation if we're still bootstrapping.
 				// In that case we publish load every bootstrapBackoff blocks.
 				if (sentBootstrapLoads <= requiredBootstrapLoads) && (blocksProcessed%bootstrapBackoff != 0) {
 					continue
 				}
-				numTxsSubmitted := r.submitLoadPersistent(ctx, maxLoadSize)
+				numTxsSubmitted := r.submitLoadPersistent(ctx, maxLoadSize, trackedTxs)
 				r.logger.Info("submitted transactions", zap.Uint64("height", block.Number.Uint64()), zap.Int("num_submitted", numTxsSubmitted))
 			case <-timeout.C:
 				r.logger.Error("timed out waiting for a new block to be processed")
@@ -100,7 +110,36 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 	return loadtesttypes.LoadTestResult{}, nil
 }
 
-func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int) int {
+func (r *Runner) recordBlockTxs(blk *gethtypes.Header, tracker *orderedmap.OrderedMap[common.Hash, time.Time]) {
+	recordTime := time.Now()
+	// First get all txs in the block
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancel()
+	blkNumber := rpc.BlockNumber(blk.Number.Int64())
+	receipts, err := r.clients[0].BlockReceipts(ctx, rpc.BlockNumberOrHash{BlockNumber: &blkNumber})
+	if err != nil {
+		r.logger.Error("failed querying block", zap.Int64("height", blk.Number.Int64()), zap.String("hash", blk.Hash().String()), zap.Error(err))
+	} else {
+		// Now iterate through the txs and see if we're tracking any. Record success and time on those.
+		for _, receipt := range receipts {
+			if broadcastTime, tracked := tracker.Get(receipt.TxHash); tracked {
+				r.promMetrics.TxSuccess.Add(1)
+				r.promMetrics.TxInclusion.Observe(float64(recordTime.Sub(broadcastTime).Milliseconds()))
+				tracker.Delete(receipt.TxHash)
+			}
+		}
+	}
+	// Finally, evict old transactions and mark them as failed.
+	for k, v := range tracker.FromOldest() {
+		if recordTime.Sub(v) < TxInclusionTrackerTimeout {
+			break
+		}
+		r.promMetrics.TxFailure.Add(1)
+		tracker.Delete(k)
+	}
+}
+
+func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int, tracker *orderedmap.OrderedMap[common.Hash, time.Time]) int {
 	// first we build the tx load. this constructs all the ethereum txs based in the spec.
 	r.logger.Info("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
 	var txs []*gethtypes.Transaction
@@ -120,8 +159,10 @@ func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int) int 
 			// send the tx from the wallet assigned to this transaction's sender
 			fromWallet := r.getWalletForTx(tx)
 			err := fromWallet.SendTransaction(ctx, tx)
+			r.promMetrics.BroadcastSuccess.Add(1)
 			if err != nil {
 				r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
+				r.promMetrics.BroadcastFailure.Add(1)
 			}
 
 			txType := inttypes.ContractCall
@@ -135,6 +176,15 @@ func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int) int 
 	}
 
 	wg.Wait()
+
+	// Record broadcast time for all as now to get a rough sense--they should be pretty close anyways.
+	broadcastTime := time.Now()
+	for _, tx := range sentTxs {
+		if tx.Err != nil {
+			continue
+		}
+		tracker.Set(tx.TxHash, broadcastTime)
+	}
 
 	r.sentTxs = append(r.sentTxs, sentTxs...)
 	r.txFactory.ResetWalletAllocation()
