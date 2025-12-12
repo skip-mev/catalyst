@@ -40,6 +40,7 @@ type Runner struct {
 
 	// senderToWallet maps sender addresses to their assigned wallet
 	senderToWallet map[common.Address]*wallet.InteractingWallet
+	promMetrics    *metrics.Metrics
 }
 
 func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
@@ -113,6 +114,8 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		senderToWallet[w.Address()] = w
 	}
 
+	promMetrics := metrics.NewMetrics()
+
 	logger.Info("runner construction complete")
 
 	r := &Runner{
@@ -127,6 +130,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		blocksProcessed: 0,
 		nonces:          &nonces,
 		senderToWallet:  senderToWallet,
+		promMetrics:     promMetrics,
 	}
 
 	return r, nil
