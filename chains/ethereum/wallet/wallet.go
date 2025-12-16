@@ -16,9 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/rpc"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"go.uber.org/zap"
 )
@@ -304,6 +306,22 @@ func (w *InteractingWallet) CreateSignedDynamicFeeTx(ctx context.Context, to *co
 // SendTransaction broadcasts a signed transaction to the network
 func (w *InteractingWallet) SendTransaction(ctx context.Context, signedTx *types.Transaction) error {
 	return w.client.SendTransaction(ctx, signedTx)
+}
+
+func (w *InteractingWallet) BatchSendTransactions(ctx context.Context, signedTxs types.Transactions) ([]rpc.BatchElem, error) {
+	elems := make([]rpc.BatchElem, len(signedTxs))
+	for i, tx := range signedTxs {
+		data, err := tx.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		elems[i] = rpc.BatchElem{
+			Method: "eth_sendRawTransaction",
+			Args:   []interface{}{hexutil.Encode(data)},
+			Result: new(string),
+		}
+	}
+	return elems, w.client.Client().BatchCallContext(ctx, elems)
 }
 
 // CreateAndSendTransaction creates, signs, and sends a transaction in one call

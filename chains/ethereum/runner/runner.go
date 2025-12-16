@@ -41,6 +41,8 @@ type Runner struct {
 	// senderToWallet maps sender addresses to their assigned wallet
 	senderToWallet map[common.Address]*wallet.InteractingWallet
 	promMetrics    *metrics.Metrics
+	// walletGroups maps each wallet to a canonical wallet which is connected to the same client.
+	walletGroups map[*wallet.InteractingWallet]*wallet.InteractingWallet
 }
 
 func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
@@ -100,18 +102,25 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		if i%10000 == 0 {
 			logger.Info("Initializing nonces for accounts", zap.Int("progress", i))
 		}
-		nonce, err := wallet.GetNonce(ctx)
-		if err != nil {
-			logger.Warn("Failed getting nonce for wallet setting to 0", zap.String("address",
-				wallet.Address().String()), zap.Error(err))
-		}
-		nonces.Store(wallet.Address(), nonce)
+		go func() {
+			nonce, err := wallet.GetNonce(ctx)
+			if err != nil {
+				logger.Warn("Failed getting nonce for wallet setting to 0", zap.String("address",
+					wallet.Address().String()), zap.Error(err))
+			}
+			nonces.Store(wallet.Address(), nonce)
+		}()
+
 	}
+	logger.Info("Finished initializing nonces")
 
 	// Create sender to wallet mapping for consistent endpoint usage
 	senderToWallet := make(map[common.Address]*wallet.InteractingWallet)
-	for _, w := range wallets {
+	// Create wallet grouping for batching
+	walletGroups := make(map[*wallet.InteractingWallet]*wallet.InteractingWallet, len(wallets))
+	for i, w := range wallets {
 		senderToWallet[w.Address()] = w
+		walletGroups[w] = wallets[i%len(clients)]
 	}
 
 	promMetrics := metrics.NewMetrics()
@@ -131,6 +140,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		nonces:          &nonces,
 		senderToWallet:  senderToWallet,
 		promMetrics:     promMetrics,
+		walletGroups:    walletGroups,
 	}
 
 	return r, nil
