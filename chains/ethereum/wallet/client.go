@@ -1,6 +1,9 @@
 package wallet
 
-import "github.com/ethereum/go-ethereum"
+import (
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/rpc"
+)
 
 // Client is the interface for a go-ethereum client.
 type Client interface {
@@ -18,4 +21,5 @@ type Client interface {
 	ethereum.TransactionReader
 	ethereum.TransactionSender
 	ethereum.ChainIDReader
+	Client() *rpc.Client
 }

@@ -5,15 +5,155 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
+	"github.com/ethereum/go-ethereum/rpc"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 )
+
+// simulatedClientWrapper wraps a simulated.Client to add the Client() method
+// We use a named field instead of embedding to avoid naming conflicts
+type simulatedClientWrapper struct {
+	sc simulated.Client
+}
+
+// Client implements the wallet.Client interface
+func (w *simulatedClientWrapper) Client() *rpc.Client {
+	// The simulated backend doesn't expose the underlying RPC client
+	// For testing purposes, we can return nil since batch operations
+	// aren't used in these tests
+	return nil
+}
+
+// Forward the necessary methods from simulated.Client
+func (w *simulatedClientWrapper) BlockNumber(ctx context.Context) (uint64, error) {
+	return w.sc.BlockNumber(ctx)
+}
+
+func (w *simulatedClientWrapper) ChainID(ctx context.Context) (*big.Int, error) {
+	return w.sc.ChainID(ctx)
+}
+
+func (w *simulatedClientWrapper) EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error) {
+	return w.sc.EstimateGas(ctx, msg)
+}
+
+func (w *simulatedClientWrapper) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
+	return w.sc.SuggestGasPrice(ctx)
+}
+
+func (w *simulatedClientWrapper) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	return w.sc.SuggestGasTipCap(ctx)
+}
+
+func (w *simulatedClientWrapper) BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error) {
+	return w.sc.BalanceAt(ctx, account, blockNumber)
+}
+
+func (w *simulatedClientWrapper) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
+	return w.sc.PendingNonceAt(ctx, account)
+}
+
+func (w *simulatedClientWrapper) SendTransaction(ctx context.Context, tx *types.Transaction) error {
+	return w.sc.SendTransaction(ctx, tx)
+}
+
+func (w *simulatedClientWrapper) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
+	return w.sc.HeaderByNumber(ctx, number)
+}
+
+func (w *simulatedClientWrapper) TransactionByHash(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error) {
+	return w.sc.TransactionByHash(ctx, hash)
+}
+
+func (w *simulatedClientWrapper) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
+	return w.sc.TransactionReceipt(ctx, txHash)
+}
+
+func (w *simulatedClientWrapper) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
+	return w.sc.BlockByHash(ctx, hash)
+}
+
+func (w *simulatedClientWrapper) BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error) {
+	return w.sc.BlockByNumber(ctx, number)
+}
+
+func (w *simulatedClientWrapper) CodeAt(ctx context.Context, account common.Address, blockNumber *big.Int) ([]byte, error) {
+	return w.sc.CodeAt(ctx, account, blockNumber)
+}
+
+func (w *simulatedClientWrapper) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
+	return w.sc.CallContract(ctx, msg, blockNumber)
+}
+
+func (w *simulatedClientWrapper) HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error) {
+	return w.sc.HeaderByHash(ctx, hash)
+}
+
+func (w *simulatedClientWrapper) TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error) {
+	// Simulated backend doesn't implement this directly, return empty address
+	return common.Address{}, ethereum.NotFound
+}
+
+func (w *simulatedClientWrapper) TransactionCount(ctx context.Context, blockHash common.Hash) (uint, error) {
+	// Simulated backend doesn't implement this directly
+	return 0, ethereum.NotFound
+}
+
+func (w *simulatedClientWrapper) TransactionInBlock(ctx context.Context, blockHash common.Hash, index uint) (*types.Transaction, error) {
+	// Simulated backend doesn't implement this directly
+	return nil, ethereum.NotFound
+}
+
+func (w *simulatedClientWrapper) PendingBalanceAt(ctx context.Context, account common.Address) (*big.Int, error) {
+	return w.sc.PendingBalanceAt(ctx, account)
+}
+
+func (w *simulatedClientWrapper) PendingStorageAt(ctx context.Context, account common.Address, key common.Hash) ([]byte, error) {
+	return w.sc.PendingStorageAt(ctx, account, key)
+}
+
+func (w *simulatedClientWrapper) PendingCodeAt(ctx context.Context, account common.Address) ([]byte, error) {
+	return w.sc.PendingCodeAt(ctx, account)
+}
+
+func (w *simulatedClientWrapper) PendingTransactionCount(ctx context.Context) (uint, error) {
+	return w.sc.PendingTransactionCount(ctx)
+}
+
+func (w *simulatedClientWrapper) PendingCallContract(ctx context.Context, msg ethereum.CallMsg) ([]byte, error) {
+	return w.sc.PendingCallContract(ctx, msg)
+}
+
+func (w *simulatedClientWrapper) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+	return w.sc.FilterLogs(ctx, q)
+}
+
+func (w *simulatedClientWrapper) SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
+	return w.sc.SubscribeFilterLogs(ctx, q, ch)
+}
+
+func (w *simulatedClientWrapper) FeeHistory(ctx context.Context, blockCount uint64, lastBlock *big.Int, rewardPercentiles []float64) (*ethereum.FeeHistory, error) {
+	return w.sc.FeeHistory(ctx, blockCount, lastBlock, rewardPercentiles)
+}
+
+func (w *simulatedClientWrapper) StorageAt(ctx context.Context, account common.Address, key common.Hash, blockNumber *big.Int) ([]byte, error) {
+	return w.sc.StorageAt(ctx, account, key, blockNumber)
+}
+
+func (w *simulatedClientWrapper) NonceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (uint64, error) {
+	return w.sc.NonceAt(ctx, account, blockNumber)
+}
+
+func (w *simulatedClientWrapper) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
+	return w.sc.SubscribeNewHead(ctx, ch)
+}
 
 func setupSimulatedBackend(alloc types.GenesisAlloc) *simulated.Backend {
 	backend := simulated.NewBackend(alloc)
@@ -58,10 +198,11 @@ func TestTransaction(t *testing.T) {
 	sim := setupSimulatedBackend(alloc)
 
 	ctx := context.Background()
-	id, err := sim.Client().ChainID(ctx)
+	client := &simulatedClientWrapper{sc: sim.Client()}
+	id, err := client.ChainID(ctx)
 	require.NoError(t, err)
 
-	wallet := NewInteractingWallet(key, id, sim.Client())
+	wallet := NewInteractingWallet(key, id, client)
 
 	addr2 := getRandomAddr(t)
 	nonce := uint64(0)
@@ -83,7 +224,7 @@ func TestTransaction(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, receipt.Status, types.ReceiptStatusSuccessful)
 
-	gotTx, isPending, err := GetTxByHash(ctx, sim.Client(), receipt.TxHash)
+	gotTx, isPending, err := GetTxByHash(ctx, client, receipt.TxHash)
 	require.NoError(t, err)
 	require.False(t, isPending)
 	require.Equal(t, gotTx.Hash(), tx.Hash())
@@ -101,10 +242,11 @@ func TestCreateSignedTransaction(t *testing.T) {
 	defer sim.Close()
 
 	ctx := context.Background()
-	id, err := sim.Client().ChainID(ctx)
+	client := &simulatedClientWrapper{sc: sim.Client()}
+	id, err := client.ChainID(ctx)
 	require.NoError(t, err)
 
-	wallet := NewInteractingWallet(key, id, sim.Client())
+	wallet := NewInteractingWallet(key, id, client)
 	toAddr := getRandomAddr(t)
 	value := big.NewInt(1000)
 	data := []byte("test data")
@@ -230,10 +372,11 @@ func TestCreateSignedDynamicFeeTx(t *testing.T) {
 	defer sim.Close()
 
 	ctx := context.Background()
-	id, err := sim.Client().ChainID(ctx)
+	client := &simulatedClientWrapper{sc: sim.Client()}
+	id, err := client.ChainID(ctx)
 	require.NoError(t, err)
 
-	wallet := NewInteractingWallet(key, id, sim.Client())
+	wallet := NewInteractingWallet(key, id, client)
 	toAddr := getRandomAddr(t)
 	value := big.NewInt(1000)
 	data := []byte("test data")
