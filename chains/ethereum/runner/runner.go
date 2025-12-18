@@ -275,8 +275,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 		r.logger.Info("Running loadtest on blocks", zap.Int("blocks", r.spec.NumOfBlocks))
 		return r.runOnBlocks(ctx)
 	}
-	r.logger.Info("Running loadtest persistently")
-	return r.runPersistent(ctx)
+	panic("invalid")
 }
 
 func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
