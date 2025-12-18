@@ -34,6 +34,8 @@ const (
 
 	// MsgNativeTransferERC20 calls the cosmos/evm native ERC20 precompile contract.
 	MsgNativeTransferERC20 loadtesttypes.MsgType = "MsgNativeTransferERC20"
+
+	MsgNativeGasTransfer loadtesttypes.MsgType = "MsgNativeGasTransfer"
 )
 
 var (

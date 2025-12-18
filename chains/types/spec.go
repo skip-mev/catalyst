@@ -8,19 +8,38 @@ import (
 )
 
 type LoadTestSpec struct {
-	Name         string        `yaml:"name" json:"name"`
-	Description  string        `yaml:"description" json:"description"`
-	Kind         string        `yaml:"kind" json:"kind"` // "cosmos" | "evm" (discriminator)
-	ChainID      string        `yaml:"chain_id" json:"chain_id"`
-	NumOfTxs     int           `yaml:"num_of_txs,omitempty" json:"num_of_txs,omitempty"`
-	NumOfBlocks  int           `yaml:"num_of_blocks" json:"num_of_blocks"`
-	SendInterval time.Duration `yaml:"send_interval" json:"send_interval"`
-	NumBatches   int           `yaml:"num_batches" json:"num_batches"`
-	BaseMnemonic string        `yaml:"base_mnemonic" json:"base_mnemonic"`
-	NumWallets   int           `yaml:"num_wallets" json:"num_wallets"`
-	Msgs         []LoadTestMsg `yaml:"msgs" json:"msgs"`
-	TxTimeout    time.Duration `yaml:"tx_timeout,omitempty" json:"tx_timeout,omitempty"`
-	ChainCfg     ChainConfig   `yaml:"-" json:"-"` // decoded via custom UnmarshalYAML
+	Name                 string        `yaml:"name" json:"name"`
+	Description          string        `yaml:"description" json:"description"`
+	Kind                 string        `yaml:"kind" json:"kind"` // "cosmos" | "evm" (discriminator)
+	ChainID              string        `yaml:"chain_id" json:"chain_id"`
+	NumOfTxs             int           `yaml:"num_of_txs,omitempty" json:"num_of_txs,omitempty"`
+	NumOfBlocks          int           `yaml:"num_of_blocks" json:"num_of_blocks"`
+	SendInterval         time.Duration `yaml:"send_interval" json:"send_interval"`
+	NumBatches           int           `yaml:"num_batches" json:"num_batches"`
+	BaseMnemonic         string        `yaml:"base_mnemonic" json:"base_mnemonic"`
+	NumWallets           int           `yaml:"num_wallets" json:"num_wallets"`
+	InitialWallets       int           `yaml:"initial_wallets" json:"initial_wallets"`
+	Msgs                 []LoadTestMsg `yaml:"msgs" json:"msgs"`
+	TxTimeout            time.Duration `yaml:"tx_timeout,omitempty" json:"tx_timeout,omitempty"`
+	ChainCfg             ChainConfig   `yaml:"-" json:"-"` // decoded via custom UnmarshalYAML
+	Cache                CacheConfig   `yaml:"cache_config" json:"cache_config"`
+	PrometheusListenAddr string        `yaml:"prometheus_listen_addr" json:"prometheus_listen_addr"`
+}
+
+type CacheConfig struct {
+	// ReadWalletsFrom is the file that cached wallets will be read from. If
+	// this file does not exist or contain wallets, catalyst will error
+	ReadWalletsFrom string `yaml:"read_wallets_from" json:"read_wallets_from"`
+
+	// ReadTxsFrom is the file that cached txs will be read from. If this file
+	// does not exist or contain wallets, catalyst will return an error.
+	ReadTxsFrom string `yaml:"read_txs_from" json:"read_txs_from"`
+
+	// WriteWalletsTo is the that generated txs will be written to
+	WriteWalletsTo string `yaml:"write_wallets_to" json:"write_wallets_to"`
+
+	// WriteTxsTo is the file that generated txs will be written to
+	WriteTxsTo string `yaml:"write_txs_to" json:"write_txs_to"`
 }
 
 type loadTestSpecAlias LoadTestSpec
@@ -50,7 +69,7 @@ func (s LoadTestSpec) MarshalYAML() (any, error) {
 	type Alias LoadTestSpec
 	out := struct {
 		Alias       `yaml:",inline"`
-		ChainConfig any `yaml:"chain_config,omitempty"`
+		ChainConfig any `yaml:"chain_config,omitempty" json:"chain_config"`
 	}{
 		Alias:       Alias(s),
 		ChainConfig: s.ChainCfg, // concrete value behind the interface
@@ -76,5 +95,13 @@ func (s *LoadTestSpec) Validate() error {
 		return fmt.Errorf("NumWallets must be greater than zero")
 	}
 
-	return s.ChainCfg.Validate(*s)
+	if s.InitialWallets > s.NumWallets {
+		return fmt.Errorf("InitialWallets %d cannot be higher than NumWallets %d", s.InitialWallets, s.NumWallets)
+	}
+
+	if err := s.ChainCfg.Validate(*s); err != nil {
+		return fmt.Errorf("validating chain config: %w", err)
+	}
+
+	return nil
 }

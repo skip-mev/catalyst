@@ -116,7 +116,8 @@ func TestCreateContract_SuccessfulTxs(t *testing.T) {
 	for range 10 {
 		sim, wallet := setupTest(t)
 		ctx := context.Background()
-		f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, ethtypes.TxOpts{})
+		distr := NewTxDistributionEven([]*ethwallet.InteractingWallet{wallet})
+		f := NewTxFactory(logger, ethtypes.TxOpts{}, distr)
 		nonce, err := wallet.GetNonce(ctx)
 		require.NoError(t, err)
 		txs, err := f.createMsgCreateContract(ctx, wallet, nil, nonce, false)
@@ -142,8 +143,9 @@ func TestCreateMsgWriteTo(t *testing.T) {
 
 	sim, wallet := setupTest(t)
 	ctx := context.Background()
-	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, ethtypes.TxOpts{})
-	deployContract(t, sim, f)
+	distr := NewTxDistributionEven([]*ethwallet.InteractingWallet{wallet})
+	f := NewTxFactory(logger, ethtypes.TxOpts{}, distr)
+	deployContract(t, sim, f, distr)
 
 	nonce, err := wallet.GetNonce(ctx)
 	require.NoError(t, err)
@@ -169,8 +171,9 @@ func TestCallDataBlast(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	sim, wallet := setupTest(t)
 	ctx := context.Background()
-	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, ethtypes.TxOpts{})
-	deployContract(t, sim, f)
+	distr := NewTxDistributionEven([]*ethwallet.InteractingWallet{wallet})
+	f := NewTxFactory(logger, ethtypes.TxOpts{}, distr)
+	deployContract(t, sim, f, distr)
 
 	nonce, err := wallet.GetNonce(ctx)
 	require.NoError(t, err)
@@ -188,8 +191,9 @@ func TestCrossContractCall(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	sim, wallet := setupTest(t)
 	ctx := context.Background()
-	f := NewTxFactory(logger, []*ethwallet.InteractingWallet{wallet}, ethtypes.TxOpts{})
-	deployContract(t, sim, f)
+	distr := NewTxDistributionEven([]*ethwallet.InteractingWallet{wallet})
+	f := NewTxFactory(logger, ethtypes.TxOpts{}, distr)
+	deployContract(t, sim, f, distr)
 
 	nonce, err := wallet.GetNonce(ctx)
 	require.NoError(t, err)
@@ -215,11 +219,11 @@ func TestCrossContractCall(t *testing.T) {
 	require.Equal(t, value.Int64(), int64(2))
 }
 
-func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory) {
+func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory, distr TxDistribution) {
 	t.Helper()
 	ctx := context.Background()
 	numContracts := 1
-	wallet := f.wallets[0]
+	wallet := distr.GetBaselineWallet()
 	nonce, err := wallet.GetNonce(ctx)
 	require.NoError(t, err)
 	txs, err := f.createMsgCreateContract(ctx, wallet, &numContracts, nonce, false)

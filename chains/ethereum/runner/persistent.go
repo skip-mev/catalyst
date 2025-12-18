@@ -1,0 +1,243 @@
+package runner
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"sync"
+	"time"
+
+	"github.com/ethereum/go-ethereum/common"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
+	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+	"go.uber.org/zap"
+)
+
+const (
+	PersistentBlockTimeout    = time.Minute
+	TxInclusionTrackerTimeout = time.Minute * 5
+)
+
+func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
+	// TODO Eric -- all runners do this--refactor it out
+	// deploy the initial contracts needed by the runner.
+	if err := r.deployInitialContracts(ctx); err != nil {
+		return loadtesttypes.LoadTestResult{}, err
+	}
+
+	// We fund InitialWallets * 2^N wallets every block where N == the number of bootstrap loads sent.
+	// We therefore require (log(num_wallets) - log(initial_wallets))/log(2) bootstrap loads to full fund.
+	requiredBootstrapLoads := uint64((math.Log10(float64(r.spec.NumWallets))-math.Log10(float64(r.spec.InitialWallets)))/math.Log10(2)) + 1
+	var blocksProcessed uint64
+	// boostrapBackoff controls how many blocks are between load publication while we're still bootstrapping (funding wallets).
+	bootstrapBackoff := uint64(5)
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Run one tx to get gas baselines -- this won't work as soon as the feemarket is enabled
+	if err := r.txFactory.SetBaselines(ctx, r.spec.Msgs); err != nil {
+		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to set Baseline txs: %w", err)
+	}
+
+	blockCh := make(chan *gethtypes.Header, 1)
+	subscription, err := r.wsClients[0].SubscribeNewHead(ctx, blockCh)
+	if err != nil {
+		return loadtesttypes.LoadTestResult{}, err
+	}
+	defer subscription.Unsubscribe()
+
+	var maxLoadSize int
+	for _, msgSpec := range r.spec.Msgs {
+		maxLoadSize += msgSpec.NumMsgs
+	}
+
+	trackedTxs := orderedmap.New[common.Hash, time.Time]()
+
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		timeout := time.NewTicker(PersistentBlockTimeout)
+		for {
+			select {
+			case <-ctx.Done():
+				r.logger.Info("ctx cancelled")
+				return
+			case err := <-subscription.Err():
+				if err != nil {
+					r.logger.Error("subscription error", zap.Error(err))
+				}
+				cancel()
+				return
+			case block, ok := <-blockCh:
+				timeout.Reset(PersistentBlockTimeout)
+				blocksProcessed++
+				if !ok {
+					r.logger.Error("block header channel closed")
+					cancel()
+					return
+				}
+				r.logger.Info(
+					"processing block",
+					zap.Uint64("height", block.Number.Uint64()),
+					zap.Uint64("time", block.Time),
+					zap.Uint64("gas_used", block.GasUsed),
+					zap.Uint64("gas_limit", block.GasLimit),
+				)
+
+				r.recordBlockTxs(block, trackedTxs)
+
+				sentBootstrapLoads := blocksProcessed / bootstrapBackoff
+				// Only throttle load creation if we're still bootstrapping.
+				// In that case we publish load every bootstrapBackoff blocks.
+				if (sentBootstrapLoads <= requiredBootstrapLoads) && (blocksProcessed%bootstrapBackoff != 0) {
+					continue
+				}
+				numTxsSubmitted := r.submitLoadPersistent(ctx, maxLoadSize, trackedTxs)
+				r.logger.Info("submitted transactions", zap.Uint64("height", block.Number.Uint64()), zap.Int("num_submitted", numTxsSubmitted))
+			case <-timeout.C:
+				r.logger.Error("timed out waiting for a new block to be processed")
+				cancel()
+				return
+			}
+		}
+	})
+
+	wg.Wait()
+
+	return loadtesttypes.LoadTestResult{}, nil
+}
+
+func (r *Runner) recordBlockTxs(blk *gethtypes.Header, tracker *orderedmap.OrderedMap[common.Hash, time.Time]) {
+	recordTime := time.Now()
+	// First get all txs in the block
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancel()
+	blkNumber := rpc.BlockNumber(blk.Number.Int64())
+	receipts, err := r.clients[0].BlockReceipts(ctx, rpc.BlockNumberOrHash{BlockNumber: &blkNumber})
+	if err != nil {
+		r.logger.Error("failed querying block", zap.Int64("height", blk.Number.Int64()), zap.String("hash", blk.Hash().String()), zap.Error(err))
+	} else {
+		// Now iterate through the txs and see if we're tracking any. Record success and time on those.
+		for _, receipt := range receipts {
+			if broadcastTime, tracked := tracker.Get(receipt.TxHash); tracked {
+				r.promMetrics.TxSuccess.Add(1)
+				r.promMetrics.TxInclusion.Observe(float64(recordTime.Sub(broadcastTime).Milliseconds()))
+				tracker.Delete(receipt.TxHash)
+			}
+		}
+	}
+	// Finally, evict old transactions and mark them as failed.
+	for k, v := range tracker.FromOldest() {
+		if recordTime.Sub(v) < TxInclusionTrackerTimeout {
+			break
+		}
+		r.promMetrics.TxFailure.Add(1)
+		tracker.Delete(k)
+	}
+}
+
+func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int, tracker *orderedmap.OrderedMap[common.Hash, time.Time]) int {
+	// first we build the tx load. this constructs all the ethereum txs based in the spec.
+	r.logger.Info("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
+	var txs []*gethtypes.Transaction
+	for _, msgSpec := range r.spec.Msgs {
+		load := r.buildLoadPersistent(msgSpec, maxLoadSize, false)
+		if len(load) == 0 {
+			continue
+		}
+		txs = append(txs, load...)
+	}
+
+	// submit each tx in a go routine
+	wg := sync.WaitGroup{}
+	sentTxs := make([]*inttypes.SentTx, len(txs))
+	for i, tx := range txs {
+		wg.Go(func() {
+			// send the tx from the wallet assigned to this transaction's sender
+			fromWallet := r.getWalletForTx(tx)
+			err := fromWallet.SendTransaction(ctx, tx)
+			if err != nil {
+				r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
+				r.promMetrics.BroadcastFailure.Add(1)
+			} else {
+				r.promMetrics.BroadcastSuccess.Add(1)
+			}
+
+			txType := inttypes.ContractCall
+			sentTxs[i] = &inttypes.SentTx{
+				TxHash:  tx.Hash(),
+				MsgType: txType,
+				Err:     err,
+				Tx:      tx,
+			}
+		})
+	}
+
+	wg.Wait()
+
+	// Record broadcast time for all as now to get a rough sense--they should be pretty close anyways.
+	broadcastTime := time.Now()
+	for _, tx := range sentTxs {
+		if tx.Err != nil {
+			continue
+		}
+		tracker.Set(tx.TxHash, broadcastTime)
+	}
+
+	r.sentTxs = append(r.sentTxs, sentTxs...)
+	r.txFactory.ResetWalletAllocation()
+	return len(sentTxs)
+}
+
+func (r *Runner) buildLoadPersistent(msgSpec loadtesttypes.LoadTestMsg, maxLoadSize int, useBaseline bool) []*gethtypes.Transaction {
+	r.logger.Info("building load", zap.Int("maxLoadSize", maxLoadSize))
+	var txnLoad []*gethtypes.Transaction
+	var wg sync.WaitGroup
+	txChan := make(chan *gethtypes.Transaction, maxLoadSize)
+	for range maxLoadSize {
+		wg.Go(func() {
+			sender := r.txFactory.GetNextSender()
+
+			if sender == nil {
+				return
+			}
+			nonce, ok := r.nonces.Load(sender.Address())
+			if !ok {
+				// this really should not happen ever. better safe than sorry.
+				r.logger.Error("nonce for wallet not found", zap.String("wallet", sender.Address().String()))
+				return
+			}
+			tx, err := r.txFactory.BuildTxs(msgSpec, sender, nonce.(uint64), useBaseline)
+			if err != nil {
+				r.logger.Error("failed to build txs", zap.Error(err))
+				return
+			}
+			lastTx := tx[len(tx)-1]
+			if lastTx == nil {
+				return
+			}
+			r.nonces.Store(sender.Address(), lastTx.Nonce()+1)
+			// Only use single txn builders here
+			for _, txn := range tx {
+				txChan <- txn
+			}
+		})
+	}
+	doneChan := make(chan struct{})
+	go func() {
+		wg.Wait()
+		doneChan <- struct{}{}
+	}()
+	for {
+		select {
+		case txn := <-txChan:
+			txnLoad = append(txnLoad, txn)
+		case <-doneChan:
+			r.logger.Info("Generated load txs", zap.Int("num_txs", len(txnLoad)))
+			return txnLoad
+		}
+	}
+}

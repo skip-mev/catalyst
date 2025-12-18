@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -14,8 +15,9 @@ import (
 )
 
 const (
-	EthKind    = "eth"
-	CosmosKind = "cosmos"
+	EthKind               = "eth"
+	CosmosKind            = "cosmos"
+	DefaultPrometheusAddr = ":27007"
 )
 
 // Runner defines the interface that all chain-specific runners must implement
@@ -26,13 +28,19 @@ type Runner interface {
 
 // LoadTest represents a unified load test that can be executed for any chain kind
 type LoadTest struct {
-	runner Runner
-	kind   string
+	runner       Runner
+	kind         string
+	metricServer *http.Server
 }
 
 // NewLoadTest creates a new load test from a specification
 func NewLoadTest(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*LoadTest, error) {
 	var runner Runner
+
+	if spec.PrometheusListenAddr == "" {
+		spec.PrometheusListenAddr = DefaultPrometheusAddr
+	}
+	metricServer := startPrometheusServer(spec.PrometheusListenAddr, logger)
 
 	switch spec.Kind {
 	case EthKind:
@@ -54,14 +62,16 @@ func NewLoadTest(ctx context.Context, logger *zap.Logger, spec loadtesttypes.Loa
 	}
 
 	return &LoadTest{
-		runner: runner,
-		kind:   spec.Kind,
+		runner:       runner,
+		kind:         spec.Kind,
+		metricServer: metricServer,
 	}, nil
 }
 
 // Run executes the load test and returns the results
 func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (loadtesttypes.LoadTestResult, error) {
 	logger.Info("starting new load test run")
+	defer lt.metricServer.Close()
 	results, err := lt.runner.Run(ctx)
 	if err != nil {
 		results.Error = err.Error()

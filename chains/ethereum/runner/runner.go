@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -41,6 +40,7 @@ type Runner struct {
 
 	// senderToWallet maps sender addresses to their assigned wallet
 	senderToWallet map[common.Address]*wallet.InteractingWallet
+	promMetrics    *metrics.Metrics
 }
 
 func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
@@ -85,10 +85,27 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		return nil, err
 	}
 
-	txf := txfactory.NewTxFactory(logger, wallets, chainCfg.TxOpts)
+	var distribution txfactory.TxDistribution
+	if spec.InitialWallets > 0 && spec.InitialWallets < spec.NumWallets {
+		logger.Info("Using TxDistributionBootstrapped", zap.Int("initial_wallets", spec.InitialWallets), zap.Int("num_wallets", spec.NumWallets))
+		distribution = txfactory.NewTxDistributionBootstrapped(logger, wallets, spec.InitialWallets)
+	} else {
+		logger.Info("Using TxDistributionEven")
+		distribution = txfactory.NewTxDistributionEven(wallets)
+	}
+
+	txf := txfactory.NewTxFactory(logger, chainCfg.TxOpts, distribution)
 	nonces := sync.Map{}
-	for _, wallet := range wallets {
-		nonces.Store(wallet.Address(), uint64(0))
+	for i, wallet := range wallets {
+		if i%10000 == 0 {
+			logger.Info("Initializing nonces for accounts", zap.Int("progress", i))
+		}
+		nonce, err := wallet.GetNonce(ctx)
+		if err != nil {
+			logger.Warn("Failed getting nonce for wallet setting to 0", zap.String("address",
+				wallet.Address().String()), zap.Error(err))
+		}
+		nonces.Store(wallet.Address(), nonce)
 	}
 
 	// Create sender to wallet mapping for consistent endpoint usage
@@ -96,6 +113,8 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 	for _, w := range wallets {
 		senderToWallet[w.Address()] = w
 	}
+
+	promMetrics := metrics.NewMetrics()
 
 	logger.Info("runner construction complete")
 
@@ -111,6 +130,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		blocksProcessed: 0,
 		nonces:          &nonces,
 		senderToWallet:  senderToWallet,
+		promMetrics:     promMetrics,
 	}
 
 	return r, nil
@@ -246,46 +266,14 @@ func (r *Runner) deployInitialContracts(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction, error) {
-	if err := r.txFactory.SetBaselines(ctx, r.spec.Msgs); err != nil {
-		return nil, fmt.Errorf("failed to set Baseline txs: %w", err)
-	}
-
-	r.logger.Info("Building load...", zap.Int("num_batches", r.spec.NumBatches))
-	batchLoads := make([][]*gethtypes.Transaction, 0, 100)
-	total := 0
-	for i := range r.spec.NumBatches {
-		// Reset wallet allocation for each batch to enable role rotation
-		r.txFactory.ResetWalletAllocation()
-
-		batch := make([]*gethtypes.Transaction, 0)
-		for _, msgSpec := range r.spec.Msgs {
-			select {
-			case <-ctx.Done():
-				return nil, fmt.Errorf("ctx cancelled during load building: %w", ctx.Err())
-			default:
-			}
-			for range msgSpec.NumMsgs {
-				txs, err := r.buildLoad(msgSpec, true)
-				if err != nil {
-					return nil, fmt.Errorf("failed to build load for %s: %w", msgSpec.Type, err)
-				}
-				batch = append(batch, txs...)
-				total += len(txs)
-			}
-		}
-		r.logger.Info(fmt.Sprintf("built batch %d/%d", i+1, r.spec.NumBatches))
-		batchLoads = append(batchLoads, batch)
-	}
-	r.logger.Info("Load built, starting loadtest", zap.Int("total_txs", total))
-	return batchLoads, nil
-}
-
 func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
 	// when batches and interval are specified, user wants to run on a timed interval
 	if r.spec.NumBatches > 0 && r.spec.SendInterval > 0 {
 		r.logger.Info("Running loadtest on interval", zap.Duration("interval", r.spec.SendInterval), zap.Int("num_batches", r.spec.NumBatches))
 		return r.runOnInterval(ctx)
+	} else if r.spec.NumOfBlocks > 0 {
+		r.logger.Info("Running loadtest on blocks", zap.Int("blocks", r.spec.NumOfBlocks))
+		return r.runOnBlocks(ctx)
 	}
 	// otherwise we run on blocks
 	return r.runOnBlocks(ctx)
@@ -572,9 +560,12 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
 	// For ERC20 transactions, use optimal sender selection from factory
 	var fromWallet *wallet.InteractingWallet
-	if msgSpec.Type == inttypes.MsgTransferERC0 || msgSpec.Type == inttypes.MsgNativeTransferERC20 {
+	switch msgSpec.Type {
+	case inttypes.MsgTransferERC0, inttypes.MsgNativeTransferERC20:
 		fromWallet = r.txFactory.GetNextSender()
-	} else {
+	case inttypes.MsgDeployERC20, inttypes.MsgCreateContract:
+		fromWallet = r.wallets[0]
+	default:
 		// For non-ERC20 transactions, keep random selection
 		fromWallet = r.wallets[rand.Intn(len(r.wallets))]
 	}
@@ -601,52 +592,4 @@ func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) 
 	}
 	r.nonces.Store(fromWallet.Address(), lastTx.Nonce()+1)
 	return txs, nil
-}
-
-func (r *Runner) waitForEmptyMempool(ctx context.Context, timeout time.Duration) {
-	wg := sync.WaitGroup{}
-	for _, c := range r.clients {
-		wg.Add(1)
-		go func(ethClient *ethclient.Client) {
-			client := ethClient.Client()
-			defer wg.Done()
-			type TxPoolStatus struct {
-				Pending hexutil.Uint64 `json:"pending"`
-				Queued  hexutil.Uint64 `json:"queued"`
-			}
-			type TxPoolStatusResponse struct {
-				JSONRPC string       `json:"jsonrpc"`
-				ID      int          `json:"id"`
-				Result  TxPoolStatus `json:"result"`
-			}
-
-			started := time.Now()
-			timer := time.NewTicker(500 * time.Millisecond)
-			timout := time.NewTimer(timeout)
-			defer timer.Stop()
-			defer timout.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-timer.C:
-					var res TxPoolStatusResponse
-					err := client.CallContext(ctx, &res, "txpool_status")
-					if err == nil {
-						if res.Result.Pending == 0 {
-							r.logger.Debug("mempool clear. done waiting for mempool", zap.Duration("waited", time.Since(started)))
-							return
-						}
-					} else {
-						r.logger.Debug("error calling txpool status", zap.Error(err))
-					}
-				case <-timout.C:
-					r.logger.Debug("timed out waiting for mempool to clear", zap.Duration("waited", timeout))
-					return
-				}
-			}
-		}(c)
-	}
-	wg.Wait()
 }
