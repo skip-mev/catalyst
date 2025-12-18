@@ -3,10 +3,6 @@ package metrics
 import (
 	"context"
 	"fmt"
-	"math"
-	"math/big"
-	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -20,124 +16,127 @@ import (
 
 // ProcessResults processes the results of the load test.
 func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.SentTx, startBlock, endBlock uint64, clients []*ethclient.Client) (*loadtesttypes.LoadTestResult, error) {
-	wg := sync.WaitGroup{}
-	blockStats := make([]loadtesttypes.BlockStat, endBlock-startBlock+1)
-	receipts := make(map[uint64]gethtypes.Receipts)
-	logger.Info("collecting metrics", zap.Uint64("starting_block", startBlock), zap.Uint64("ending_block", endBlock))
+	logger.Info("sleeping for 15 mins to let test finish", zap.Uint64("starting_block", startBlock), zap.Uint64("ending_block", endBlock))
+	time.Sleep(15 * time.Minute)
+	logger.Info("done sleeping", zap.Uint64("starting_block", startBlock), zap.Uint64("ending_block", endBlock))
+	// wg := sync.WaitGroup{}
+	// blockStats := make([]loadtesttypes.BlockStat, endBlock-startBlock+1)
+	// receipts := make(map[uint64]gethtypes.Receipts)
 	// block stats. each go routine will query a block, get all receipts, and construct the block stats.
-	for blockNum := startBlock; blockNum <= endBlock; blockNum++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			client := clients[rand.Intn(len(clients))]
-			block, err := client.BlockByNumber(ctx, big.NewInt(int64(blockNum))) //nolint:gosec // G115: overflow unlikely in practice
-			if err != nil {
-				logger.Error("Error getting block by number", zap.Uint64("block_num", blockNum), zap.Error(err))
-				return
-			}
-			blockReceipts, err := getReceiptsForBlockTxs(ctx, block, client)
-			if err != nil {
-				logger.Error("Error getting receipts for block", zap.Uint64("block_num", blockNum), zap.Error(err))
-				return
-			}
-			if len(blockReceipts) > 0 {
-				receipts[blockReceipts[0].BlockNumber.Uint64()] = blockReceipts
-			}
-			blockStats[blockNum-startBlock] = buildBlockStats(block, blockReceipts)
-		}()
-	}
-	wg.Wait()
+	// for blockNum := startBlock; blockNum <= endBlock; blockNum++ {
+	// 	wg.Add(1)
+	// 	go func() {
+	// 		defer wg.Done()
+	// 		client := clients[rand.Intn(len(clients))]
+	// 		block, err := client.BlockByNumber(ctx, big.NewInt(int64(blockNum))) //nolint:gosec // G115: overflow unlikely in practice
+	// 		if err != nil {
+	// 			logger.Error("Error getting block by number", zap.Uint64("block_num", blockNum), zap.Error(err))
+	// 			return
+	// 		}
+	// 		blockReceipts, err := getReceiptsForBlockTxs(ctx, block, client)
+	// 		if err != nil {
+	// 			logger.Error("Error getting receipts for block", zap.Uint64("block_num", blockNum), zap.Error(err))
+	// 			return
+	// 		}
+	// 		if len(blockReceipts) > 0 {
+	// 			receipts[blockReceipts[0].BlockNumber.Uint64()] = blockReceipts
+	// 		}
+	// 		blockStats[blockNum-startBlock] = buildBlockStats(block, blockReceipts)
+	// 	}()
+	// }
+	// wg.Wait()
 
 	// remove any 0 tx blocks from the beginning and ends of block stats.
 	// this can happen if we started processing before txs landed on chain.
-	blockStats, err := trimBlocks(blockStats)
-	if err != nil {
-		return nil, fmt.Errorf("failed to trim blocks: %w", err)
-	}
-
-	logger.Info("analyzing blocks...", zap.Int("num_blocks", len(blockStats)))
-	msgStats := make(map[loadtesttypes.MsgType]loadtesttypes.MessageStats)
-	totalSentByType := calculateTotalSentByType(sentTxs)
-	// update each msgType's total sent transactions
-	for msgType, totalSent := range totalSentByType {
-		stat := msgStats[msgType]
-		stat.Transactions.TotalSent = int(totalSent) //nolint:gosec // G115: overflow unlikely in practice
-		stat.Gas.Min = math.MaxInt64                 // sentinel values for next step
-		msgStats[msgType] = stat
-	}
-
-	// update msg stats and get global tally
-	totalIncluded, totalSuccess, totalFailed := 0, 0, 0
-	totalSent := len(sentTxs)
-	avgGasPerTx := 0.0
-	for _, blockReceipts := range receipts {
-		for _, receipt := range blockReceipts {
-			var msgType loadtesttypes.MsgType
-			if receipt.ContractAddress.Cmp(common.Address{}) == 0 {
-				msgType = types.ContractCall
-			} else {
-				msgType = types.ContractCreate
-			}
-			stat := msgStats[msgType]
-
-			// update gas values
-			stat.Gas.Max = max(stat.Gas.Max, int64(receipt.GasUsed)) //nolint:gosec // G115 likely not to happen
-			stat.Gas.Min = min(stat.Gas.Min, int64(receipt.GasUsed)) //nolint:gosec // G115 likely not to happen
-			stat.Gas.Total += int64(receipt.GasUsed)                 //nolint:gosec // G115 likely not to happen
-
-			// inclusion and statuses.
-			stat.Transactions.TotalIncluded++
-			totalIncluded++
-			if receipt.Status == gethtypes.ReceiptStatusSuccessful {
-				totalSuccess++
-				stat.Transactions.Successful++
-			} else {
-				totalFailed++
-				stat.Transactions.Failed++
-			}
-
-			// gas average
-			stat.Gas.Average = stat.Gas.Total / int64(stat.Transactions.TotalIncluded)
-			avgGasPerTx += (float64(receipt.GasUsed) - avgGasPerTx) / float64(totalIncluded)
-			msgStats[msgType] = stat
-		}
-	}
-
-	// calculate statistics for ALL txs by type. (totals)
-	// here we are using transactions from the blocks to update each msg type's statistics.
-	avgGasUtilization := 0.0
-	for i, blockStat := range blockStats {
-		// rolling average of gas utilization.
-		avgGasUtilization += (blockStat.GasUtilization - avgGasUtilization) / float64(i+1)
-	}
-
-	// timings / tps.
-	startTime := blockStats[0].Timestamp
-	endTime := blockStats[len(blockStats)-1].Timestamp
-	runtime := endTime.Sub(startTime)
-	tps := float64(totalIncluded) / runtime.Seconds()
-
-	// final results.
-	result := &loadtesttypes.LoadTestResult{
-		Overall: loadtesttypes.OverallStats{
-			TotalTransactions:         totalSent,
-			TotalIncludedTransactions: totalIncluded,
-			SuccessfulTransactions:    totalSuccess,
-			FailedTransactions:        totalFailed,
-			AvgBlockGasUtilization:    avgGasUtilization,
-			AvgGasPerTransaction:      int64(avgGasPerTx),
-			Runtime:                   runtime,
-			StartTime:                 startTime,
-			EndTime:                   endTime,
-			BlocksProcessed:           len(blockStats),
-			TPS:                       tps,
-		},
-		ByMessage: msgStats,
-		ByNode:    nil, // TODO: we aren't differentiating on node at the moment. not supported.
-		ByBlock:   blockStats,
-	}
-
-	return result, nil
+	// blockStats, err := trimBlocks(blockStats)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to trim blocks: %w", err)
+	// }
+	//
+	// logger.Info("analyzing blocks...", zap.Int("num_blocks", len(blockStats)))
+	// msgStats := make(map[loadtesttypes.MsgType]loadtesttypes.MessageStats)
+	// totalSentByType := calculateTotalSentByType(sentTxs)
+	// // update each msgType's total sent transactions
+	// for msgType, totalSent := range totalSentByType {
+	// 	stat := msgStats[msgType]
+	// 	stat.Transactions.TotalSent = int(totalSent) //nolint:gosec // G115: overflow unlikely in practice
+	// 	stat.Gas.Min = math.MaxInt64                 // sentinel values for next step
+	// 	msgStats[msgType] = stat
+	// }
+	//
+	// // update msg stats and get global tally
+	// totalIncluded, totalSuccess, totalFailed := 0, 0, 0
+	// totalSent := len(sentTxs)
+	// avgGasPerTx := 0.0
+	// for _, blockReceipts := range receipts {
+	// 	for _, receipt := range blockReceipts {
+	// 		var msgType loadtesttypes.MsgType
+	// 		if receipt.ContractAddress.Cmp(common.Address{}) == 0 {
+	// 			msgType = types.ContractCall
+	// 		} else {
+	// 			msgType = types.ContractCreate
+	// 		}
+	// 		stat := msgStats[msgType]
+	//
+	// 		// update gas values
+	// 		stat.Gas.Max = max(stat.Gas.Max, int64(receipt.GasUsed)) //nolint:gosec // G115 likely not to happen
+	// 		stat.Gas.Min = min(stat.Gas.Min, int64(receipt.GasUsed)) //nolint:gosec // G115 likely not to happen
+	// 		stat.Gas.Total += int64(receipt.GasUsed)                 //nolint:gosec // G115 likely not to happen
+	//
+	// 		// inclusion and statuses.
+	// 		stat.Transactions.TotalIncluded++
+	// 		totalIncluded++
+	// 		if receipt.Status == gethtypes.ReceiptStatusSuccessful {
+	// 			totalSuccess++
+	// 			stat.Transactions.Successful++
+	// 		} else {
+	// 			totalFailed++
+	// 			stat.Transactions.Failed++
+	// 		}
+	//
+	// 		// gas average
+	// 		stat.Gas.Average = stat.Gas.Total / int64(stat.Transactions.TotalIncluded)
+	// 		avgGasPerTx += (float64(receipt.GasUsed) - avgGasPerTx) / float64(totalIncluded)
+	// 		msgStats[msgType] = stat
+	// 	}
+	// }
+	//
+	// // calculate statistics for ALL txs by type. (totals)
+	// // here we are using transactions from the blocks to update each msg type's statistics.
+	// avgGasUtilization := 0.0
+	// for i, blockStat := range blockStats {
+	// 	// rolling average of gas utilization.
+	// 	avgGasUtilization += (blockStat.GasUtilization - avgGasUtilization) / float64(i+1)
+	// }
+	//
+	// // timings / tps.
+	// startTime := blockStats[0].Timestamp
+	// endTime := blockStats[len(blockStats)-1].Timestamp
+	// runtime := endTime.Sub(startTime)
+	// tps := float64(totalIncluded) / runtime.Seconds()
+	//
+	// // final results.
+	// result := &loadtesttypes.LoadTestResult{
+	// 	Overall: loadtesttypes.OverallStats{
+	// 		TotalTransactions:         totalSent,
+	// 		TotalIncludedTransactions: totalIncluded,
+	// 		SuccessfulTransactions:    totalSuccess,
+	// 		FailedTransactions:        totalFailed,
+	// 		AvgBlockGasUtilization:    avgGasUtilization,
+	// 		AvgGasPerTransaction:      int64(avgGasPerTx),
+	// 		Runtime:                   runtime,
+	// 		StartTime:                 startTime,
+	// 		EndTime:                   endTime,
+	// 		BlocksProcessed:           len(blockStats),
+	// 		TPS:                       tps,
+	// 	},
+	// 	ByMessage: msgStats,
+	// 	ByNode:    nil, // TODO: we aren't differentiating on node at the moment. not supported.
+	// 	ByBlock:   blockStats,
+	// }
+	//
+	// return result, nil
+	return &loadtesttypes.LoadTestResult{}, nil
 }
 
 func buildBlockStats(block *gethtypes.Block, receipts gethtypes.Receipts) loadtesttypes.BlockStat {
