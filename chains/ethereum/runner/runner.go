@@ -403,6 +403,7 @@ loop:
 	// we pass in 0 for the numOfBlockRequested, because we are not running a block based loadtest.
 	// The collector understands that 0 means we are on a time interval loadtest.
 	collectorStartTime := time.Now()
+	time.Sleep(15 * time.Minute)
 	collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, r.clients)
 	if err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to collect metrics: %w", err)
@@ -499,6 +500,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 		r.waitForEmptyMempool(ctx, 1*time.Minute)
 
 		collectorStartTime := time.Now()
+		time.Sleep(15 * time.Minute)
 		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, r.clients)
 		if err != nil {
 			return loadtesttypes.LoadTestResult{Error: err.Error()}, fmt.Errorf("failed to collect metrics: %w", err)
