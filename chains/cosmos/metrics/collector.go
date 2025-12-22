@@ -12,7 +12,6 @@ import (
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
 	"github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
-	logging "github.com/skip-mev/catalyst/chains/log"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"go.uber.org/zap"
 )
@@ -31,9 +30,8 @@ type Collector struct {
 }
 
 // NewCollector creates a new metrics collector
-func NewCollector() Collector {
-	logger, _ := logging.DefaultLogger()
-	return Collector{
+func NewCollector(logger *zap.Logger) *Collector {
+	return &Collector{
 		txsByBlock:        make(map[int64][]types.SentTx),
 		txsByNode:         make(map[string][]types.SentTx),
 		txsByMsgType:      make(map[loadtesttypes.MsgType][]types.SentTx),

@@ -64,11 +64,11 @@ func CloseLogFile() {
 	}
 }
 
-func DefaultLogger(options ...zap.Option) (*zap.Logger, error) {
+func DefaultLogger(devLogging bool, options ...zap.Option) (*zap.Logger, error) {
 	var encoder zapcore.Encoder
 	var logLevel zapcore.Level
 
-	if os.Getenv("DEV_LOGGING") == "true" {
+	if devLogging {
 		encoderConfig := zap.NewDevelopmentEncoderConfig()
 		encoder = zapcore.NewConsoleEncoder(encoderConfig)
 		logLevel = zap.DebugLevel
@@ -102,26 +102,19 @@ func DefaultLogger(options ...zap.Option) (*zap.Logger, error) {
 	return logger, nil
 }
 
-func WithDefaultLogger(ctx context.Context, options ...zap.Option) (context.Context, error) {
-	logger, err := DefaultLogger(options...)
-	if err != nil {
-		return ctx, err
-	}
-	return WithLogger(ctx, logger), nil
-}
-
 func WithLogger(ctx context.Context, logger *zap.Logger) context.Context {
 	return context.WithValue(ctx, loggerContextKey{}, logger)
 }
 
 func FromContext(ctx context.Context) *zap.Logger {
 	logger, ok := ctx.Value(loggerContextKey{}).(*zap.Logger)
-	if !ok {
-		var err error
-		logger, err = DefaultLogger()
-		if err != nil {
-			return zap.NewNop()
-		}
+	if ok {
+		return logger
+	}
+
+	logger, err := DefaultLogger(false)
+	if err != nil {
+		return zap.NewNop()
 	}
 
 	return logger

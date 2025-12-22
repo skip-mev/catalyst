@@ -42,7 +42,7 @@ type Runner struct {
 	totalTxsPerBlock   int
 	mu                 sync.Mutex
 	numBlocksProcessed int
-	collector          metrics.Collector
+	collector          *metrics.Collector
 	logger             *zap.Logger
 	sentTxs            []inttypes.SentTx
 	sentTxsMu          sync.RWMutex
@@ -56,7 +56,7 @@ type Runner struct {
 
 // NewRunner creates a new load test runner for a given spec
 func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
-	logger, _ := zap.NewDevelopment()
+	logger := logging.FromContext(ctx)
 	chainCfg := spec.ChainCfg.(*inttypes.ChainConfig)
 
 	if err := spec.Validate(); err != nil {
@@ -107,8 +107,8 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		spec:           spec,
 		clients:        clients,
 		wallets:        wallets,
-		collector:      metrics.NewCollector(),
-		logger:         logging.FromContext(ctx),
+		collector:      metrics.NewCollector(logger),
+		logger:         logger,
 		sentTxs:        make([]inttypes.SentTx, 0),
 		accountNumbers: make(map[string]uint64),
 		walletNonces:   make(map[string]uint64),
@@ -535,7 +535,7 @@ func (r *Runner) handleNonceMismatch(walletAddress string, nonce uint64, rawLog 
 }
 
 func (r *Runner) GetCollector() *metrics.Collector {
-	return &r.collector
+	return r.collector
 }
 
 func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {

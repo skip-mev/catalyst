@@ -7,66 +7,93 @@ import (
 	"os"
 	"strings"
 
+	"github.com/pkg/errors"
 	"github.com/skip-mev/catalyst/chains"
 	logging "github.com/skip-mev/catalyst/chains/log"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	"github.com/skip-mev/catalyst/chains/types"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
 
+type Env struct {
+	DevLogging bool
+}
+
+type Args struct {
+	ConfigPath string
+}
+
+var errFailed = errors.New("failure")
+
 func main() {
-	logger, _ := logging.DefaultLogger()
+	var (
+		env  = parseEnv()
+		args = parseArgs()
+		ctx  = context.Background()
+	)
+
+	logger, _ := logging.DefaultLogger(env.DevLogging)
 	defer logging.CloseLogFile()
 
-	configPath := flag.String("config", "", "Path to load test configuration file")
-	flag.Parse()
+	ctx = logging.WithLogger(ctx, logger)
 
-	if *configPath == "" {
-		saveConfigError("config file path is required", logger)
-		logger.Fatal("config file path is required")
+	exitIfErr := func(err error, message string) {
+		if err == nil {
+			return
+		}
+
+		err = errors.Wrap(err, message)
+		saveConfigError(err, logger)
+		logger.Fatal("Failure", zap.Error(err))
 	}
 
-	data, err := os.ReadFile(*configPath)
-	if err != nil {
-		saveConfigError("failed to read config file", logger)
-		logger.Fatal("failed to read config file", zap.Error(err))
+	if args.ConfigPath == "" {
+		exitIfErr(errFailed, "config file path is required")
 	}
+
+	data, err := os.ReadFile(args.ConfigPath)
+	exitIfErr(err, "failed to read config file")
 
 	// unmarshal into the single shared spec (with custom UnmarshalYAML).
-	var spec loadtesttypes.LoadTestSpec
-	if err := yaml.Unmarshal(data, &spec); err != nil {
-		saveConfigError("failed to parse config file", logger)
-		logger.Fatal("failed to parse config file", zap.Error(err))
-	}
-
-	if err := spec.Validate(); err != nil {
-		saveConfigError("failed to validate config file: "+err.Error(), logger)
-		logger.Fatal("failed to validate config file", zap.Error(err))
-	}
+	var spec types.LoadTestSpec
+	err = yaml.Unmarshal(data, &spec)
+	exitIfErr(err, "failed to parse config file")
+	exitIfErr(spec.Validate(), "failed to validate config file")
 
 	kind := strings.ToLower(strings.TrimSpace(spec.Kind))
 	if kind == "" {
-		saveConfigError("config is missing required field 'kind'", logger)
-		logger.Fatal("config is missing required field 'kind'")
+		exitIfErr(errFailed, "config is missing required field 'kind'")
 	}
-
-	ctx := context.Background()
 
 	test, err := chains.NewLoadTest(ctx, logger, spec)
-	if err != nil {
-		saveConfigError(fmt.Sprintf("failed to create %s test. error: %s", kind, err), logger)
-		logger.Fatal("failed to create load test", zap.Error(err))
-	}
+	exitIfErr(err, fmt.Sprintf("failed to create %s test", kind))
 
 	if _, err = test.Run(ctx, logger); err != nil {
 		logger.Fatal("failed to run load test", zap.Error(err))
 	}
 }
 
-func saveConfigError(err string, logger *zap.Logger) {
-	if saveErr := chains.SaveResults(loadtesttypes.LoadTestResult{
-		Error: err,
-	}, logger); saveErr != nil {
-		logger.Fatal("failed to save results", zap.Error(saveErr))
+func parseEnv() Env {
+	return Env{
+		DevLogging: os.Getenv("DEV_LOGGING") == "true",
+	}
+}
+
+func parseArgs() Args {
+	configPath := flag.String("config", "", "Path to load test configuration file")
+	flag.Parse()
+
+	return Args{
+		ConfigPath: *configPath,
+	}
+}
+
+func saveConfigError(err error, logger *zap.Logger) {
+	out := types.LoadTestResult{
+		Error: err.Error(),
+	}
+
+	if errSave := chains.SaveResults(out, logger); errSave != nil {
+		logger.Error("failed to save results", zap.Error(errSave))
 	}
 }
