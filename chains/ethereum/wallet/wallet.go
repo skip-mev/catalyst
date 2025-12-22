@@ -37,7 +37,7 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 	}
 
 	if spec.Cache.ReadWalletsFrom != "" {
-		wallets, err := ReadWalletsFromCache(spec.Cache.ReadWalletsFrom, clients)
+		wallets, err := ReadWalletsFromCache(spec.Cache.ReadWalletsFrom, clients, spec.NumWallets)
 		if err != nil {
 			return nil, fmt.Errorf("reading wallets from cache at %s: %w", spec.Cache.ReadWalletsFrom, err)
 		}
@@ -99,7 +99,7 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 	return ws, nil
 }
 
-func ReadWalletsFromCache(name string, clients []*ethclient.Client) ([]*InteractingWallet, error) {
+func ReadWalletsFromCache(name string, clients []*ethclient.Client, limit int) ([]*InteractingWallet, error) {
 	bz, err := os.ReadFile(name)
 	if err != nil {
 		return nil, fmt.Errorf("could not read cache file %s: %w", name, err)
@@ -108,6 +108,10 @@ func ReadWalletsFromCache(name string, clients []*ethclient.Client) ([]*Interact
 	var wallets []*InteractingWallet
 	if err := json.Unmarshal(bz, &wallets); err != nil {
 		return nil, fmt.Errorf("unmarshalling wallets: %w", err)
+	}
+
+	if limit > 0 && limit < len(wallets) {
+		wallets = wallets[:limit]
 	}
 
 	for i, wallet := range wallets {
