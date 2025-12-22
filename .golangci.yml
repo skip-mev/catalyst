@@ -1,6 +1,37 @@
+# Reference:
+# https://github.com/golangci/golangci-lint/blob/a9caef01ab7f84e049e4818230b34f5d2fe025b0/.golangci.reference.yml
 version: "2"
+
 run:
+  go: "1.24"
+  timeout: 30m
   tests: true
+
+# https://golangci-lint.run/usage/formatters
+formatters:
+  enable: [gci, gofumpt, goimports]
+  settings:
+    gci:
+      sections:
+          - standard
+          - default
+          - blank
+          - dot
+        # todo: ideally should be the following:
+        # - standard
+        # - default
+        # - prefix(github.com/skip-mev/catalyst)
+      custom-order: true
+  exclusions:
+    generated: strict
+    paths:
+      - ".*\\.pb\\.go$"
+      - .git
+      - .github
+      - .idea
+      - .vscode
+
+# https://golangci-lint.run/usage/linters
 linters:
   default: none
   enable:
@@ -77,32 +108,21 @@ linters:
         text: don't use an underscore in package name
       - linters:
           - staticcheck
-        text: 'ST1003:'
+        text: "ST1003:"
       - linters:
           - staticcheck
-        text: 'ST1016:'
+        text: "ST1016:"
       - linters:
           - staticcheck
         path: migrations
-        text: 'SA1019:'
+        text: "SA1019:"
       - linters:
           - staticcheck
         path: ^tests/integration/
       - linters:
           - stylecheck
-        text: 'ST1001:'
+        text: "ST1001:"
+
 issues:
-  max-issues-per-linter: 10000
-  max-same-issues: 10000
-formatters:
-  enable:
-    - gci
-    - gofumpt
-  settings:
-    gci:
-      sections:
-        - standard
-        - default
-        - blank
-        - dot
-      custom-order: true
+  max-issues-per-linter: 50
+  max-same-issues: 50
