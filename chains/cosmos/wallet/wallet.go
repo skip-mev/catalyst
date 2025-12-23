@@ -30,7 +30,7 @@ func NewInteractingWallet(privKey cryptotypes.PrivKey, bech32Prefix string, clie
 	}
 }
 
-func GetTxResponse(ctx context.Context, client types.ChainI, txHash string) (*sdk.TxResponse, error) {
+func GetTxResponse(_ context.Context, client types.ChainI, txHash string) (*sdk.TxResponse, error) {
 	cometClient := client.GetCometClient()
 
 	clientCtx := sdkclient.Context{}.
@@ -48,7 +48,7 @@ func GetTxResponse(ctx context.Context, client types.ChainI, txHash string) (*sd
 
 // CreateSignedTx creates and signs a transaction
 func (w *InteractingWallet) CreateSignedTx(
-	ctx context.Context,
+	_ context.Context,
 	client types.ChainI,
 	gas uint64,
 	fees sdk.Coins,

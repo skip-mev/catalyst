@@ -136,7 +136,7 @@ func ReadWalletsFromCache(name string, clients []*ethclient.Client, limit int) (
 }
 
 func WriteWalletsToCache(name string, wallets []*InteractingWallet) error {
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o777)
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return fmt.Errorf("could not open cache file %s: %w", name, err)
 	}

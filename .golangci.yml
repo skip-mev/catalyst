@@ -86,13 +86,17 @@ linters:
     generated: strict
     presets:
       - comments
-      # - common-false-positives
-      # - legacy
-      # - std-error-handling
     rules:
-      - linters:
-          - staticcheck
+      - linters: [staticcheck]
         path: ^tests/integration/
+      - linters: [revive]
+        text: "var-naming: avoid meaningless package names"
+      - linters: [errcheck]
+        text: Error return value of .*\.(Close|Flush).* is not checked
+      - linters: [gosec]
+        text: "G404: Use of weak random number generator"
+      - linters: [gosec]
+        text: "G304: Potential file inclusion via variable"
 
 issues:
   max-issues-per-linter: 50

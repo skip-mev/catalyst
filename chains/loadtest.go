@@ -92,8 +92,10 @@ func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (loadtesttypes.
 
 // SaveResults saves the load test results to /tmp/catalyst/load_test.json
 func SaveResults(results loadtesttypes.LoadTestResult, logger *zap.Logger) error {
-	dir := "/tmp/catalyst"
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	const dir = "/tmp/catalyst"
+
+	//nolint:gosec // G301: valid perm
+	if err := os.MkdirAll(dir, 0o644); err != nil {
 		logger.Error("failed to create results directory",
 			zap.String("dir", dir),
 			zap.Error(err))

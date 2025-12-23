@@ -85,9 +85,9 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 					zap.Uint64("height", block.Number.Uint64()),
 					zap.Uint64("num_blocks_processed", r.blocksProcessed),
 				)
-				if r.blocksProcessed >= uint64(
-					r.spec.NumOfBlocks,
-				) { //nolint:gosec // G115: overflow unlikely in practice
+
+				//nolint:gosec // G115: overflow unlikely in practice
+				if r.blocksProcessed >= uint64(r.spec.NumOfBlocks) {
 					endingBlock = block.Number.Uint64()
 					r.logger.Info("load test completed - number of blocks desired reached",
 						zap.Uint64("blocks", r.blocksProcessed))

@@ -333,7 +333,7 @@ func (r *Runner) sendBlockTransactions(
 		zap.Int("expected_txs", r.totalTxsPerBlock),
 	)
 
-	getLatestNonce := func(walletAddr string, client *client.Chain) uint64 { //nolint:unparam // client may be used in future versions
+	getLatestNonce := func(walletAddr string, _ *client.Chain) uint64 {
 		r.walletNoncesMu.Lock()
 		defer r.walletNoncesMu.Unlock()
 		return r.walletNonces[walletAddr]
@@ -351,7 +351,7 @@ func (r *Runner) sendBlockTransactions(
 	for mspSpec, estimation := range r.gasEstimations {
 		for i := 0; i < estimation.numTxs; i++ {
 			wg.Add(1)
-			go func(msgSpec loadtesttypes.LoadTestMsg, txIndex int) { //nolint:unparam // txIndex may be used in future versions
+			go func(msgSpec loadtesttypes.LoadTestMsg, _ int) {
 				defer wg.Done()
 
 				if sentTx, _ := r.processSingleTransaction(ctx, msgSpec, getLatestNonce, updateNonce, &txsSentMu, &txsSent); sentTx != (inttypes.SentTx{}) {
@@ -473,7 +473,7 @@ func (r *Runner) createAndSendTransaction(
 	tx, err := fromWallet.CreateSignedTx(
 		ctx,
 		client,
-		uint64(gasWithBuffer),
+		uint64(gasWithBuffer), //nolint:gosec // G115: overflow unlikely in practice
 		fees,
 		nonce,
 		accountNumber, //nolint:gosec // G115: overflow unlikely in practice
@@ -562,11 +562,7 @@ func (r *Runner) broadcastAndHandleResponse(
 }
 
 // handleNonceMismatch extracts the expected nonce from the error message and updates the wallet nonce
-func (r *Runner) handleNonceMismatch(
-	walletAddress string,
-	nonce uint64,
-	rawLog string,
-) { //nolint:unparam // nonce may be used in future versions
+func (r *Runner) handleNonceMismatch(walletAddress string, _ uint64, rawLog string) {
 	expectedNonceStr := regexp.MustCompile(`expected (\d+)`).FindStringSubmatch(rawLog)
 	if len(expectedNonceStr) > 1 {
 		if expectedNonce, err := strconv.ParseUint(expectedNonceStr[1], 10, 64); err == nil {

@@ -81,13 +81,13 @@ func (s *Signer) SignLegacyTx(tx *types.Transaction) (*types.Transaction, error)
 }
 
 func (s *Signer) SignerFn() bind.SignerFn {
-	return func(addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
+	return func(_ common.Address, tx *types.Transaction) (*types.Transaction, error) {
 		return s.SignTx(tx)
 	}
 }
 
 func (s *Signer) SignLegacyTxFn() bind.SignerFn {
-	return func(address common.Address, transaction *types.Transaction) (*types.Transaction, error) {
+	return func(_ common.Address, transaction *types.Transaction) (*types.Transaction, error) {
 		return s.SignLegacyTx(transaction)
 	}
 }
