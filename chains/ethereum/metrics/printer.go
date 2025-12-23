@@ -18,7 +18,10 @@ func PrintResults(result loadtesttypes.LoadTestResult) {
 	fmt.Printf("Total Included Txs: %d\n", result.Overall.TotalIncludedTransactions)
 	fmt.Printf("Successful Transactions: %d\n", result.Overall.SuccessfulTransactions)
 	fmt.Printf("Failed Transactions: %d\n", result.Overall.FailedTransactions)
-	fmt.Printf("Transactions Not Found: %d\n", result.Overall.TotalTransactions-result.Overall.TotalIncludedTransactions)
+	fmt.Printf(
+		"Transactions Not Found: %d\n",
+		result.Overall.TotalTransactions-result.Overall.TotalIncludedTransactions,
+	)
 	fmt.Printf("Average Gas Per Transaction: %d\n", result.Overall.AvgGasPerTransaction)
 	fmt.Printf("Average Block Gas Utilization: %.2f%%\n", result.Overall.AvgBlockGasUtilization*100)
 	fmt.Printf("Runtime: %s\n", result.Overall.Runtime)

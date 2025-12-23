@@ -10,12 +10,13 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zaptest"
+
 	loader "github.com/skip-mev/catalyst/chains/ethereum/contracts/load"
 	"github.com/skip-mev/catalyst/chains/ethereum/contracts/load/target"
 	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zaptest"
 )
 
 func TestApplyBaselinesToTxOpts(t *testing.T) {

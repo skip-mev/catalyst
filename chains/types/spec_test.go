@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
+
 	cosmostypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 func TestLoadTestSpec_Marshal_Unmarshal_Eth(t *testing.T) {

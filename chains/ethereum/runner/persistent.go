@@ -10,10 +10,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
-	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"go.uber.org/zap"
+
+	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
 const (
@@ -30,7 +31,9 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 
 	// We fund InitialWallets * 2^N wallets every block where N == the number of bootstrap loads sent.
 	// We therefore require (log(num_wallets) - log(initial_wallets))/log(2) bootstrap loads to full fund.
-	requiredBootstrapLoads := uint64((math.Log10(float64(r.spec.NumWallets))-math.Log10(float64(r.spec.InitialWallets)))/math.Log10(2)) + 1
+	requiredBootstrapLoads := uint64(
+		(math.Log10(float64(r.spec.NumWallets))-math.Log10(float64(r.spec.InitialWallets)))/math.Log10(2),
+	) + 1
 	var blocksProcessed uint64
 	// boostrapBackoff controls how many blocks are between load publication while we're still bootstrapping (funding wallets).
 	bootstrapBackoff := uint64(5)
@@ -96,7 +99,11 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 					continue
 				}
 				numTxsSubmitted := r.submitLoadPersistent(ctx, maxLoadSize, trackedTxs)
-				r.logger.Info("submitted transactions", zap.Uint64("height", block.Number.Uint64()), zap.Int("num_submitted", numTxsSubmitted))
+				r.logger.Info(
+					"submitted transactions",
+					zap.Uint64("height", block.Number.Uint64()),
+					zap.Int("num_submitted", numTxsSubmitted),
+				)
 			case <-timeout.C:
 				r.logger.Error("timed out waiting for a new block to be processed")
 				cancel()
@@ -118,7 +125,12 @@ func (r *Runner) recordBlockTxs(blk *gethtypes.Header, tracker *orderedmap.Order
 	blkNumber := rpc.BlockNumber(blk.Number.Int64())
 	receipts, err := r.clients[0].BlockReceipts(ctx, rpc.BlockNumberOrHash{BlockNumber: &blkNumber})
 	if err != nil {
-		r.logger.Error("failed querying block", zap.Int64("height", blk.Number.Int64()), zap.String("hash", blk.Hash().String()), zap.Error(err))
+		r.logger.Error(
+			"failed querying block",
+			zap.Int64("height", blk.Number.Int64()),
+			zap.String("hash", blk.Hash().String()),
+			zap.Error(err),
+		)
 	} else {
 		// Now iterate through the txs and see if we're tracking any. Record success and time on those.
 		for _, receipt := range receipts {
@@ -139,7 +151,11 @@ func (r *Runner) recordBlockTxs(blk *gethtypes.Header, tracker *orderedmap.Order
 	}
 }
 
-func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int, tracker *orderedmap.OrderedMap[common.Hash, time.Time]) int {
+func (r *Runner) submitLoadPersistent(
+	ctx context.Context,
+	maxLoadSize int,
+	tracker *orderedmap.OrderedMap[common.Hash, time.Time],
+) int {
 	// first we build the tx load. this constructs all the ethereum txs based in the spec.
 	r.logger.Info("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
 	var txs []*gethtypes.Transaction
@@ -192,7 +208,11 @@ func (r *Runner) submitLoadPersistent(ctx context.Context, maxLoadSize int, trac
 	return len(sentTxs)
 }
 
-func (r *Runner) buildLoadPersistent(msgSpec loadtesttypes.LoadTestMsg, maxLoadSize int, useBaseline bool) []*gethtypes.Transaction {
+func (r *Runner) buildLoadPersistent(
+	msgSpec loadtesttypes.LoadTestMsg,
+	maxLoadSize int,
+	useBaseline bool,
+) []*gethtypes.Transaction {
 	r.logger.Info("building load", zap.Int("maxLoadSize", maxLoadSize))
 	var txnLoad []*gethtypes.Transaction
 	var wg sync.WaitGroup

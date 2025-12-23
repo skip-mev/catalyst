@@ -15,13 +15,14 @@ import (
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 )
 
 type Runner struct {
@@ -92,7 +93,11 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 
 	var distribution txfactory.TxDistribution
 	if spec.InitialWallets > 0 && spec.InitialWallets < spec.NumWallets {
-		logger.Info("Using TxDistributionBootstrapped", zap.Int("initial_wallets", spec.InitialWallets), zap.Int("num_wallets", spec.NumWallets))
+		logger.Info(
+			"Using TxDistributionBootstrapped",
+			zap.Int("initial_wallets", spec.InitialWallets),
+			zap.Int("num_wallets", spec.NumWallets),
+		)
 		distribution = txfactory.NewTxDistributionBootstrapped(logger, wallets, spec.InitialWallets)
 	} else {
 		logger.Info("Using TxDistributionEven")
@@ -293,7 +298,11 @@ func (r *Runner) deployInitialContracts(ctx context.Context) error {
 func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
 	// when batches and interval are specified, user wants to run on a timed interval
 	if r.spec.NumBatches > 0 && r.spec.SendInterval > 0 {
-		r.logger.Info("Running loadtest on interval", zap.Duration("interval", r.spec.SendInterval), zap.Int("num_batches", r.spec.NumBatches))
+		r.logger.Info(
+			"Running loadtest on interval",
+			zap.Duration("interval", r.spec.SendInterval),
+			zap.Int("num_batches", r.spec.NumBatches),
+		)
 		return r.runOnInterval(ctx)
 	} else if r.spec.NumOfBlocks > 0 {
 		r.logger.Info("Running loadtest on blocks", zap.Int("blocks", r.spec.NumOfBlocks))

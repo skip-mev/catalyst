@@ -7,10 +7,11 @@ import (
 	"time"
 
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
+	"go.uber.org/zap"
+
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
 )
 
 // runOnBlocks runs the loadtest via block signal.
@@ -66,13 +67,27 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 				)
 				numTxsSubmitted, err := r.submitLoad(ctx)
 				if err != nil {
-					r.logger.Error("error during tx submission", zap.Error(err), zap.Uint64("height", block.Number.Uint64()))
+					r.logger.Error(
+						"error during tx submission",
+						zap.Error(err),
+						zap.Uint64("height", block.Number.Uint64()),
+					)
 				}
 
-				r.logger.Debug("submitted transactions", zap.Uint64("height", block.Number.Uint64()), zap.Int("num_submitted", numTxsSubmitted))
+				r.logger.Debug(
+					"submitted transactions",
+					zap.Uint64("height", block.Number.Uint64()),
+					zap.Int("num_submitted", numTxsSubmitted),
+				)
 
-				r.logger.Info("processed block", zap.Uint64("height", block.Number.Uint64()), zap.Uint64("num_blocks_processed", r.blocksProcessed))
-				if r.blocksProcessed >= uint64(r.spec.NumOfBlocks) { //nolint:gosec // G115: overflow unlikely in practice
+				r.logger.Info(
+					"processed block",
+					zap.Uint64("height", block.Number.Uint64()),
+					zap.Uint64("num_blocks_processed", r.blocksProcessed),
+				)
+				if r.blocksProcessed >= uint64(
+					r.spec.NumOfBlocks,
+				) { //nolint:gosec // G115: overflow unlikely in practice
 					endingBlock = block.Number.Uint64()
 					r.logger.Info("load test completed - number of blocks desired reached",
 						zap.Uint64("blocks", r.blocksProcessed))

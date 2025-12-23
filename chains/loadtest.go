@@ -8,10 +8,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"go.uber.org/zap"
+
 	cosmosrunner "github.com/skip-mev/catalyst/chains/cosmos/runner"
 	ethrunner "github.com/skip-mev/catalyst/chains/ethereum/runner"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
 )
 
 const (

@@ -16,9 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"go.uber.org/zap"
+
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
 )
 
 func getTxType(tx *gethtypes.Transaction) loadtesttypes.MsgType {
@@ -99,7 +100,10 @@ func waitForEmptyMempool(ctx context.Context, clients []*ethclient.Client, logge
 					err := client.CallContext(ctx, &res, "txpool_status")
 					if err == nil {
 						if res.Result.Pending == 0 {
-							logger.Debug("mempool clear. done waiting for mempool", zap.Duration("waited", time.Since(started)))
+							logger.Debug(
+								"mempool clear. done waiting for mempool",
+								zap.Duration("waited", time.Since(started)),
+							)
 							return
 						}
 					} else {

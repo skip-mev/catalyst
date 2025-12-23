@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"github.com/stretchr/testify/require"
+
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
 func TestTrimBlocks(t *testing.T) {
@@ -156,7 +157,12 @@ func TestTrimBlocks(t *testing.T) {
 			if tt.expectError {
 				require.Error(t, err, "Expected error but got none")
 				require.Nil(t, result, "Expected nil result when error occurs")
-				require.Contains(t, err.Error(), "no blocks with transactions", "Error message should contain expected text")
+				require.Contains(
+					t,
+					err.Error(),
+					"no blocks with transactions",
+					"Error message should contain expected text",
+				)
 			} else {
 				require.NoError(t, err, "Expected no error but got: %v", err)
 				require.Equal(t, len(tt.expected), len(result), "Length should match")

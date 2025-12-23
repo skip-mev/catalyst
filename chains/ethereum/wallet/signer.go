@@ -125,7 +125,14 @@ func (s *Signer) PublicKey() *ecdsa.PublicKey {
 }
 
 // CreateTransaction creates a new transaction with the given parameters
-func (s *Signer) CreateTransaction(to *common.Address, value *big.Int, gas uint64, gasPrice *big.Int, data []byte, nonce uint64) *types.Transaction {
+func (s *Signer) CreateTransaction(
+	to *common.Address,
+	value *big.Int,
+	gas uint64,
+	gasPrice *big.Int,
+	data []byte,
+	nonce uint64,
+) *types.Transaction {
 	return types.NewTx(&types.LegacyTx{
 		Nonce:    nonce,
 		GasPrice: gasPrice,
@@ -137,7 +144,14 @@ func (s *Signer) CreateTransaction(to *common.Address, value *big.Int, gas uint6
 }
 
 // CreateDynamicFeeTransaction creates a new EIP-1559 transaction with dynamic fees
-func (s *Signer) CreateDynamicFeeTransaction(to *common.Address, value *big.Int, gas uint64, gasFeeCap, gasTipCap *big.Int, data []byte, nonce uint64) *types.Transaction {
+func (s *Signer) CreateDynamicFeeTransaction(
+	to *common.Address,
+	value *big.Int,
+	gas uint64,
+	gasFeeCap, gasTipCap *big.Int,
+	data []byte,
+	nonce uint64,
+) *types.Transaction {
 	return types.NewTx(&types.DynamicFeeTx{
 		ChainID:   s.ChainID,
 		Nonce:     nonce,
