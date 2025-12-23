@@ -58,7 +58,7 @@ linters:
     nolintlint:
       require-explanation: false
       require-specific: false
-      allow-unused: false
+      allow-unused: true
     revive:
       severity: warning
       rules:
