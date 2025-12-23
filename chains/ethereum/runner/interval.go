@@ -7,10 +7,11 @@ import (
 	"time"
 
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
+	"go.uber.org/zap"
+
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
 )
 
 // runOnInterval starts the runner configured for interval load sending.
@@ -24,13 +25,26 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 	if r.spec.Cache.ReadTxsFrom != "" {
 		txs, err := ReadTxnsFromCache(r.spec.Cache.ReadTxsFrom, r.spec.NumBatches)
 		if err != nil {
-			return loadtesttypes.LoadTestResult{}, fmt.Errorf("reading txs from cache at %s with batch size %d: %w", r.spec.Cache.ReadTxsFrom, r.spec.NumBatches, err)
+			return loadtesttypes.LoadTestResult{}, fmt.Errorf(
+				"reading txs from cache at %s with batch size %d: %w",
+				r.spec.Cache.ReadTxsFrom,
+				r.spec.NumBatches,
+				err,
+			)
 		}
 		if len(txs) == 0 {
-			return loadtesttypes.LoadTestResult{}, fmt.Errorf("no txs in cache at %s with batch size %d", r.spec.Cache.ReadTxsFrom, r.spec.NumBatches)
+			return loadtesttypes.LoadTestResult{}, fmt.Errorf(
+				"no txs in cache at %s with batch size %d",
+				r.spec.Cache.ReadTxsFrom,
+				r.spec.NumBatches,
+			)
 		}
 		batchLoads = txs
-		r.logger.Info("loaded txs from cache", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.ReadTxsFrom))
+		r.logger.Info(
+			"loaded txs from cache",
+			zap.Int("num_batches", len(batchLoads)),
+			zap.String("file", r.spec.Cache.ReadTxsFrom),
+		)
 	}
 
 	if len(batchLoads) == 0 {
@@ -44,7 +58,12 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 
 	if len(batchLoads) > 0 && r.spec.Cache.WriteTxsTo != "" {
 		if err := WriteTxnsToCache(r.spec.Cache.WriteTxsTo, batchLoads); err != nil {
-			r.logger.Error("caching txs", zap.Error(err), zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.WriteTxsTo))
+			r.logger.Error(
+				"caching txs",
+				zap.Error(err),
+				zap.Int("num_batches", len(batchLoads)),
+				zap.String("file", r.spec.Cache.WriteTxsTo),
+			)
 		} else {
 			r.logger.Info("successfully cached txs", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.WriteTxsTo))
 		}

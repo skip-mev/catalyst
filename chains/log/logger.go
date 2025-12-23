@@ -21,6 +21,8 @@ var (
 
 func ensureLogDirectory() error {
 	logDir := "/tmp/catalyst"
+
+	//nolint:gosec // G302
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
@@ -37,6 +39,7 @@ func getLogFile() (*os.File, error) {
 		timestamp := time.Now().Format("2006-01-02-15-04-05")
 		logPath := filepath.Join("/tmp/catalyst", fmt.Sprintf("catalyst-%s.log", timestamp))
 
+		//nolint:gosec // G302
 		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
 			err = fmt.Errorf("failed to open log file: %w", err)
@@ -48,7 +51,7 @@ func getLogFile() (*os.File, error) {
 			<-c
 			if logFile != nil {
 				_ = logFile.Sync()
-				logFile.Close()
+				_ = logFile.Close()
 			}
 			os.Exit(0)
 		}()
@@ -60,7 +63,7 @@ func getLogFile() (*os.File, error) {
 func CloseLogFile() {
 	if logFile != nil {
 		_ = logFile.Sync()
-		logFile.Close()
+		_ = logFile.Close()
 	}
 }
 

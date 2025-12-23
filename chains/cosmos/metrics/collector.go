@@ -9,11 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
 	"github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
 )
 
 // Collector collects and processes metrics for load tests
@@ -41,7 +42,12 @@ func NewCollector(logger *zap.Logger) *Collector {
 }
 
 // GroupSentTxs groups sent txs by block, node, and message type
-func (m *Collector) GroupSentTxs(ctx context.Context, sentTxs []types.SentTx, clients []*client.Chain, startTime time.Time) {
+func (m *Collector) GroupSentTxs(
+	ctx context.Context,
+	sentTxs []types.SentTx,
+	clients []*client.Chain,
+	startTime time.Time,
+) {
 	m.startTime = startTime
 	m.endTime = time.Now()
 
@@ -398,7 +404,10 @@ func (m *Collector) PrintResults(result loadtesttypes.LoadTestResult) {
 	fmt.Printf("Runtime: %s\n", result.Overall.Runtime)
 	fmt.Printf("Blocks Processed: %d\n", result.Overall.BlocksProcessed)
 
-	tps, blockTimespan, firstBlockHeight, lastBlockHeight := m.calculateTPS(result.ByBlock, result.Overall.SuccessfulTransactions)
+	tps, blockTimespan, firstBlockHeight, lastBlockHeight := m.calculateTPS(
+		result.ByBlock,
+		result.Overall.SuccessfulTransactions,
+	)
 	if tps > 0 {
 		fmt.Printf("Transactions Per Second (TPS): %.2f\n", tps)
 		fmt.Printf("Block Timespan: %.2f seconds (from block %d to %d)\n",

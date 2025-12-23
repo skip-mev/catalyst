@@ -12,12 +12,13 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"github.com/skip-mev/catalyst/config"
-	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 )
 
 // ProcessResults processes the results of the load test.

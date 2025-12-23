@@ -8,12 +8,13 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
+	"gopkg.in/yaml.v3"
+
 	"github.com/skip-mev/catalyst/chains"
 	logging "github.com/skip-mev/catalyst/chains/log"
 	"github.com/skip-mev/catalyst/chains/types"
 	"github.com/skip-mev/catalyst/config"
-	"go.uber.org/zap"
-	"gopkg.in/yaml.v3"
 )
 
 var errFailed = errors.New("failure")

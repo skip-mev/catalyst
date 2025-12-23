@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
+
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
@@ -39,7 +40,14 @@ const (
 )
 
 var (
-	ValidMessages = []loadtesttypes.MsgType{MsgCreateContract, MsgWriteTo, MsgCrossContractCall, MsgCallDataBlast, MsgDeployERC20, MsgTransferERC0}
+	ValidMessages = []loadtesttypes.MsgType{
+		MsgCreateContract,
+		MsgWriteTo,
+		MsgCrossContractCall,
+		MsgCallDataBlast,
+		MsgDeployERC20,
+		MsgTransferERC0,
+	}
 
 	// LoaderDependencies are the msg types that require the presence of the Loader contract.
 	LoaderDependencies = []loadtesttypes.MsgType{MsgWriteTo, MsgCrossContractCall, MsgCallDataBlast}
@@ -67,12 +75,12 @@ type TxOpts struct {
 }
 
 type ChainConfig struct {
-	NodesAddresses []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
+	NodesAddresses []NodeAddress `yaml:"nodes_addresses"       json:"NodesAddresses"`
 	// MaxContracts is the maximum number of contracts that the loadtest runner will hold in memory.
 	// The contracts in memory are used for the other load test message types to interact with.
 	NumInitialContracts uint64 `yaml:"num_initial_contracts" json:"NumInitialContracts"`
 	// Static gas options for transactions.
-	TxOpts TxOpts `yaml:"tx_opts" json:"TxOpts"`
+	TxOpts TxOpts `yaml:"tx_opts"               json:"TxOpts"`
 }
 
 func init() {

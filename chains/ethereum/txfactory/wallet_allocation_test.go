@@ -3,11 +3,12 @@ package txfactory
 import (
 	"testing"
 
-	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
-	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+
+	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
+	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
 )
 
 func TestWalletAllocationMinimizesReuse(t *testing.T) {

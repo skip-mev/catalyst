@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
 )
 

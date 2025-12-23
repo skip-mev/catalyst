@@ -19,11 +19,12 @@ import (
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/skip-mev/catalyst/chains/cosmos/types"
-	logging "github.com/skip-mev/catalyst/chains/log"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/skip-mev/catalyst/chains/cosmos/types"
+	logging "github.com/skip-mev/catalyst/chains/log"
 )
 
 var _ types.ChainI = (*Chain)(nil)
@@ -100,7 +101,12 @@ func (c *Chain) SubscribeToBlocks(ctx context.Context, gasLimit int64, handler t
 	return c.processBlockEvents(ctx, eventCh, gasLimit, handler)
 }
 
-func (c *Chain) processBlockEvents(ctx context.Context, eventCh <-chan coretypes.ResultEvent, gasLimit int64, handler types.BlockHandler) error {
+func (c *Chain) processBlockEvents(
+	ctx context.Context,
+	eventCh <-chan coretypes.ResultEvent,
+	gasLimit int64,
+	handler types.BlockHandler,
+) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -117,7 +123,12 @@ func (c *Chain) processBlockEvents(ctx context.Context, eventCh <-chan coretypes
 	}
 }
 
-func (c *Chain) handleBlockEvent(_ context.Context, event coretypes.ResultEvent, maxGasLimit int64, handler types.BlockHandler) error {
+func (c *Chain) handleBlockEvent(
+	_ context.Context,
+	event coretypes.ResultEvent,
+	maxGasLimit int64,
+	handler types.BlockHandler,
+) error {
 	newBlockEvent, ok := event.Data.(tmtypes.EventDataNewBlock)
 	if !ok {
 		c.logger.Error("unexpected event type", zap.Any("Event data received", event.Data))

@@ -9,23 +9,20 @@ run:
 
 # https://golangci-lint.run/usage/formatters
 formatters:
-  enable: [gci, gofumpt, goimports]
+  enable: [gci, gofumpt, goimports, golines]
   settings:
     gci:
       sections:
-          - standard
-          - default
-          - blank
-          - dot
-        # todo: ideally should be the following:
-        # - standard
-        # - default
-        # - prefix(github.com/skip-mev/catalyst)
+        - standard
+        - default
+        - prefix(github.com/skip-mev/catalyst)
+        - blank
       custom-order: true
+    golines:
+      max-len: 120
   exclusions:
     generated: strict
     paths:
-      - ".*\\.pb\\.go$"
       - .git
       - .github
       - .idea
@@ -63,7 +60,6 @@ linters:
       severity: warning
       rules:
         - name: unused-parameter
-          disabled: true
         - name: blank-imports
         - name: context-as-argument
         - name: context-keys-type
@@ -87,41 +83,20 @@ linters:
         - name: unreachable-code
         - name: redefines-builtin-id
   exclusions:
-    generated: lax
+    generated: strict
     presets:
       - comments
-      - common-false-positives
-      - legacy
-      - std-error-handling
     rules:
-      - linters:
-          - revive
-        text: avoid meaningless package names
-      - linters:
-          - gosec
-        text: Use of weak random number generator
-      - linters:
-          - golint
-        text: comment on exported var
-      - linters:
-          - golint
-        text: don't use an underscore in package name
-      - linters:
-          - staticcheck
-        text: "ST1003:"
-      - linters:
-          - staticcheck
-        text: "ST1016:"
-      - linters:
-          - staticcheck
-        path: migrations
-        text: "SA1019:"
-      - linters:
-          - staticcheck
+      - linters: [staticcheck]
         path: ^tests/integration/
-      - linters:
-          - stylecheck
-        text: "ST1001:"
+      - linters: [revive]
+        text: "var-naming: avoid meaningless package names"
+      - linters: [errcheck]
+        text: Error return value of .*\.(Close|Flush).* is not checked
+      - linters: [gosec]
+        text: "G404: Use of weak random number generator"
+      - linters: [gosec]
+        text: "G304: Potential file inclusion via variable"
 
 issues:
   max-issues-per-linter: 50

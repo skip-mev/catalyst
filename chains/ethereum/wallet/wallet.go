@@ -19,8 +19,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"go.uber.org/zap"
+
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
 // InteractingWallet represents a wallet that can interact with the Ethereum chain
@@ -31,7 +32,11 @@ type InteractingWallet struct {
 
 // NewWalletsFromSpec builds wallets from the spec. It takes the `BaseMnemonic` and derives all keys from this mnemonic
 // by using an increasing bip passphrase. The passphrase value is an integer from [0,spec.NumWallets).
-func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, clients []*ethclient.Client) ([]*InteractingWallet, error) {
+func NewWalletsFromSpec(
+	logger *zap.Logger,
+	spec loadtesttypes.LoadTestSpec,
+	clients []*ethclient.Client,
+) ([]*InteractingWallet, error) {
 	if len(clients) == 0 {
 		return nil, fmt.Errorf("no clients provided")
 	}
@@ -44,7 +49,11 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 		if len(wallets) == 0 {
 			return nil, fmt.Errorf("no wallets found in cache at %s", spec.Cache.ReadWalletsFrom)
 		}
-		logger.Info("loaded wallets from cache", zap.Int("num_wallets", len(wallets)), zap.String("file", spec.Cache.ReadWalletsFrom))
+		logger.Info(
+			"loaded wallets from cache",
+			zap.Int("num_wallets", len(wallets)),
+			zap.String("file", spec.Cache.ReadWalletsFrom),
+		)
 		return wallets, nil
 	}
 
@@ -91,7 +100,12 @@ func NewWalletsFromSpec(logger *zap.Logger, spec loadtesttypes.LoadTestSpec, cli
 
 	if spec.Cache.WriteWalletsTo != "" {
 		if err := WriteWalletsToCache(spec.Cache.WriteWalletsTo, ws); err != nil {
-			logger.Error("caching wallets", zap.Int("num_wallets", len(ws)), zap.String("file", spec.Cache.WriteWalletsTo), zap.Error(err))
+			logger.Error(
+				"caching wallets",
+				zap.Int("num_wallets", len(ws)),
+				zap.String("file", spec.Cache.WriteWalletsTo),
+				zap.Error(err),
+			)
 		} else {
 			logger.Info("successfully cached wallets", zap.Int("num_wallets", len(ws)), zap.String("file", spec.Cache.WriteWalletsTo))
 		}
@@ -122,6 +136,7 @@ func ReadWalletsFromCache(name string, clients []*ethclient.Client, limit int) (
 }
 
 func WriteWalletsToCache(name string, wallets []*InteractingWallet) error {
+	//nolint:gosec // G302
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o777)
 	if err != nil {
 		return fmt.Errorf("could not open cache file %s: %w", name, err)
@@ -345,7 +360,11 @@ func (w *InteractingWallet) CreateAndSendDynamicFeeTx(ctx context.Context, to *c
 }
 
 // WaitForTxReceipt waits for a transaction to be included in a block and returns the receipt
-func (w *InteractingWallet) WaitForTxReceipt(ctx context.Context, txHash common.Hash, timeout time.Duration) (*types.Receipt, error) {
+func (w *InteractingWallet) WaitForTxReceipt(
+	ctx context.Context,
+	txHash common.Hash,
+	timeout time.Duration,
+) (*types.Receipt, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
