@@ -31,7 +31,7 @@ func getTxType(tx *gethtypes.Transaction) loadtesttypes.MsgType {
 
 func WriteTxnsToCache(name string, txs [][]*gethtypes.Transaction) error {
 	//nolint:gosec // G302: valid perm
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o655)
 	if err != nil {
 		return fmt.Errorf("could not open cache file %s: %w", name, err)
 	}

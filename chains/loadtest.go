@@ -95,7 +95,7 @@ func SaveResults(results loadtesttypes.LoadTestResult, logger *zap.Logger) error
 	const dir = "/tmp/catalyst"
 
 	//nolint:gosec // G301: valid perm
-	if err := os.MkdirAll(dir, 0o644); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		logger.Error("failed to create results directory",
 			zap.String("dir", dir),
 			zap.Error(err))
@@ -110,7 +110,9 @@ func SaveResults(results loadtesttypes.LoadTestResult, logger *zap.Logger) error
 	}
 
 	filePath := filepath.Join(dir, "load_test.json")
-	if err := os.WriteFile(filePath, jsonData, 0o600); err != nil {
+
+	//nolint:gosec // G306: valid perm
+	if err := os.WriteFile(filePath, jsonData, 0o755); err != nil {
 		logger.Error("failed to write results to file",
 			zap.String("path", filePath),
 			zap.Error(err))

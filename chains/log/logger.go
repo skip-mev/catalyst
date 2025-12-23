@@ -41,7 +41,7 @@ func getLogFile() (*os.File, error) {
 		logPath := filepath.Join("/tmp/catalyst", fmt.Sprintf("catalyst-%s.log", timestamp))
 
 		//nolint:gosec // G302: valid perm
-		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o655)
 		if err != nil {
 			err = fmt.Errorf("failed to open log file: %w", err)
 			return
