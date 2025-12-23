@@ -98,7 +98,7 @@ loop:
 		case <-crank.C:
 			// get the load, initialize result slice.
 			load := batchLoads[loadIndex]
-			r.logger.Info("Sending txs", zap.Int("num_txs", len(load)))
+			r.logger.Info("Sending txs", zap.Int("num_txs", len(load)), zap.Int("batch", loadIndex))
 
 			// send each tx in a go routine.
 			for i, tx := range load {

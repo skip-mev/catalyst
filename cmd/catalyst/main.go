@@ -11,23 +11,16 @@ import (
 	"github.com/skip-mev/catalyst/chains"
 	logging "github.com/skip-mev/catalyst/chains/log"
 	"github.com/skip-mev/catalyst/chains/types"
+	"github.com/skip-mev/catalyst/config"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
-
-type Env struct {
-	DevLogging bool
-}
-
-type Args struct {
-	ConfigPath string
-}
 
 var errFailed = errors.New("failure")
 
 func main() {
 	var (
-		env  = parseEnv()
+		env  = config.ParseEnv()
 		args = parseArgs()
 		ctx  = context.Background()
 	)
@@ -35,6 +28,7 @@ func main() {
 	logger, _ := logging.DefaultLogger(env.DevLogging)
 	defer logging.CloseLogFile()
 
+	ctx = config.WithEnv(ctx, env)
 	ctx = logging.WithLogger(ctx, logger)
 
 	exitIfErr := func(err error, message string) {
@@ -73,17 +67,11 @@ func main() {
 	}
 }
 
-func parseEnv() Env {
-	return Env{
-		DevLogging: os.Getenv("DEV_LOGGING") == "true",
-	}
-}
-
-func parseArgs() Args {
+func parseArgs() config.Config {
 	configPath := flag.String("config", "", "Path to load test configuration file")
 	flag.Parse()
 
-	return Args{
+	return config.Config{
 		ConfigPath: *configPath,
 	}
 }
