@@ -112,7 +112,7 @@ func SaveResults(results loadtesttypes.LoadTestResult, logger *zap.Logger) error
 	filePath := filepath.Join(dir, "load_test.json")
 
 	//nolint:gosec // G306: valid perm
-	if err := os.WriteFile(filePath, jsonData, 0o755); err != nil {
+	if err := os.WriteFile(filePath, jsonData, 0o600); err != nil {
 		logger.Error("failed to write results to file",
 			zap.String("path", filePath),
 			zap.Error(err))
