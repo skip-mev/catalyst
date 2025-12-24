@@ -78,3 +78,9 @@ The load test will output various metrics including:
 - Average block gas utilization
 - Number of blocks processed
 - Total runtime
+
+## Dependencies
+
+- `golangci-lint@v2.7.2`
+- `govulncheck`
+- [markdownlint-cli](https://github.com/igorshubovych/markdownlint-cli)

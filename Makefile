@@ -32,8 +32,4 @@ govulncheck: ## Run govulncheck
 	@echo "--> Running govulncheck"
 	@go run golang.org/x/vuln/cmd/govulncheck -test ./...
 
-deps: ## Download dependencies
-	brew install golangci-lint@v2.7.2
-	brew install markdownlint-cli
-
-.PHONY: help test build build-docker install fmt lint govulncheck lint-markdown deps
+.PHONY: help test build build-docker install fmt lint govulncheck lint-markdown
