@@ -93,11 +93,11 @@ type BroadcastError struct {
 type LoadTestMsg struct {
 	Weight          float64 `yaml:"weight"`
 	Type            MsgType `yaml:"type"`
-	NumMsgs         int     `yaml:"num_msgs,omitempty" json:"NumMsgs,omitempty"`                  // Number of messages to include in MsgArr
-	ContainedType   MsgType `yaml:"contained_type,omitempty" json:"ContainedType,omitempty"`      // Type of messages to include in MsgArr
+	NumMsgs         int     `yaml:"num_msgs,omitempty"          json:"NumMsgs,omitempty"`         // Number of messages to include in MsgArr
+	ContainedType   MsgType `yaml:"contained_type,omitempty"    json:"ContainedType,omitempty"`   // Type of messages to include in MsgArr
 	NumOfRecipients int     `yaml:"num_of_recipients,omitempty" json:"NumOfRecipients,omitempty"` // Number of recipients to include for MsgMultiSend
 	NumOfIterations int     `yaml:"num_of_iterations,omitempty" json:"NumOfIterations,omitempty"` // Number of iterations for Ethereum contract operations
-	CalldataSize    int     `yaml:"calldata_size,omitempty" json:"CalldataSize,omitempty"`        // Size of calldata for Ethereum large payload tests
+	CalldataSize    int     `yaml:"calldata_size,omitempty"     json:"CalldataSize,omitempty"`    // Size of calldata for Ethereum large payload tests
 }
 
 type MsgType string

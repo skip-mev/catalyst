@@ -11,6 +11,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
@@ -75,10 +76,10 @@ type SentTx struct {
 }
 
 type ChainConfig struct {
-	GasDenom       string        `yaml:"gas_denom" json:"GasDenom"`
-	Bech32Prefix   string        `yaml:"bech32_prefix" json:"Bech32Prefix"`
+	GasDenom       string        `yaml:"gas_denom"               json:"GasDenom"`
+	Bech32Prefix   string        `yaml:"bech32_prefix"           json:"Bech32Prefix"`
 	UnorderedTxs   bool          `yaml:"unordered_txs,omitempty" json:"UnorderedTxs,omitempty"`
-	NodesAddresses []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
+	NodesAddresses []NodeAddress `yaml:"nodes_addresses"         json:"NodesAddresses"`
 }
 
 func (s ChainConfig) Validate(mainCfg loadtesttypes.LoadTestSpec) error {

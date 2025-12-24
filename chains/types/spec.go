@@ -8,21 +8,21 @@ import (
 )
 
 type LoadTestSpec struct {
-	Name                 string        `yaml:"name" json:"name"`
-	Description          string        `yaml:"description" json:"description"`
-	Kind                 string        `yaml:"kind" json:"kind"` // "cosmos" | "evm" (discriminator)
-	ChainID              string        `yaml:"chain_id" json:"chain_id"`
-	NumOfTxs             int           `yaml:"num_of_txs,omitempty" json:"num_of_txs,omitempty"`
-	NumOfBlocks          int           `yaml:"num_of_blocks" json:"num_of_blocks"`
-	SendInterval         time.Duration `yaml:"send_interval" json:"send_interval"`
-	NumBatches           int           `yaml:"num_batches" json:"num_batches"`
-	BaseMnemonic         string        `yaml:"base_mnemonic" json:"base_mnemonic"`
-	NumWallets           int           `yaml:"num_wallets" json:"num_wallets"`
-	InitialWallets       int           `yaml:"initial_wallets" json:"initial_wallets"`
-	Msgs                 []LoadTestMsg `yaml:"msgs" json:"msgs"`
-	TxTimeout            time.Duration `yaml:"tx_timeout,omitempty" json:"tx_timeout,omitempty"`
-	ChainCfg             ChainConfig   `yaml:"-" json:"-"` // decoded via custom UnmarshalYAML
-	Cache                CacheConfig   `yaml:"cache_config" json:"cache_config"`
+	Name                 string        `yaml:"name"                   json:"name"`
+	Description          string        `yaml:"description"            json:"description"`
+	Kind                 string        `yaml:"kind"                   json:"kind"` // "cosmos" | "evm" (discriminator)
+	ChainID              string        `yaml:"chain_id"               json:"chain_id"`
+	NumOfTxs             int           `yaml:"num_of_txs,omitempty"   json:"num_of_txs,omitempty"`
+	NumOfBlocks          int           `yaml:"num_of_blocks"          json:"num_of_blocks"`
+	SendInterval         time.Duration `yaml:"send_interval"          json:"send_interval"`
+	NumBatches           int           `yaml:"num_batches"            json:"num_batches"`
+	BaseMnemonic         string        `yaml:"base_mnemonic"          json:"base_mnemonic"`
+	NumWallets           int           `yaml:"num_wallets"            json:"num_wallets"`
+	InitialWallets       int           `yaml:"initial_wallets"        json:"initial_wallets"`
+	Msgs                 []LoadTestMsg `yaml:"msgs"                   json:"msgs"`
+	TxTimeout            time.Duration `yaml:"tx_timeout,omitempty"   json:"tx_timeout,omitempty"`
+	ChainCfg             ChainConfig   `yaml:"-"                      json:"-"` // decoded via custom UnmarshalYAML
+	Cache                CacheConfig   `yaml:"cache_config"           json:"cache_config"`
 	PrometheusListenAddr string        `yaml:"prometheus_listen_addr" json:"prometheus_listen_addr"`
 }
 

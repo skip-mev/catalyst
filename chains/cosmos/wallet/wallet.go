@@ -11,6 +11,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	xauthsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
+
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
 	"github.com/skip-mev/catalyst/chains/cosmos/types"
 )
@@ -29,7 +30,7 @@ func NewInteractingWallet(privKey cryptotypes.PrivKey, bech32Prefix string, clie
 	}
 }
 
-func GetTxResponse(ctx context.Context, client types.ChainI, txHash string) (*sdk.TxResponse, error) {
+func GetTxResponse(_ context.Context, client types.ChainI, txHash string) (*sdk.TxResponse, error) {
 	cometClient := client.GetCometClient()
 
 	clientCtx := sdkclient.Context{}.
@@ -46,8 +47,17 @@ func GetTxResponse(ctx context.Context, client types.ChainI, txHash string) (*sd
 }
 
 // CreateSignedTx creates and signs a transaction
-func (w *InteractingWallet) CreateSignedTx(ctx context.Context, client types.ChainI, gas uint64, fees sdk.Coins, sequence,
-	accountNumber uint64, memo string, unordered bool, timeoutDuration time.Duration, msgs ...sdk.Msg,
+func (w *InteractingWallet) CreateSignedTx(
+	_ context.Context,
+	client types.ChainI,
+	gas uint64,
+	fees sdk.Coins,
+	sequence,
+	accountNumber uint64,
+	memo string,
+	unordered bool,
+	timeoutDuration time.Duration,
+	msgs ...sdk.Msg,
 ) (sdk.Tx, error) {
 	encodingConfig := client.GetEncodingConfig()
 

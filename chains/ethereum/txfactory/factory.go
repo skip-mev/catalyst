@@ -11,13 +11,14 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"go.uber.org/zap"
+
 	loader "github.com/skip-mev/catalyst/chains/ethereum/contracts/load"
 	"github.com/skip-mev/catalyst/chains/ethereum/contracts/load/target"
 	"github.com/skip-mev/catalyst/chains/ethereum/contracts/load/weth"
 	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
 )
 
 type TxDistribution interface {
@@ -100,7 +101,12 @@ func applyBaselinesToTxOpts(baselineTx *types.Transaction, txOpts *bind.Transact
 // UseBaseline can be specified if you want the tx to use the baseline gas values instead of estimating via network client.
 // This is useful for the runOnInterval loadtest, which builds all of its load up front. For heavy loads,
 // building with baselines speeds up load building by an extremely large order of magnitude.
-func (f *TxFactory) BuildTxs(msgSpec loadtesttypes.LoadTestMsg, fromWallet *ethwallet.InteractingWallet, nonce uint64, useBaseline bool) ([]*types.Transaction, error) {
+func (f *TxFactory) BuildTxs(
+	msgSpec loadtesttypes.LoadTestMsg,
+	fromWallet *ethwallet.InteractingWallet,
+	nonce uint64,
+	useBaseline bool,
+) ([]*types.Transaction, error) {
 	ctx := context.Background()
 	switch msgSpec.Type {
 	case ethtypes.MsgCreateContract:
@@ -169,7 +175,13 @@ func (f *TxFactory) GetNextSender() *ethwallet.InteractingWallet {
 	return f.txDistribution.GetNextSender()
 }
 
-func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *ethwallet.InteractingWallet, targets *int, nonce uint64, useBaseline bool) ([]*types.Transaction, error) {
+func (f *TxFactory) createMsgCreateContract(
+	ctx context.Context,
+	fromWallet *ethwallet.InteractingWallet,
+	targets *int,
+	nonce uint64,
+	useBaseline bool,
+) ([]*types.Transaction, error) {
 	var numTargets int
 	if targets != nil {
 		numTargets = *targets
@@ -221,7 +233,13 @@ func (f *TxFactory) createMsgCreateContract(ctx context.Context, fromWallet *eth
 	return append(targetDeployTxs, loaderDeployTx), nil
 }
 
-func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.InteractingWallet, iterations int, nonce uint64, useBaseline bool) (*types.Transaction, error) {
+func (f *TxFactory) createMsgWriteTo(
+	ctx context.Context,
+	fromWallet *ethwallet.InteractingWallet,
+	iterations int,
+	nonce uint64,
+	useBaseline bool,
+) (*types.Transaction, error) {
 	if iterations <= 0 {
 		iterations = 1
 	}
@@ -252,12 +270,23 @@ func (f *TxFactory) createMsgWriteTo(ctx context.Context, fromWallet *ethwallet.
 	}
 	tx, err := loaderInstance.TestStorageWrites(txOpts, big.NewInt(int64(iterations)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to build tx for %s at %s: %w", ethtypes.MsgWriteTo.String(), contractAddr.String(), err)
+		return nil, fmt.Errorf(
+			"failed to build tx for %s at %s: %w",
+			ethtypes.MsgWriteTo.String(),
+			contractAddr.String(),
+			err,
+		)
 	}
 	return tx, nil
 }
 
-func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *ethwallet.InteractingWallet, dataSize int, nonce uint64, useBaseline bool) (*types.Transaction, error) {
+func (f *TxFactory) createMsgCallDataBlast(
+	ctx context.Context,
+	fromWallet *ethwallet.InteractingWallet,
+	dataSize int,
+	nonce uint64,
+	useBaseline bool,
+) (*types.Transaction, error) {
 	if len(f.loaderAddresses) == 0 {
 		return nil, nil
 	}
@@ -292,12 +321,23 @@ func (f *TxFactory) createMsgCallDataBlast(ctx context.Context, fromWallet *ethw
 	}
 	tx, err := loaderInstance.TestLargeCalldata(txOpts, randomBytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build tx for %s at %s: %w", ethtypes.MsgCallDataBlast.String(), contractAddr.String(), err)
+		return nil, fmt.Errorf(
+			"failed to build tx for %s at %s: %w",
+			ethtypes.MsgCallDataBlast.String(),
+			contractAddr.String(),
+			err,
+		)
 	}
 	return tx, nil
 }
 
-func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *ethwallet.InteractingWallet, iterations int, nonce uint64, useBaseline bool) (*types.Transaction, error) {
+func (f *TxFactory) createMsgCrossContractCall(
+	ctx context.Context,
+	fromWallet *ethwallet.InteractingWallet,
+	iterations int,
+	nonce uint64,
+	useBaseline bool,
+) (*types.Transaction, error) {
 	// Default to 10 iterations if not specified
 	if iterations <= 0 {
 		iterations = 10
@@ -328,12 +368,22 @@ func (f *TxFactory) createMsgCrossContractCall(ctx context.Context, fromWallet *
 	}
 	tx, err := loaderInstance.TestCrossContractCalls(txOpts, big.NewInt(int64(iterations)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to build tx for %s at %s: %w", ethtypes.MsgCrossContractCall.String(), contractAddr.String(), err)
+		return nil, fmt.Errorf(
+			"failed to build tx for %s at %s: %w",
+			ethtypes.MsgCrossContractCall.String(),
+			contractAddr.String(),
+			err,
+		)
 	}
 	return tx, nil
 }
 
-func (f *TxFactory) createMsgDeployERC20(ctx context.Context, fromWallet *ethwallet.InteractingWallet, nonce uint64, useBaseline bool) (*types.Transaction, error) {
+func (f *TxFactory) createMsgDeployERC20(
+	ctx context.Context,
+	fromWallet *ethwallet.InteractingWallet,
+	nonce uint64,
+	useBaseline bool,
+) (*types.Transaction, error) {
 	txOpts := &bind.TransactOpts{
 		From:      fromWallet.Address(),
 		Signer:    fromWallet.SignerFnLegacy(),
@@ -355,7 +405,12 @@ func (f *TxFactory) createMsgDeployERC20(ctx context.Context, fromWallet *ethwal
 	return loaderDeployTx, nil
 }
 
-func (f *TxFactory) createMsgTransferERC20(ctx context.Context, fromWallet *ethwallet.InteractingWallet, nonce uint64, useBaseline bool) (*types.Transaction, error) {
+func (f *TxFactory) createMsgTransferERC20(
+	ctx context.Context,
+	fromWallet *ethwallet.InteractingWallet,
+	nonce uint64,
+	useBaseline bool,
+) (*types.Transaction, error) {
 	// Pick a random contract
 	contractAddr := f.wethAddresses[rand.Intn(len(f.wethAddresses))]
 
@@ -384,12 +439,22 @@ func (f *TxFactory) createMsgTransferERC20(ctx context.Context, fromWallet *ethw
 	}
 	tx, err := wethInstance.Transfer(txOpts, recipient, wad)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build tx for %s at %s: %w", ethtypes.MsgTransferERC0.String(), contractAddr.String(), err)
+		return nil, fmt.Errorf(
+			"failed to build tx for %s at %s: %w",
+			ethtypes.MsgTransferERC0.String(),
+			contractAddr.String(),
+			err,
+		)
 	}
 	return tx, nil
 }
 
-func (f *TxFactory) createMsgNativeTransferERC20(ctx context.Context, fromWallet *ethwallet.InteractingWallet, nonce uint64, useBaseline bool) (*types.Transaction, error) {
+func (f *TxFactory) createMsgNativeTransferERC20(
+	ctx context.Context,
+	fromWallet *ethwallet.InteractingWallet,
+	nonce uint64,
+	useBaseline bool,
+) (*types.Transaction, error) {
 	// Use optimal recipient selection to minimize reuse and prevent self-transfers
 	recipient := f.txDistribution.GetNextReceiver()
 
@@ -400,7 +465,11 @@ func (f *TxFactory) createMsgNativeTransferERC20(ctx context.Context, fromWallet
 	// and the call data constructed here will be the same.
 	wethInstance, err := weth.NewWethTransactor(f.nativeERC20PrecompileAddress, fromWallet.GetClient())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get erc20 contract instance at %s: %w", f.nativeERC20PrecompileAddress.String(), err)
+		return nil, fmt.Errorf(
+			"failed to get erc20 contract instance at %s: %w",
+			f.nativeERC20PrecompileAddress.String(),
+			err,
+		)
 	}
 	txOpts := &bind.TransactOpts{
 		From:      fromWallet.Address(),
@@ -417,7 +486,12 @@ func (f *TxFactory) createMsgNativeTransferERC20(ctx context.Context, fromWallet
 	}
 	tx, err := wethInstance.Transfer(txOpts, recipient, wad)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build tx for %s at %s: %w", ethtypes.MsgNativeTransferERC20.String(), f.nativeERC20PrecompileAddress.String(), err)
+		return nil, fmt.Errorf(
+			"failed to build tx for %s at %s: %w",
+			ethtypes.MsgNativeTransferERC20.String(),
+			f.nativeERC20PrecompileAddress.String(),
+			err,
+		)
 	}
 	return tx, nil
 }

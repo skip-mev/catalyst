@@ -28,7 +28,11 @@ func (s *Signer) FormattedAddress() string {
 	return sdk.MustBech32ifyAddressBytes(s.bech32Prefix, sdk.AccAddress(s.privKey.PubKey().Address()))
 }
 
-func (s *Signer) SignTx(signerData xauthsigning.SignerData, txBuilder client.TxBuilder, txConfig client.TxConfig) (signing.SignatureV2, error) {
+func (s *Signer) SignTx(
+	signerData xauthsigning.SignerData,
+	txBuilder client.TxBuilder,
+	txConfig client.TxConfig,
+) (signing.SignatureV2, error) {
 	return txclient.SignWithPrivKey(
 		context.Background(),
 		signing.SignMode(txConfig.SignModeHandler().DefaultMode()),

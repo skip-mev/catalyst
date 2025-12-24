@@ -9,9 +9,6 @@ import (
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
-	"github.com/skip-mev/catalyst/chains"
-	cosmoslttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"github.com/skip-mev/ironbird/petri/core/provider"
 	"github.com/skip-mev/ironbird/petri/core/provider/docker"
 	petritypes "github.com/skip-mev/ironbird/petri/core/types"
@@ -19,6 +16,10 @@ import (
 	"github.com/skip-mev/ironbird/petri/cosmos/node"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
+
+	"github.com/skip-mev/catalyst/chains"
+	cosmoslttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
 var (

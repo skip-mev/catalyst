@@ -4,8 +4,9 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
-	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	"go.uber.org/zap"
+
+	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
 )
 
 var _ TxDistribution = &TxDistributionBootstrapped{}

@@ -12,7 +12,7 @@ RUN mkdir -p /root/.cache/go-build
 RUN go env -w GOMODCACHE=/root/.cache/go-build
 
 COPY go.mod go.sum Makefile ./
-RUN --mount=type=cache,target=/root/.cache/go-build make deps
+RUN --mount=type=cache,target=/root/.cache/go-build go mod download
 
 COPY . .
 
@@ -24,6 +24,6 @@ RUN apk add --no-cache ca-certificates libc6-compat gcompat
 
 COPY --from=builder /app/wallets.json /usr/local/wallets.json
 COPY --from=builder /app/txs.gz /usr/local/txs.gz
-COPY --from=builder /app/build/loadtest /usr/local/bin/loadtest
+COPY --from=builder /app/build/catalyst /usr/local/bin/catalyst
 
-ENTRYPOINT ["loadtest", "-config"]
+ENTRYPOINT ["catalyst", "-config"]
