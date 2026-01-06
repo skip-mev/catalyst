@@ -8,18 +8,21 @@ import (
 	"net/http"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
 )
 
 type Runner struct {
@@ -47,7 +50,10 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 	chainCfg := spec.ChainCfg.(*inttypes.ChainConfig)
 	clients := make([]*ethclient.Client, 0, len(chainCfg.NodesAddresses))
 	wsClients := make([]*ethclient.Client, 0, len(chainCfg.NodesAddresses))
-	logger.Info("configuring runner")
+
+	start := time.Now()
+	logger.Info("Configuring runner")
+
 	for _, nodeAddress := range chainCfg.NodesAddresses {
 		tr := &http.Transport{
 			MaxConnsPerHost:     256,  // cap concurrency per host
@@ -87,25 +93,52 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 
 	var distribution txfactory.TxDistribution
 	if spec.InitialWallets > 0 && spec.InitialWallets < spec.NumWallets {
-		logger.Info("Using TxDistributionBootstrapped", zap.Int("initial_wallets", spec.InitialWallets), zap.Int("num_wallets", spec.NumWallets))
+		logger.Info(
+			"Using TxDistributionBootstrapped",
+			zap.Int("initial_wallets", spec.InitialWallets),
+			zap.Int("num_wallets", spec.NumWallets),
+		)
 		distribution = txfactory.NewTxDistributionBootstrapped(logger, wallets, spec.InitialWallets)
 	} else {
 		logger.Info("Using TxDistributionEven")
 		distribution = txfactory.NewTxDistributionEven(wallets)
 	}
 
-	txf := txfactory.NewTxFactory(logger, chainCfg.TxOpts, distribution)
-	nonces := sync.Map{}
-	for i, wallet := range wallets {
-		if i%10000 == 0 {
-			logger.Info("Initializing nonces for accounts", zap.Int("progress", i))
-		}
-		nonce, err := wallet.GetNonce(ctx)
-		if err != nil {
-			logger.Warn("Failed getting nonce for wallet setting to 0", zap.String("address",
-				wallet.Address().String()), zap.Error(err))
-		}
-		nonces.Store(wallet.Address(), nonce)
+	var (
+		nonces    = sync.Map{}
+		completed = atomic.Uint64{}
+		eg        = errgroup.Group{}
+	)
+
+	eg.SetLimit(16)
+
+	for i := range wallets {
+		wallet := wallets[i]
+
+		eg.Go(func() error {
+			c := completed.Load()
+			if c%10_000 == 0 {
+				logger.Info("Initializing nonces for accounts", zap.Uint64("progress", c))
+			}
+
+			nonce, err := wallet.GetNonce(ctx)
+			if err != nil {
+				logger.Warn(
+					"Failed getting nonce for wallet setting to 0",
+					zap.String("address", wallet.Address().String()),
+					zap.Error(err),
+				)
+			}
+
+			nonces.Store(wallet.Address(), nonce)
+			completed.Add(1)
+
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, fmt.Errorf("failed to initialize nonces: %w", err)
 	}
 
 	// Create sender to wallet mapping for consistent endpoint usage
@@ -114,26 +147,22 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		senderToWallet[w.Address()] = w
 	}
 
-	promMetrics := metrics.NewMetrics()
+	logger.Info("Runner construction complete", zap.Stringer("duration", time.Since(start)))
 
-	logger.Info("runner construction complete")
-
-	r := &Runner{
+	return &Runner{
 		logger:          logger,
 		clients:         clients,
 		wsClients:       wsClients,
 		spec:            spec,
 		chainConfig:     *chainCfg,
 		wallets:         wallets,
-		txFactory:       txf,
+		txFactory:       txfactory.NewTxFactory(logger, chainCfg.TxOpts, distribution),
 		sentTxs:         make([]*inttypes.SentTx, 0, 100),
 		blocksProcessed: 0,
 		nonces:          &nonces,
 		senderToWallet:  senderToWallet,
-		promMetrics:     promMetrics,
-	}
-
-	return r, nil
+		promMetrics:     metrics.NewMetrics(),
+	}, nil
 }
 
 // getWalletForTx returns the appropriate wallet for sending a transaction based on the sender address.
@@ -269,7 +298,11 @@ func (r *Runner) deployInitialContracts(ctx context.Context) error {
 func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
 	// when batches and interval are specified, user wants to run on a timed interval
 	if r.spec.NumBatches > 0 && r.spec.SendInterval > 0 {
-		r.logger.Info("Running loadtest on interval", zap.Duration("interval", r.spec.SendInterval), zap.Int("num_batches", r.spec.NumBatches))
+		r.logger.Info(
+			"Running loadtest on interval",
+			zap.Duration("interval", r.spec.SendInterval),
+			zap.Int("num_batches", r.spec.NumBatches),
+		)
 		return r.runOnInterval(ctx)
 	} else if r.spec.NumOfBlocks > 0 {
 		r.logger.Info("Running loadtest on blocks", zap.Int("blocks", r.spec.NumOfBlocks))

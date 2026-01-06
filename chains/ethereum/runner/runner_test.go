@@ -41,7 +41,12 @@ func TestTxCaching(t *testing.T) {
 
 	for i, batch := range cachedBatches {
 		for j, tx := range batch {
-			assert.Equal(t, originalBatches[i][j].Hash(), tx.Hash(), fmt.Sprintf("mismatch between tx in batch %d index %d", i, j))
+			assert.Equal(
+				t,
+				originalBatches[i][j].Hash(),
+				tx.Hash(),
+				fmt.Sprintf("mismatch between tx in batch %d index %d", i, j),
+			)
 		}
 	}
 }

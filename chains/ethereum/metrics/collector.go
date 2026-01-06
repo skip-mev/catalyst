@@ -12,40 +12,75 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
+	"github.com/skip-mev/catalyst/config"
 )
 
 // ProcessResults processes the results of the load test.
-func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.SentTx, startBlock, endBlock uint64, clients []*ethclient.Client) (*loadtesttypes.LoadTestResult, error) {
+func ProcessResults(
+	ctx context.Context,
+	logger *zap.Logger,
+	sentTxs []*types.SentTx,
+	startBlock, endBlock uint64,
+	clients []*ethclient.Client,
+) (*loadtesttypes.LoadTestResult, error) {
 	wg := sync.WaitGroup{}
 	blockStats := make([]loadtesttypes.BlockStat, endBlock-startBlock+1)
 	receipts := make(map[uint64]gethtypes.Receipts)
-	logger.Info("collecting metrics", zap.Uint64("starting_block", startBlock), zap.Uint64("ending_block", endBlock))
+
+	fetchReceiptsConcurrently := config.EnvFromContext(ctx).ConcurrentReceipts
+
+	logger.Info(
+		"Collecting metrics",
+		zap.Uint64("starting_block", startBlock),
+		zap.Uint64("ending_block", endBlock),
+		zap.Bool("concurrent_receipts", fetchReceiptsConcurrently),
+	)
+
 	// block stats. each go routine will query a block, get all receipts, and construct the block stats.
 	for blockNum := startBlock; blockNum <= endBlock; blockNum++ {
 		wg.Add(1)
+
+		//nolint:gosec // G115: overflow unlikely in practice
+		blockNumBig := big.NewInt(int64(blockNum))
+
 		go func() {
 			defer wg.Done()
+
+			start := time.Now()
+
 			client := clients[rand.Intn(len(clients))]
-			block, err := client.BlockByNumber(ctx, big.NewInt(int64(blockNum))) //nolint:gosec // G115: overflow unlikely in practice
+			block, err := client.BlockByNumber(ctx, blockNumBig)
 			if err != nil {
 				logger.Error("Error getting block by number", zap.Uint64("block_num", blockNum), zap.Error(err))
 				return
 			}
-			blockReceipts, err := getReceiptsForBlockTxs(ctx, block, client)
+
+			blockReceipts, err := getReceiptsForBlockTxs(ctx, block, client, fetchReceiptsConcurrently)
 			if err != nil {
 				logger.Error("Error getting receipts for block", zap.Uint64("block_num", blockNum), zap.Error(err))
 				return
 			}
+
 			if len(blockReceipts) > 0 {
 				receipts[blockReceipts[0].BlockNumber.Uint64()] = blockReceipts
 			}
 			blockStats[blockNum-startBlock] = buildBlockStats(block, blockReceipts)
+
+			logger.Info(
+				"Block collected",
+				zap.Uint64("block_num", blockNum),
+				zap.Int("receipts", len(blockReceipts)),
+				zap.String("duration", time.Since(start).String()),
+			)
 		}()
 	}
+
 	wg.Wait()
 
 	// remove any 0 tx blocks from the beginning and ends of block stats.
@@ -55,7 +90,7 @@ func ProcessResults(ctx context.Context, logger *zap.Logger, sentTxs []*types.Se
 		return nil, fmt.Errorf("failed to trim blocks: %w", err)
 	}
 
-	logger.Info("analyzing blocks...", zap.Int("num_blocks", len(blockStats)))
+	logger.Info("Analyzing blocks...", zap.Int("num_blocks", len(blockStats)))
 	msgStats := make(map[loadtesttypes.MsgType]loadtesttypes.MessageStats)
 	totalSentByType := calculateTotalSentByType(sentTxs)
 	// update each msgType's total sent transactions
@@ -170,16 +205,60 @@ func buildBlockStats(block *gethtypes.Block, receipts gethtypes.Receipts) loadte
 	return stats
 }
 
-func getReceiptsForBlockTxs(ctx context.Context, block *gethtypes.Block, client wallet.Client) ([]*gethtypes.Receipt, error) {
-	txs := block.Transactions()
-	receipts := make([]*gethtypes.Receipt, 0, len(txs))
-	for _, tx := range txs {
-		receipt, err := client.TransactionReceipt(ctx, tx.Hash())
-		if err != nil {
-			return nil, fmt.Errorf("error getting receipt for block %d: %w", block.Number().Uint64(), err)
+func getReceiptsForBlockTxs(
+	ctx context.Context,
+	block *gethtypes.Block,
+	client wallet.Client,
+	useConcurrency bool,
+) ([]*gethtypes.Receipt, error) {
+	var (
+		txs         = block.Transactions()
+		receipts    = make([]*gethtypes.Receipt, len(txs))
+		blockNumber = block.Number().Uint64()
+	)
+
+	if !useConcurrency {
+		for i, tx := range txs {
+			receipt, err := client.TransactionReceipt(ctx, tx.Hash())
+			if err != nil {
+				return nil, fmt.Errorf("unable to get receipt for block %d, tx %d: %w", blockNumber, i, err)
+			}
+
+			receipts[i] = receipt
 		}
-		receipts = append(receipts, receipt)
+
+		return receipts, nil
 	}
+
+	// fetch receipts concurrently to speed up the process.
+	// this can be removed once eth_getBlockReceipts is supported by the rpc.
+	const concurrency = 16
+
+	eg, ctx := errgroup.WithContext(ctx)
+	mu := sync.Mutex{}
+
+	eg.SetLimit(concurrency)
+
+	for i := 0; i < len(txs); i++ {
+		eg.Go(func() error {
+			hash := txs[i].Hash()
+			receipt, err := client.TransactionReceipt(ctx, hash)
+			if err != nil {
+				return fmt.Errorf("unable to get receipt for block %d, tx %d: %w", blockNumber, i, err)
+			}
+
+			mu.Lock()
+			receipts[i] = receipt
+			mu.Unlock()
+
+			return nil
+		})
+	}
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
 	return receipts, nil
 }
 

@@ -21,6 +21,8 @@ var (
 
 func ensureLogDirectory() error {
 	logDir := "/tmp/catalyst"
+
+	//nolint:gosec // G302
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
@@ -37,6 +39,7 @@ func getLogFile() (*os.File, error) {
 		timestamp := time.Now().Format("2006-01-02-15-04-05")
 		logPath := filepath.Join("/tmp/catalyst", fmt.Sprintf("catalyst-%s.log", timestamp))
 
+		//nolint:gosec // G302
 		logFile, err = os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
 			err = fmt.Errorf("failed to open log file: %w", err)
@@ -48,7 +51,7 @@ func getLogFile() (*os.File, error) {
 			<-c
 			if logFile != nil {
 				_ = logFile.Sync()
-				logFile.Close()
+				_ = logFile.Close()
 			}
 			os.Exit(0)
 		}()
@@ -60,15 +63,15 @@ func getLogFile() (*os.File, error) {
 func CloseLogFile() {
 	if logFile != nil {
 		_ = logFile.Sync()
-		logFile.Close()
+		_ = logFile.Close()
 	}
 }
 
-func DefaultLogger(options ...zap.Option) (*zap.Logger, error) {
+func DefaultLogger(devLogging bool, options ...zap.Option) (*zap.Logger, error) {
 	var encoder zapcore.Encoder
 	var logLevel zapcore.Level
 
-	if os.Getenv("DEV_LOGGING") == "true" {
+	if devLogging {
 		encoderConfig := zap.NewDevelopmentEncoderConfig()
 		encoder = zapcore.NewConsoleEncoder(encoderConfig)
 		logLevel = zap.DebugLevel
@@ -102,26 +105,19 @@ func DefaultLogger(options ...zap.Option) (*zap.Logger, error) {
 	return logger, nil
 }
 
-func WithDefaultLogger(ctx context.Context, options ...zap.Option) (context.Context, error) {
-	logger, err := DefaultLogger(options...)
-	if err != nil {
-		return ctx, err
-	}
-	return WithLogger(ctx, logger), nil
-}
-
 func WithLogger(ctx context.Context, logger *zap.Logger) context.Context {
 	return context.WithValue(ctx, loggerContextKey{}, logger)
 }
 
 func FromContext(ctx context.Context) *zap.Logger {
 	logger, ok := ctx.Value(loggerContextKey{}).(*zap.Logger)
-	if !ok {
-		var err error
-		logger, err = DefaultLogger()
-		if err != nil {
-			return zap.NewNop()
-		}
+	if ok {
+		return logger
+	}
+
+	logger, err := DefaultLogger(false)
+	if err != nil {
+		return zap.NewNop()
 	}
 
 	return logger

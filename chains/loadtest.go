@@ -8,10 +8,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"go.uber.org/zap"
+
 	cosmosrunner "github.com/skip-mev/catalyst/chains/cosmos/runner"
 	ethrunner "github.com/skip-mev/catalyst/chains/ethereum/runner"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
 )
 
 const (
@@ -91,7 +92,9 @@ func (lt *LoadTest) Run(ctx context.Context, logger *zap.Logger) (loadtesttypes.
 
 // SaveResults saves the load test results to /tmp/catalyst/load_test.json
 func SaveResults(results loadtesttypes.LoadTestResult, logger *zap.Logger) error {
-	dir := "/tmp/catalyst"
+	const dir = "/tmp/catalyst"
+
+	//nolint:gosec // G301: valid perm
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		logger.Error("failed to create results directory",
 			zap.String("dir", dir),
@@ -107,6 +110,8 @@ func SaveResults(results loadtesttypes.LoadTestResult, logger *zap.Logger) error
 	}
 
 	filePath := filepath.Join(dir, "load_test.json")
+
+	//nolint:gosec // G306: valid perm
 	if err := os.WriteFile(filePath, jsonData, 0o600); err != nil {
 		logger.Error("failed to write results to file",
 			zap.String("path", filePath),

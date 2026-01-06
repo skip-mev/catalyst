@@ -15,6 +15,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"go.uber.org/zap"
+
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
 	"github.com/skip-mev/catalyst/chains/cosmos/metrics"
 	"github.com/skip-mev/catalyst/chains/cosmos/txfactory"
@@ -22,7 +24,6 @@ import (
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
 	logging "github.com/skip-mev/catalyst/chains/log"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	"go.uber.org/zap"
 )
 
 // MsgGasEstimation stores gas estimation for a specific message type
@@ -42,7 +43,7 @@ type Runner struct {
 	totalTxsPerBlock   int
 	mu                 sync.Mutex
 	numBlocksProcessed int
-	collector          metrics.Collector
+	collector          *metrics.Collector
 	logger             *zap.Logger
 	sentTxs            []inttypes.SentTx
 	sentTxsMu          sync.RWMutex
@@ -56,7 +57,7 @@ type Runner struct {
 
 // NewRunner creates a new load test runner for a given spec
 func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
-	logger, _ := zap.NewDevelopment()
+	logger := logging.FromContext(ctx)
 	chainCfg := spec.ChainCfg.(*inttypes.ChainConfig)
 
 	if err := spec.Validate(); err != nil {
@@ -107,8 +108,8 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		spec:           spec,
 		clients:        clients,
 		wallets:        wallets,
-		collector:      metrics.NewCollector(),
-		logger:         logging.FromContext(ctx),
+		collector:      metrics.NewCollector(logger),
+		logger:         logger,
 		sentTxs:        make([]inttypes.SentTx, 0),
 		accountNumbers: make(map[string]uint64),
 		walletNonces:   make(map[string]uint64),
@@ -147,7 +148,10 @@ func (r *Runner) initGasEstimation(ctx context.Context) error {
 }
 
 // calculateMsgGasEstimations calculates gas estimations for all message types
-func (r *Runner) calculateMsgGasEstimations(ctx context.Context, client *client.Chain) (map[loadtesttypes.LoadTestMsg]uint64, error) {
+func (r *Runner) calculateMsgGasEstimations(
+	ctx context.Context,
+	client *client.Chain,
+) (map[loadtesttypes.LoadTestMsg]uint64, error) {
 	fromWallet := r.wallets[0]
 	gasEstimations := make(map[loadtesttypes.LoadTestMsg]uint64)
 
@@ -219,7 +223,10 @@ func (r *Runner) initNumOfTxsWorkflow(gasEstimations map[loadtesttypes.LoadTestM
 	}
 
 	if r.totalTxsPerBlock <= 0 {
-		return fmt.Errorf("calculated total number of transactions per block is zero or negative: %d", r.totalTxsPerBlock)
+		return fmt.Errorf(
+			"calculated total number of transactions per block is zero or negative: %d",
+			r.totalTxsPerBlock,
+		)
 	}
 
 	return nil
@@ -313,14 +320,20 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 }
 
 // sendBlockTransactions sends transactions for a single block
-func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) { //nolint:unparam // error may be returned in future versions
+func (r *Runner) sendBlockTransactions(
+	ctx context.Context,
+) (int, error) { //nolint:unparam // error may be returned in future versions
 	txsSent := 0
 	var sentTxs []inttypes.SentTx
 	var sentTxsMu sync.Mutex
 
-	r.logger.Info("starting to send transactions for block", zap.Int("block_number", r.numBlocksProcessed), zap.Int("expected_txs", r.totalTxsPerBlock))
+	r.logger.Info(
+		"starting to send transactions for block",
+		zap.Int("block_number", r.numBlocksProcessed),
+		zap.Int("expected_txs", r.totalTxsPerBlock),
+	)
 
-	getLatestNonce := func(walletAddr string, client *client.Chain) uint64 { //nolint:unparam // client may be used in future versions
+	getLatestNonce := func(walletAddr string, _ *client.Chain) uint64 {
 		r.walletNoncesMu.Lock()
 		defer r.walletNoncesMu.Unlock()
 		return r.walletNonces[walletAddr]
@@ -338,7 +351,7 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) { //nol
 	for mspSpec, estimation := range r.gasEstimations {
 		for i := 0; i < estimation.numTxs; i++ {
 			wg.Add(1)
-			go func(msgSpec loadtesttypes.LoadTestMsg, txIndex int) { //nolint:unparam // txIndex may be used in future versions
+			go func(msgSpec loadtesttypes.LoadTestMsg, _ int) {
 				defer wg.Done()
 
 				if sentTx, _ := r.processSingleTransaction(ctx, msgSpec, getLatestNonce, updateNonce, &txsSentMu, &txsSent); sentTx != (inttypes.SentTx{}) {
@@ -346,7 +359,10 @@ func (r *Runner) sendBlockTransactions(ctx context.Context) (int, error) { //nol
 					sentTxs = append(sentTxs, sentTx)
 					sentTxsMu.Unlock()
 				}
-			}(mspSpec, i)
+			}(
+				mspSpec,
+				i,
+			)
 		}
 	}
 
@@ -410,7 +426,10 @@ func (r *Runner) processSingleTransaction(
 }
 
 // createMessagesForType creates the appropriate messages based on message type
-func (r *Runner) createMessagesForType(msgSpec loadtesttypes.LoadTestMsg, fromWallet *wallet.InteractingWallet) ([]sdk.Msg, error) {
+func (r *Runner) createMessagesForType(
+	msgSpec loadtesttypes.LoadTestMsg,
+	fromWallet *wallet.InteractingWallet,
+) ([]sdk.Msg, error) {
 	var msgs []sdk.Msg
 	var err error
 
@@ -451,8 +470,17 @@ func (r *Runner) createAndSendTransaction(
 	accountNumber := r.accountNumbers[walletAddress]
 	memo := RandomString(16) // Avoid ErrTxInMempoolCache
 
-	tx, err := fromWallet.CreateSignedTx(ctx, client, uint64(gasWithBuffer), fees, nonce, accountNumber, //nolint:gosec // G115: overflow unlikely in practice
-		memo, r.chainCfg.UnorderedTxs, r.spec.TxTimeout, msgs...)
+	tx, err := fromWallet.CreateSignedTx(
+		ctx,
+		client,
+		uint64(gasWithBuffer), //nolint:gosec // G115: overflow unlikely in practice
+		fees,
+		nonce,
+		accountNumber, //nolint:gosec // G115: overflow unlikely in practice
+		memo,
+		r.chainCfg.UnorderedTxs,
+		r.spec.TxTimeout,
+		msgs...)
 	if err != nil {
 		r.logger.Error("failed to create signed tx",
 			zap.Error(err),
@@ -468,7 +496,18 @@ func (r *Runner) createAndSendTransaction(
 		return inttypes.SentTx{}, false
 	}
 
-	return r.broadcastAndHandleResponse(ctx, client, txBytes, mspSpec.Type, walletAddress, nonce, updateNonce, txsSentMu, txsSent, msgs)
+	return r.broadcastAndHandleResponse(
+		ctx,
+		client,
+		txBytes,
+		mspSpec.Type,
+		walletAddress,
+		nonce,
+		updateNonce,
+		txsSentMu,
+		txsSent,
+		msgs,
+	)
 }
 
 // broadcastAndHandleResponse broadcasts a transaction and handles the response
@@ -523,7 +562,7 @@ func (r *Runner) broadcastAndHandleResponse(
 }
 
 // handleNonceMismatch extracts the expected nonce from the error message and updates the wallet nonce
-func (r *Runner) handleNonceMismatch(walletAddress string, nonce uint64, rawLog string) { //nolint:unparam // nonce may be used in future versions
+func (r *Runner) handleNonceMismatch(walletAddress string, _ uint64, rawLog string) {
 	expectedNonceStr := regexp.MustCompile(`expected (\d+)`).FindStringSubmatch(rawLog)
 	if len(expectedNonceStr) > 1 {
 		if expectedNonce, err := strconv.ParseUint(expectedNonceStr[1], 10, 64); err == nil {
@@ -535,7 +574,7 @@ func (r *Runner) handleNonceMismatch(walletAddress string, nonce uint64, rawLog 
 }
 
 func (r *Runner) GetCollector() *metrics.Collector {
-	return &r.collector
+	return r.collector
 }
 
 func (r *Runner) PrintResults(result loadtesttypes.LoadTestResult) {

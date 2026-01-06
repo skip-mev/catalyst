@@ -10,9 +10,10 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
-	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
+
+	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
 func setupSimulatedBackend(alloc types.GenesisAlloc) *simulated.Backend {
@@ -345,7 +346,16 @@ func TestCreateSignedDynamicFeeTx(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tx, err := wallet.CreateSignedDynamicFeeTx(ctx, tt.to, tt.value, tt.gasLimit, tt.gasFeeCap, tt.gasTipCap, tt.data, tt.nonce)
+			tx, err := wallet.CreateSignedDynamicFeeTx(
+				ctx,
+				tt.to,
+				tt.value,
+				tt.gasLimit,
+				tt.gasFeeCap,
+				tt.gasTipCap,
+				tt.data,
+				tt.nonce,
+			)
 			require.NoError(t, err, "Failed for case: %s", tt.description)
 			require.NotNil(t, tx, "Transaction should not be nil")
 
