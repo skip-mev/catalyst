@@ -203,7 +203,6 @@ func (r *Runner) submitLoadPersistent(
 		tracker.Set(tx.TxHash, broadcastTime)
 	}
 
-	r.sentTxs = append(r.sentTxs, sentTxs...)
 	r.txFactory.ResetWalletAllocation()
 	return len(sentTxs)
 }
