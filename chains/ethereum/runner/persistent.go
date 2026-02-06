@@ -90,7 +90,9 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 					zap.Uint64("gas_limit", block.GasLimit),
 				)
 
-				r.recordBlockTxs(block, trackedTxs)
+				if r.spec.MetricsEnabled {
+					r.recordBlockTxs(block, trackedTxs)
+				}
 
 				sentBootstrapLoads := blocksProcessed / bootstrapBackoff
 				// Only throttle load creation if we're still bootstrapping.
@@ -194,13 +196,15 @@ func (r *Runner) submitLoadPersistent(
 
 	wg.Wait()
 
-	// Record broadcast time for all as now to get a rough sense--they should be pretty close anyways.
-	broadcastTime := time.Now()
-	for _, tx := range sentTxs {
-		if tx.Err != nil {
-			continue
+	if r.spec.MetricsEnabled {
+		// Record broadcast time for all as now to get a rough sense--they should be pretty close anyways.
+		broadcastTime := time.Now()
+		for _, tx := range sentTxs {
+			if tx.Err != nil {
+				continue
+			}
+			tracker.Set(tx.TxHash, broadcastTime)
 		}
-		tracker.Set(tx.TxHash, broadcastTime)
 	}
 
 	r.txFactory.ResetWalletAllocation()
