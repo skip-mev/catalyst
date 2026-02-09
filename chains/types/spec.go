@@ -24,6 +24,7 @@ type LoadTestSpec struct {
 	ChainCfg             ChainConfig   `yaml:"-"                      json:"-"` // decoded via custom UnmarshalYAML
 	Cache                CacheConfig   `yaml:"cache_config"           json:"cache_config"`
 	PrometheusListenAddr string        `yaml:"prometheus_listen_addr" json:"prometheus_listen_addr"`
+	MetricsEnabled       bool          `yaml:"metrics_enabled"        json:"metrics_enabled"`
 }
 
 type CacheConfig struct {
