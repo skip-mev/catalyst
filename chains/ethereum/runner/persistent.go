@@ -179,14 +179,14 @@ func (r *Runner) submitLoadPersistent(
 			var err error
 			if r.spec.MetricsEnabled {
 				err = fromWallet.SendTransaction(ctx, tx)
+				if err != nil {
+					r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
+					r.promMetrics.BroadcastFailure.Add(1)
+				} else {
+					r.promMetrics.BroadcastSuccess.Add(1)
+				}
 			} else {
-				err = fromWallet.NotifySendTransaction(ctx, tx)
-			}
-			if err != nil {
-				r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
-				r.promMetrics.BroadcastFailure.Add(1)
-			} else {
-				r.promMetrics.BroadcastSuccess.Add(1)
+				fromWallet.SendTransactionAsync(ctx, tx)
 			}
 
 			txType := inttypes.ContractCall
