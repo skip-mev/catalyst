@@ -176,7 +176,12 @@ func (r *Runner) submitLoadPersistent(
 		wg.Go(func() {
 			// send the tx from the wallet assigned to this transaction's sender
 			fromWallet := r.getWalletForTx(tx)
-			err := fromWallet.SendTransaction(ctx, tx)
+			var err error
+			if r.spec.MetricsEnabled {
+				err = fromWallet.SendTransaction(ctx, tx)
+			} else {
+				err = fromWallet.NotifySendTransaction(ctx, tx)
+			}
 			if err != nil {
 				r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
 				r.promMetrics.BroadcastFailure.Add(1)

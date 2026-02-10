@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -323,6 +324,19 @@ func (w *InteractingWallet) CreateSignedDynamicFeeTx(ctx context.Context, to *co
 // SendTransaction broadcasts a signed transaction to the network
 func (w *InteractingWallet) SendTransaction(ctx context.Context, signedTx *types.Transaction) error {
 	return w.client.SendTransaction(ctx, signedTx)
+}
+
+// NotifySendTransaction broadcasts a signed transaction without waiting for a response.
+func (w *InteractingWallet) NotifySendTransaction(ctx context.Context, signedTx *types.Transaction) error {
+	data, err := signedTx.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	ec, ok := w.client.(*ethclient.Client)
+	if !ok {
+		return w.client.SendTransaction(ctx, signedTx)
+	}
+	return ec.Client().Notify(ctx, "eth_sendRawTransaction", hexutil.Encode(data))
 }
 
 // CreateAndSendTransaction creates, signs, and sends a transaction in one call
