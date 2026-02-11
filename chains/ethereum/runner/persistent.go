@@ -182,7 +182,11 @@ func (r *Runner) submitLoadPersistent(
 // sendAndRecord sends transactions inside of goroutines, and waits for each
 // send to complete, recording metrics about the outcome of each send in the
 // tracker and via Prometheus.
-func (r *Runner) sendAndRecord(ctx context.Context, tracker *orderedmap.OrderedMap[common.Hash, time.Time], txs gethtypes.Transactions) {
+func (r *Runner) sendAndRecord(
+	ctx context.Context,
+	tracker *orderedmap.OrderedMap[common.Hash, time.Time],
+	txs gethtypes.Transactions,
+) {
 	sentTxs := make([]*inttypes.SentTx, len(txs))
 	var wg sync.WaitGroup
 	for i, tx := range txs {
