@@ -169,12 +169,28 @@ func (r *Runner) submitLoadPersistent(
 		txs = append(txs, load...)
 	}
 
-	// submit each tx in a go routine
-	wg := sync.WaitGroup{}
+	if r.spec.MetricsEnabled {
+		r.sendAndRecord(ctx, tracker, txs)
+	} else {
+		r.sendAsync(ctx, txs)
+	}
+
+	r.txFactory.ResetWalletAllocation()
+	return len(txs)
+}
+
+// sendAndRecord sends transactions inside of goroutines, and waits for each
+// send to complete, recording metrics about the outcome of each send in the
+// tracker and via Prometheus.
+func (r *Runner) sendAndRecord(
+	ctx context.Context,
+	tracker *orderedmap.OrderedMap[common.Hash, time.Time],
+	txs gethtypes.Transactions,
+) {
 	sentTxs := make([]*inttypes.SentTx, len(txs))
+	var wg sync.WaitGroup
 	for i, tx := range txs {
 		wg.Go(func() {
-			// send the tx from the wallet assigned to this transaction's sender
 			fromWallet := r.getWalletForTx(tx)
 			err := fromWallet.SendTransaction(ctx, tx)
 			if err != nil {
@@ -183,32 +199,36 @@ func (r *Runner) submitLoadPersistent(
 			} else {
 				r.promMetrics.BroadcastSuccess.Add(1)
 			}
-
-			txType := inttypes.ContractCall
 			sentTxs[i] = &inttypes.SentTx{
 				TxHash:  tx.Hash(),
-				MsgType: txType,
+				MsgType: inttypes.ContractCall,
 				Err:     err,
 				Tx:      tx,
 			}
 		})
 	}
-
 	wg.Wait()
 
-	if r.spec.MetricsEnabled {
-		// Record broadcast time for all as now to get a rough sense--they should be pretty close anyways.
-		broadcastTime := time.Now()
-		for _, tx := range sentTxs {
-			if tx.Err != nil {
-				continue
-			}
-			tracker.Set(tx.TxHash, broadcastTime)
+	// Record broadcast time for all as now to get a rough sense--they
+	// should be pretty close anyways.
+	broadcastTime := time.Now()
+	for _, tx := range sentTxs {
+		if tx.Err != nil {
+			continue
 		}
+		tracker.Set(tx.TxHash, broadcastTime)
 	}
+}
 
-	r.txFactory.ResetWalletAllocation()
-	return len(sentTxs)
+// sendAsync sends each transaction in a goroutine and does not wait for the
+// response from the node, recording no metrics about the outcome of the send.
+func (r *Runner) sendAsync(ctx context.Context, txs gethtypes.Transactions) {
+	for _, tx := range txs {
+		fromWallet := r.getWalletForTx(tx)
+		go func() {
+			_ = fromWallet.SendTransaction(ctx, tx)
+		}()
+	}
 }
 
 func (r *Runner) buildLoadPersistent(
