@@ -325,11 +325,6 @@ func (w *InteractingWallet) SendTransaction(ctx context.Context, signedTx *types
 	return w.client.SendTransaction(ctx, signedTx)
 }
 
-// SendTransactionAsync broadcasts a signed transaction without waiting for the response.
-func (w *InteractingWallet) SendTransactionAsync(ctx context.Context, signedTx *types.Transaction) {
-	go w.client.SendTransaction(ctx, signedTx)
-}
-
 // CreateAndSendTransaction creates, signs, and sends a transaction in one call
 func (w *InteractingWallet) CreateAndSendTransaction(ctx context.Context, to *common.Address, value *big.Int,
 	gasLimit uint64, gasPrice *big.Int, data []byte, nonce *uint64,
