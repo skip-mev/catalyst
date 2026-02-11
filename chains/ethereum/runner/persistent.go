@@ -221,7 +221,9 @@ func (r *Runner) sendAndRecord(ctx context.Context, tracker *orderedmap.OrderedM
 func (r *Runner) sendAsync(ctx context.Context, txs gethtypes.Transactions) {
 	for _, tx := range txs {
 		fromWallet := r.getWalletForTx(tx)
-		go fromWallet.SendTransaction(ctx, tx)
+		go func() {
+			_ = fromWallet.SendTransaction(ctx, tx)
+		}()
 	}
 }
 
