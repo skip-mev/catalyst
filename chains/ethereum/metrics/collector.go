@@ -32,6 +32,7 @@ func ProcessResults(
 	wg := sync.WaitGroup{}
 	blockStats := make([]loadtesttypes.BlockStat, endBlock-startBlock+1)
 	receipts := make(map[uint64]gethtypes.Receipts)
+	var receiptsMu sync.Mutex
 
 	fetchReceiptsConcurrently := config.EnvFromContext(ctx).ConcurrentReceipts
 
@@ -49,7 +50,8 @@ func ProcessResults(
 		//nolint:gosec // G115: overflow unlikely in practice
 		blockNumBig := big.NewInt(int64(blockNum))
 
-		go func() {
+		idx := blockNum - startBlock
+		go func(blockNum uint64, blockNumBig *big.Int, idx uint64) {
 			defer wg.Done()
 
 			start := time.Now()
@@ -68,9 +70,11 @@ func ProcessResults(
 			}
 
 			if len(blockReceipts) > 0 {
+				receiptsMu.Lock()
 				receipts[blockReceipts[0].BlockNumber.Uint64()] = blockReceipts
+				receiptsMu.Unlock()
 			}
-			blockStats[blockNum-startBlock] = buildBlockStats(block, blockReceipts)
+			blockStats[idx] = buildBlockStats(block, blockReceipts)
 
 			logger.Info(
 				"Block collected",
@@ -78,7 +82,7 @@ func ProcessResults(
 				zap.Int("receipts", len(blockReceipts)),
 				zap.String("duration", time.Since(start).String()),
 			)
-		}()
+		}(blockNum, blockNumBig, idx)
 	}
 
 	wg.Wait()
@@ -240,6 +244,7 @@ func getReceiptsForBlockTxs(
 	eg.SetLimit(concurrency)
 
 	for i := 0; i < len(txs); i++ {
+		i := i
 		eg.Go(func() error {
 			hash := txs[i].Hash()
 			receipt, err := client.TransactionReceipt(ctx, hash)
