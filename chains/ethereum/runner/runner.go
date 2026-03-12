@@ -325,10 +325,12 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 }
 
 func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
-	// Deployments must come from wallet[0]; all other traffic uses distribution-aware senders.
-	fromWallet := r.txFactory.GetNextSender()
+	// Deployments must come from wallet[0] and must not advance sender distribution state.
+	var fromWallet *wallet.InteractingWallet
 	if msgSpec.Type == inttypes.MsgDeployERC20 || msgSpec.Type == inttypes.MsgCreateContract {
 		fromWallet = r.wallets[0]
+	} else {
+		fromWallet = r.txFactory.GetNextSender()
 	}
 
 	if fromWallet == nil {
