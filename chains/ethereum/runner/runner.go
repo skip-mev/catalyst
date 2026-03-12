@@ -98,19 +98,32 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		}
 	}
 
-	if spec.InitialWallets <= 0 {
+	initialWallets := spec.InitialWallets
+	if initialWallets <= 0 {
+		initialWallets = 1
+	}
+
+	if isNonPersistentRun {
+		if initialWallets < spec.NumWallets {
+			logger.Info(
+				"prefund complete; using all wallets for sender distribution",
+				zap.Int("initial_wallets", initialWallets),
+				zap.Int("num_wallets", spec.NumWallets),
+			)
+		}
+		initialWallets = spec.NumWallets
+	} else if spec.InitialWallets <= 0 {
 		logger.Info("initial_wallets not set; defaulting to 1", zap.Int("num_wallets", spec.NumWallets))
-		spec.InitialWallets = 1
 	}
 
 	var distribution txfactory.TxDistribution
-	if spec.InitialWallets > 0 && spec.InitialWallets < spec.NumWallets {
+	if initialWallets > 0 && initialWallets < spec.NumWallets {
 		logger.Info(
 			"Using TxDistributionBootstrapped",
-			zap.Int("initial_wallets", spec.InitialWallets),
+			zap.Int("initial_wallets", initialWallets),
 			zap.Int("num_wallets", spec.NumWallets),
 		)
-		distribution = txfactory.NewTxDistributionBootstrapped(logger, wallets, spec.InitialWallets)
+		distribution = txfactory.NewTxDistributionBootstrapped(logger, wallets, initialWallets)
 	} else {
 		logger.Info("Using TxDistributionEven")
 		distribution = txfactory.NewTxDistributionEven(wallets)
