@@ -364,15 +364,27 @@ func preFundDerivedWallets(ctx context.Context, logger *zap.Logger, wallets []*w
 		return nil
 	}
 
+	balanceMu := sync.Mutex{}
 	unfunded := make([]int, 0, len(wallets)-1)
+	balanceEG := errgroup.Group{}
+	balanceEG.SetLimit(16)
 	for i := 1; i < len(wallets); i++ {
-		bal, err := wallets[i].GetBalance(ctx)
-		if err != nil {
-			return fmt.Errorf("getting balance for wallet[%d] %s: %w", i, wallets[i].FormattedAddress(), err)
-		}
-		if bal.Sign() == 0 {
-			unfunded = append(unfunded, i)
-		}
+		i := i
+		balanceEG.Go(func() error {
+			bal, err := wallets[i].GetBalance(ctx)
+			if err != nil {
+				return fmt.Errorf("getting balance for wallet[%d] %s: %w", i, wallets[i].FormattedAddress(), err)
+			}
+			if bal.Sign() == 0 {
+				balanceMu.Lock()
+				unfunded = append(unfunded, i)
+				balanceMu.Unlock()
+			}
+			return nil
+		})
+	}
+	if err := balanceEG.Wait(); err != nil {
+		return err
 	}
 
 	if len(unfunded) == 0 {
@@ -394,16 +406,44 @@ func preFundDerivedWallets(ctx context.Context, logger *zap.Logger, wallets []*w
 		return fmt.Errorf("insufficient funder balance %s to pre-fund %d wallets", funderBal.String(), len(unfunded))
 	}
 
+	startNonce, err := funder.GetNonce(ctx)
+	if err != nil {
+		return fmt.Errorf("getting funder nonce for %s: %w", funder.FormattedAddress(), err)
+	}
+
+	type prefundTx struct {
+		walletIndex int
+		address     common.Address
+		txHash      common.Hash
+	}
+	prefundTxs := make([]prefundTx, 0, len(unfunded))
+	nextNonce := startNonce
+
 	for _, i := range unfunded {
 		to := wallets[i].Address()
-		txHash, err := funder.CreateAndSendTransaction(ctx, &to, amountPerWallet, 21_000, nil, nil, nil)
+		nonce := nextNonce
+		nextNonce++
+		txHash, err := funder.CreateAndSendTransaction(ctx, &to, amountPerWallet, 21_000, nil, nil, &nonce)
 		if err != nil {
 			return fmt.Errorf("sending prefund tx to wallet[%d] %s: %w", i, to.Hex(), err)
 		}
-		if _, err := funder.WaitForTxReceipt(ctx, txHash, 30*time.Second); err != nil {
-			return fmt.Errorf("waiting prefund receipt for wallet[%d] %s (tx=%s): %w", i, to.Hex(), txHash.Hex(), err)
-		}
-		logger.Info("prefunded derived wallet", zap.Int("wallet_index", i), zap.String("address", to.Hex()), zap.String("amount", amountPerWallet.String()))
+		prefundTxs = append(prefundTxs, prefundTx{walletIndex: i, address: to, txHash: txHash})
+	}
+
+	receiptEG := errgroup.Group{}
+	receiptEG.SetLimit(16)
+	for i := range prefundTxs {
+		tx := prefundTxs[i]
+		receiptEG.Go(func() error {
+			if _, err := funder.WaitForTxReceipt(ctx, tx.txHash, 30*time.Second); err != nil {
+				return fmt.Errorf("waiting prefund receipt for wallet[%d] %s (tx=%s): %w", tx.walletIndex, tx.address.Hex(), tx.txHash.Hex(), err)
+			}
+			logger.Info("prefunded derived wallet", zap.Int("wallet_index", tx.walletIndex), zap.String("address", tx.address.Hex()), zap.String("amount", amountPerWallet.String()))
+			return nil
+		})
+	}
+	if err := receiptEG.Wait(); err != nil {
+		return err
 	}
 
 	return nil
