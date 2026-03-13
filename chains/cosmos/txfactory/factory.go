@@ -89,34 +89,36 @@ func (f *TxFactory) createMsgSend(fromWallet *wallet.InteractingWallet, sendAmou
 	}
 	amount := sdk.NewCoins(sdk.NewCoin(f.gasDenom, transferAmt))
 
-	var toWallet *wallet.InteractingWallet
-	if f.txDistribution != nil {
-		toWallet = f.txDistribution.GetNextReceiver()
-	} else {
-		if len(f.wallets) == 1 {
-			toWallet = fromWallet
-		} else {
-			// Keep selecting until we get a different wallet
-			for {
-				toWallet = f.wallets[rand.Intn(len(f.wallets))]
-				if toWallet.FormattedAddress() != fromWallet.FormattedAddress() {
-					break
-				}
-			}
-		}
-	}
-
 	fromAddr, err := sdk.AccAddressFromBech32(fromWallet.FormattedAddress())
 	if err != nil {
 		return nil, fmt.Errorf("invalid from address: %w", err)
 	}
 
+	toWallet := f.getToWallet(fromWallet)
 	toAddr, err := sdk.AccAddressFromBech32(toWallet.FormattedAddress())
 	if err != nil {
 		return nil, fmt.Errorf("invalid to address: %w", err)
 	}
 
 	return banktypes.NewMsgSend(fromAddr, toAddr, amount), nil
+}
+
+func (f *TxFactory) getToWallet(fromWallet *wallet.InteractingWallet) *wallet.InteractingWallet {
+	if f.txDistribution != nil {
+		return f.txDistribution.GetNextReceiver()
+	}
+	if len(f.wallets) == 1 {
+		return fromWallet
+	}
+
+	// Keep selecting until we get a different wallet
+	fromAddr := fromWallet.FormattedAddress()
+	for {
+		toWallet := f.wallets[rand.Intn(len(f.wallets))]
+		if toWallet.FormattedAddress() != fromAddr {
+			return toWallet
+		}
+	}
 }
 
 // createMsgMultiSend creates a multi-send message that distributes funds to all other wallets
