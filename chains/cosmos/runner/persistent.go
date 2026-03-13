@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	errorsmod "cosmossdk.io/errors"
 	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"go.uber.org/zap"
@@ -163,7 +164,7 @@ func (r *Runner) buildTxsForMsgSpec(ctx context.Context, msgSpec loadtesttypes.L
 		senders = append(senders, sender)
 	}
 	if skipped := numTxs - len(senders); skipped > 0 {
-		r.logger.Info("skipped txs: no sender available", zap.Int("count", skipped))
+		r.logger.Warn("skipped txs: no sender available", zap.Int("count", skipped))
 	}
 
 	// Initialize any senders missing from accountNumbers.
@@ -321,7 +322,8 @@ func (r *Runner) logSendResults(txs []persistentTx, failures map[uint32]int, dur
 		zap.Duration("duration", duration),
 	)
 	for code, count := range failures {
-		r.logger.Warn("broadcast failures", zap.Uint32("code", code), zap.Int("count", count))
+		desc := errorsmod.ABCIError("sdk", code, "").Error()
+		r.logger.Warn("broadcast failures", zap.Uint32("code", code), zap.String("description", desc), zap.Int("count", count))
 	}
 }
 
