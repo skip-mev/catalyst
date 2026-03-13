@@ -2,7 +2,6 @@ package runner
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -41,7 +40,7 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 		initialWallets = len(r.wallets)
 	}
 	if err := r.initWallets(ctx, r.wallets[:initialWallets]); err != nil {
-		return loadtesttypes.LoadTestResult{}, err
+		return loadtesttypes.LoadTestResult{}, err[0]
 	}
 
 	// We fund InitialWallets * 2^N wallets every block where N == the number of bootstrap loads sent.
@@ -210,7 +209,7 @@ func (r *Runner) initUninitializedSenders(ctx context.Context, senders []*wallet
 		return
 	}
 	if err := r.initWallets(ctx, toInit); err != nil {
-		r.logger.Info("some senders not yet on chain", zap.Error(err))
+		r.logger.Warn("some senders not yet on chain", zap.Int("count", len(err)))
 	}
 }
 
@@ -402,7 +401,7 @@ func fetchAccountInfo(ctx context.Context, wallets []*wallet.InteractingWallet) 
 
 // initWallets queries account info for the given wallets concurrently.
 // Wallets whose funding tx hasn't landed yet are silently skipped.
-func (r *Runner) initWallets(ctx context.Context, walletsToInit []*wallet.InteractingWallet) error {
+func (r *Runner) initWallets(ctx context.Context, walletsToInit []*wallet.InteractingWallet) []error {
 	start := time.Now()
 
 	results := fetchAccountInfo(ctx, walletsToInit)
@@ -428,5 +427,5 @@ func (r *Runner) initWallets(ctx context.Context, walletsToInit []*wallet.Intera
 		zap.Int("checked", len(walletsToInit)),
 		zap.Duration("duration", time.Since(start)),
 	)
-	return errors.Join(errs...)
+	return errs
 }
