@@ -116,7 +116,16 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		chainCfg:       *chainCfg,
 	}
 
-	runner.txFactory = txfactory.NewTxFactory(chainCfg.GasDenom, wallets)
+	var distribution txfactory.TxDistribution
+	if spec.InitialWallets > 0 && spec.InitialWallets < spec.NumWallets {
+		logger.Info(
+			"Using TxDistributionBootstrapped",
+			zap.Int("initial_wallets", spec.InitialWallets),
+			zap.Int("num_wallets", spec.NumWallets),
+		)
+		distribution = txfactory.NewTxDistributionBootstrapped(logger, wallets, spec.InitialWallets)
+	}
+	runner.txFactory = txfactory.NewTxFactory(chainCfg.GasDenom, wallets, distribution)
 
 	if err := runner.initGasEstimation(ctx); err != nil {
 		return nil, err
@@ -234,6 +243,11 @@ func (r *Runner) initNumOfTxsWorkflow(gasEstimations map[loadtesttypes.LoadTestM
 
 // Run executes the load test
 func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
+	if r.spec.NumOfBlocks == 0 {
+		r.logger.Info("Running loadtest persistently")
+		return r.runPersistent(ctx)
+	}
+
 	if err := r.initAccountNumbers(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
@@ -463,7 +477,7 @@ func (r *Runner) createAndSendTransaction(
 ) (inttypes.SentTx, bool) {
 	walletAddress := fromWallet.FormattedAddress()
 
-	gasBufferFactor := 1.1
+	gasBufferFactor := 2.0
 	estimation := r.gasEstimations[mspSpec]
 	gasWithBuffer := int64(float64(estimation.gasUsed) * gasBufferFactor)
 	fees := sdk.NewCoins(sdk.NewCoin(r.chainCfg.GasDenom, sdkmath.NewInt(gasWithBuffer)))

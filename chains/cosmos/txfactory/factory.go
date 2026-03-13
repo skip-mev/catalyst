@@ -15,15 +15,32 @@ import (
 
 // TxFactory creates transactions for load testing
 type TxFactory struct {
-	gasDenom string
-	wallets  []*wallet.InteractingWallet
+	gasDenom       string
+	wallets        []*wallet.InteractingWallet
+	txDistribution TxDistribution
 }
 
 // NewTxFactory creates a new transaction factory
-func NewTxFactory(gasDenom string, wallets []*wallet.InteractingWallet) *TxFactory {
+func NewTxFactory(gasDenom string, wallets []*wallet.InteractingWallet, distribution TxDistribution) *TxFactory {
 	return &TxFactory{
-		gasDenom: gasDenom,
-		wallets:  wallets,
+		gasDenom:       gasDenom,
+		wallets:        wallets,
+		txDistribution: distribution,
+	}
+}
+
+// GetNextSender returns the next sender from the distribution, or nil if no distribution is set.
+func (f *TxFactory) GetNextSender() *wallet.InteractingWallet {
+	if f.txDistribution == nil {
+		return nil
+	}
+	return f.txDistribution.GetNextSender()
+}
+
+// ResetWalletAllocation resets wallet allocation for a new load.
+func (f *TxFactory) ResetWalletAllocation() {
+	if f.txDistribution != nil {
+		f.txDistribution.ResetWalletAllocation()
 	}
 }
 
@@ -49,14 +66,18 @@ func (f *TxFactory) createMsgSend(fromWallet *wallet.InteractingWallet) (sdk.Msg
 	amount := sdk.NewCoins(sdk.NewCoin(f.gasDenom, sdkmath.NewInt(10)))
 
 	var toWallet *wallet.InteractingWallet
-	if len(f.wallets) == 1 {
-		toWallet = fromWallet
+	if f.txDistribution != nil {
+		toWallet = f.txDistribution.GetNextReceiver()
 	} else {
-		// Keep selecting until we get a different wallet
-		for {
-			toWallet = f.wallets[rand.Intn(len(f.wallets))]
-			if toWallet.FormattedAddress() != fromWallet.FormattedAddress() {
-				break
+		if len(f.wallets) == 1 {
+			toWallet = fromWallet
+		} else {
+			// Keep selecting until we get a different wallet
+			for {
+				toWallet = f.wallets[rand.Intn(len(f.wallets))]
+				if toWallet.FormattedAddress() != fromWallet.FormattedAddress() {
+					break
+				}
 			}
 		}
 	}
