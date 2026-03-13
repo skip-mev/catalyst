@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	PersistentBlockTimeout = time.Minute
+	persistentBlockTimeout = time.Minute
 )
 
 type persistentTx struct {
@@ -70,7 +70,7 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		timeout := time.NewTicker(PersistentBlockTimeout)
+		timeout := time.NewTicker(persistentBlockTimeout)
 		defer timeout.Stop()
 		for {
 			select {
@@ -84,7 +84,7 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 				cancel()
 				return
 			case block, ok := <-blockCh:
-				timeout.Reset(PersistentBlockTimeout)
+				timeout.Reset(persistentBlockTimeout)
 				blocksProcessed++
 				if !ok {
 					r.logger.Error("block channel closed")
@@ -136,10 +136,12 @@ func (r *Runner) submitLoadPersistent(ctx context.Context) int {
 			zap.Int("num_txs", numTxs),
 		)
 		txCh := make(chan persistentTx, numTxs)
-		var skippedNoSender atomic.Int64
-		var skippedNoAccount atomic.Int64
 
-		var wg sync.WaitGroup
+		var (
+			skippedNoSender  atomic.Int64
+			skippedNoAccount atomic.Int64
+			wg               sync.WaitGroup
+		)
 		for range numTxs {
 			wg.Add(1)
 			go func() {
@@ -266,10 +268,10 @@ func (r *Runner) submitLoadPersistent(ctx context.Context) int {
 
 	oldFunded, newFunded := r.txFactory.ResetWalletAllocation()
 
-	// Init account numbers for newly funded wallets.
-	// Wallets whose funding tx failed won't exist on chain yet — skip them silently.
-	// They'll be funded in a future round once nonces correct.
 	if newFunded > oldFunded {
+		// Init account numbers for newly funded wallets.
+		// Wallets whose funding tx failed won't exist on chain yet — skip them silently.
+		// They'll be funded in a future round once nonces correct.
 		_ = r.initWallets(ctx, r.wallets[oldFunded:newFunded])
 	}
 
@@ -318,9 +320,9 @@ type accountFetchResult struct {
 	err  error
 }
 
-// fetchAccountInfoConcurrently queries account info for all wallets concurrently and
-// returns one result per wallet. Each result contains either valid account info or an error.
-func fetchAccountInfoConcurrently(ctx context.Context, wallets []*wallet.InteractingWallet) []accountFetchResult {
+// fetchAccountInfo queries account info for all wallets and returns one result
+// per wallet. Each result contains either valid account info or an error.
+func fetchAccountInfo(ctx context.Context, wallets []*wallet.InteractingWallet) []accountFetchResult {
 	results := make([]accountFetchResult, len(wallets))
 	var wg sync.WaitGroup
 	for i, w := range wallets {
@@ -354,7 +356,7 @@ func fetchAccountInfoConcurrently(ctx context.Context, wallets []*wallet.Interac
 func (r *Runner) initWallets(ctx context.Context, walletsToInit []*wallet.InteractingWallet) error {
 	start := time.Now()
 
-	results := fetchAccountInfoConcurrently(ctx, walletsToInit)
+	results := fetchAccountInfo(ctx, walletsToInit)
 
 	var errs []error
 	initialized := 0
