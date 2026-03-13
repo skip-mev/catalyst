@@ -196,8 +196,8 @@ func (r *Runner) buildTxsForMsgSpec(ctx context.Context, msgSpec loadtesttypes.L
 	return txs
 }
 
-// initUninitializedSenders queries account info for senders not yet in
-// accountNumbers.
+// initUninitializedSenders filters to wallets not yet in accountNumbers and
+// initializes them, silently skipping failures.
 func (r *Runner) initUninitializedSenders(ctx context.Context, senders []*wallet.InteractingWallet) {
 	var toInit []*wallet.InteractingWallet
 	for _, s := range senders {
@@ -208,23 +208,8 @@ func (r *Runner) initUninitializedSenders(ctx context.Context, senders []*wallet
 	if len(toInit) == 0 {
 		return
 	}
-
-	results := fetchAccountInfo(ctx, toInit)
-	initialized := 0
-	for _, res := range results {
-		if res.err != nil {
-			continue
-		}
-		r.accountNumbersMu.Lock()
-		r.accountNumbers[res.info.address] = res.info.accountNumber
-		r.accountNumbersMu.Unlock()
-		r.walletNoncesMu.Lock()
-		r.walletNonces[res.info.address] = res.info.sequence
-		r.walletNoncesMu.Unlock()
-		initialized++
-	}
-	if skipped := len(toInit) - initialized; skipped > 0 {
-		r.logger.Info("skipped txs: sender not initialized", zap.Int("count", skipped))
+	if err := r.initWallets(ctx, toInit); err != nil {
+		r.logger.Info("some senders not yet on chain", zap.Error(err))
 	}
 }
 
@@ -413,7 +398,7 @@ func fetchAccountInfo(ctx context.Context, wallets []*wallet.InteractingWallet) 
 	return results
 }
 
-// initNewlyFundedWallets queries account info for the given wallets concurrently.
+// initWallets queries account info for the given wallets concurrently.
 // Wallets whose funding tx hasn't landed yet are silently skipped.
 func (r *Runner) initWallets(ctx context.Context, walletsToInit []*wallet.InteractingWallet) error {
 	start := time.Now()
