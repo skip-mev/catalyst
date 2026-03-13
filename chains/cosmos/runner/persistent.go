@@ -24,6 +24,9 @@ const (
 	persistentBlockTimeout = time.Minute
 )
 
+// errSkipped is a sentinel returned by buildPersistentTx for expected skip conditions.
+var errSkipped = fmt.Errorf("skipped")
+
 type persistentTx struct {
 	txBytes       []byte
 	walletAddress string
@@ -127,147 +130,16 @@ func (r *Runner) submitLoadPersistent(ctx context.Context) int {
 
 	buildStart := time.Now()
 	var allTxs []persistentTx
-
 	for _, msgSpec := range r.spec.Msgs {
-		numTxs := int(float64(r.spec.NumOfTxs) * msgSpec.Weight)
-		r.logger.Info("building load for msg spec",
-			zap.String("msg_type", msgSpec.Type.String()),
-			zap.Float64("weight", msgSpec.Weight),
-			zap.Int("num_txs", numTxs),
-		)
-		txCh := make(chan persistentTx, numTxs)
-
-		var (
-			skippedNoSender  atomic.Int64
-			skippedNoAccount atomic.Int64
-			wg               sync.WaitGroup
-		)
-		for range numTxs {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-
-				sender := r.txFactory.GetNextSender()
-				if sender == nil {
-					skippedNoSender.Add(1)
-					return
-				}
-				walletAddress := sender.FormattedAddress()
-				client := sender.GetClient()
-
-				// Skip senders that haven't been initialized yet (no cached account number)
-				if _, ok := r.accountNumbers[walletAddress]; !ok {
-					skippedNoAccount.Add(1)
-					return
-				}
-
-				var msgs []sdk.Msg
-				var err error
-				if msgSpec.Type == inttypes.MsgSend {
-					// Query balance and send half so receivers can cover fees as senders
-					balance, balErr := client.GetBalance(ctx, walletAddress, r.chainCfg.GasDenom)
-					if balErr != nil {
-						r.logger.Error("failed to query balance", zap.Error(balErr))
-						return
-					}
-					sendAmount := balance.Quo(sdkmath.NewInt(2))
-					if !sendAmount.IsPositive() {
-						return
-					}
-					msg, msgErr := r.txFactory.CreateMsgSendWithAmount(sender, sendAmount)
-					if msgErr != nil {
-						r.logger.Error("failed to create message", zap.Error(msgErr))
-						return
-					}
-					msgs = []sdk.Msg{msg}
-				} else {
-					msgs, err = r.createMessagesForType(msgSpec, sender)
-					if err != nil {
-						r.logger.Error("failed to create message", zap.Error(err))
-						return
-					}
-				}
-
-				gasBufferFactor := 1.3
-				gasWithBuffer := int64(float64(r.gasEstimations[msgSpec].gasUsed) * gasBufferFactor)
-
-				// Get nonce optimistically just before signing — after all fallible
-				// message-creation steps so a failure there does not burn a nonce.
-				r.walletNoncesMu.Lock()
-				nonce := r.walletNonces[walletAddress]
-				r.walletNonces[walletAddress] = nonce + 1
-				r.walletNoncesMu.Unlock()
-
-				tx, err := sender.CreateSignedTx(
-					ctx,
-					client,
-					uint64(gasWithBuffer), //nolint:gosec // G115: overflow unlikely in practice
-					r.computeFees(gasWithBuffer),
-					nonce,
-					r.accountNumbers[walletAddress],
-					RandomString(16), // Avoid ErrTxInMempoolCache
-					r.chainCfg.UnorderedTxs,
-					r.spec.TxTimeout,
-					msgs...)
-				if err != nil {
-					r.logger.Error("failed to create signed tx", zap.Error(err))
-					return
-				}
-
-				txBytes, err := client.GetEncodingConfig().TxConfig.TxEncoder()(tx)
-				if err != nil {
-					r.logger.Error("failed to encode tx", zap.Error(err))
-					return
-				}
-
-				txCh <- persistentTx{
-					txBytes:       txBytes,
-					walletAddress: walletAddress,
-					msgType:       msgSpec.Type,
-					client:        client,
-				}
-			}()
-		}
-
-		go func() {
-			wg.Wait()
-			close(txCh)
-		}()
-
-		for tx := range txCh {
-			allTxs = append(allTxs, tx)
-		}
-
-		if s := skippedNoSender.Load(); s > 0 {
-			r.logger.Info("skipped txs: no sender available", zap.Int64("count", s))
-		}
-		if s := skippedNoAccount.Load(); s > 0 {
-			r.logger.Info("skipped txs: sender not initialized", zap.Int64("count", s))
-		}
+		allTxs = append(allTxs, r.buildTxsForMsgSpec(ctx, msgSpec)...)
 	}
-	buildDuration := time.Since(buildStart)
-	r.logger.Info("built load", zap.Int("num_txs", len(allTxs)), zap.Duration("duration", buildDuration))
+	r.logger.Info("built load", zap.Int("num_txs", len(allTxs)), zap.Duration("duration", time.Since(buildStart)))
 
 	sendStart := time.Now()
 	failures := r.sendTxs(ctx, allTxs)
-	sendDuration := time.Since(sendStart)
-
-	totalFailures := 0
-	for _, count := range failures {
-		totalFailures += count
-	}
-	r.logger.Info("sent load",
-		zap.Int("num_txs", len(allTxs)),
-		zap.Int("succeeded", len(allTxs)-totalFailures),
-		zap.Int("failed", totalFailures),
-		zap.Duration("duration", sendDuration),
-	)
-	for code, count := range failures {
-		r.logger.Warn("broadcast failures", zap.Uint32("code", code), zap.Int("count", count))
-	}
+	r.logSendResults(allTxs, failures, time.Since(sendStart))
 
 	oldFunded, newFunded := r.txFactory.ResetWalletAllocation()
-
 	if newFunded > oldFunded {
 		// Init account numbers for newly funded wallets.
 		// Wallets whose funding tx failed won't exist on chain yet — skip them silently.
@@ -276,6 +148,165 @@ func (r *Runner) submitLoadPersistent(ctx context.Context) int {
 	}
 
 	return len(allTxs)
+}
+
+// buildTxsForMsgSpec concurrently builds transactions for a single message spec.
+func (r *Runner) buildTxsForMsgSpec(ctx context.Context, msgSpec loadtesttypes.LoadTestMsg) []persistentTx {
+	numTxs := int(float64(r.spec.NumOfTxs) * msgSpec.Weight)
+	r.logger.Info("building load for msg spec",
+		zap.String("msg_type", msgSpec.Type.String()),
+		zap.Float64("weight", msgSpec.Weight),
+		zap.Int("num_txs", numTxs),
+	)
+
+	txCh := make(chan persistentTx, numTxs)
+	var (
+		skippedNoSender  atomic.Int64
+		skippedNoAccount atomic.Int64
+		wg               sync.WaitGroup
+	)
+	for range numTxs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tx, err := r.buildPersistentTx(ctx, msgSpec, &skippedNoSender, &skippedNoAccount)
+			if err != nil {
+				return
+			}
+			txCh <- *tx
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(txCh)
+	}()
+
+	var txs []persistentTx
+	for tx := range txCh {
+		txs = append(txs, tx)
+	}
+
+	if s := skippedNoSender.Load(); s > 0 {
+		r.logger.Info("skipped txs: no sender available", zap.Int64("count", s))
+	}
+	if s := skippedNoAccount.Load(); s > 0 {
+		r.logger.Info("skipped txs: sender not initialized", zap.Int64("count", s))
+	}
+	return txs
+}
+
+// buildPersistentTx creates a single signed transaction for persistent load.
+// Returns nil with a nil error for expected skip conditions (no sender, no account, zero balance).
+func (r *Runner) buildPersistentTx(
+	ctx context.Context,
+	msgSpec loadtesttypes.LoadTestMsg,
+	skippedNoSender, skippedNoAccount *atomic.Int64,
+) (*persistentTx, error) {
+	sender := r.txFactory.GetNextSender()
+	if sender == nil {
+		skippedNoSender.Add(1)
+		return nil, errSkipped
+	}
+	walletAddress := sender.FormattedAddress()
+	client := sender.GetClient()
+
+	if _, ok := r.accountNumbers[walletAddress]; !ok {
+		skippedNoAccount.Add(1)
+		return nil, errSkipped
+	}
+
+	msgs, err := r.createMsgsForPersistent(ctx, msgSpec, sender, client, walletAddress)
+	if err != nil {
+		return nil, err
+	}
+	if msgs == nil {
+		return nil, errSkipped // zero balance
+	}
+
+	gasWithBuffer := int64(float64(r.gasEstimations[msgSpec].gasUsed) * 1.3)
+
+	// Get nonce optimistically just before signing — after all fallible
+	// message-creation steps so a failure there does not burn a nonce.
+	r.walletNoncesMu.Lock()
+	nonce := r.walletNonces[walletAddress]
+	r.walletNonces[walletAddress] = nonce + 1
+	r.walletNoncesMu.Unlock()
+
+	tx, err := sender.CreateSignedTx(
+		ctx,
+		client,
+		uint64(gasWithBuffer), //nolint:gosec // G115: overflow unlikely in practice
+		r.computeFees(gasWithBuffer),
+		nonce,
+		r.accountNumbers[walletAddress],
+		RandomString(16), // Avoid ErrTxInMempoolCache
+		r.chainCfg.UnorderedTxs,
+		r.spec.TxTimeout,
+		msgs...)
+	if err != nil {
+		r.logger.Error("failed to create signed tx", zap.Error(err))
+		return nil, err
+	}
+
+	txBytes, err := client.GetEncodingConfig().TxConfig.TxEncoder()(tx)
+	if err != nil {
+		r.logger.Error("failed to encode tx", zap.Error(err))
+		return nil, err
+	}
+
+	return &persistentTx{
+		txBytes:       txBytes,
+		walletAddress: walletAddress,
+		msgType:       msgSpec.Type,
+		client:        client,
+	}, nil
+}
+
+// createMsgsForPersistent builds the SDK messages for a single persistent tx.
+// Returns nil msgs (no error) when the sender has zero balance for MsgSend.
+func (r *Runner) createMsgsForPersistent(
+	ctx context.Context,
+	msgSpec loadtesttypes.LoadTestMsg,
+	sender *wallet.InteractingWallet,
+	client *client.Chain,
+	walletAddress string,
+) ([]sdk.Msg, error) {
+	if msgSpec.Type != inttypes.MsgSend {
+		return r.createMessagesForType(msgSpec, sender)
+	}
+	// Query balance and send half so receivers can cover fees as senders
+	balance, err := client.GetBalance(ctx, walletAddress, r.chainCfg.GasDenom)
+	if err != nil {
+		r.logger.Error("failed to query balance", zap.Error(err))
+		return nil, err
+	}
+	sendAmount := balance.Quo(sdkmath.NewInt(2))
+	if !sendAmount.IsPositive() {
+		return nil, nil
+	}
+	msg, err := r.txFactory.CreateMsgSendWithAmount(sender, sendAmount)
+	if err != nil {
+		r.logger.Error("failed to create message", zap.Error(err))
+		return nil, err
+	}
+	return []sdk.Msg{msg}, nil
+}
+
+func (r *Runner) logSendResults(txs []persistentTx, failures map[uint32]int, duration time.Duration) {
+	totalFailures := 0
+	for _, count := range failures {
+		totalFailures += count
+	}
+	r.logger.Info("sent load",
+		zap.Int("num_txs", len(txs)),
+		zap.Int("succeeded", len(txs)-totalFailures),
+		zap.Int("failed", totalFailures),
+		zap.Duration("duration", duration),
+	)
+	for code, count := range failures {
+		r.logger.Warn("broadcast failures", zap.Uint32("code", code), zap.Int("count", count))
+	}
 }
 
 func (r *Runner) sendTxs(ctx context.Context, txs []persistentTx) map[uint32]int {
