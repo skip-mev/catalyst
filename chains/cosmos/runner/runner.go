@@ -518,7 +518,7 @@ func (r *Runner) createAndSendTransaction(
 ) (inttypes.SentTx, bool) {
 	walletAddress := fromWallet.FormattedAddress()
 
-	gasBufferFactor := 1.2
+	gasBufferFactor := 1.5
 	estimation := r.gasEstimations[mspSpec]
 	gasWithBuffer := int64(float64(estimation.gasUsed) * gasBufferFactor)
 	fees := r.computeFees(gasWithBuffer)
