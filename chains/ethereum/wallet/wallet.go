@@ -107,7 +107,11 @@ func NewWalletsFromSpec(
 				zap.Error(err),
 			)
 		} else {
-			logger.Info("successfully cached wallets", zap.Int("num_wallets", len(ws)), zap.String("file", spec.Cache.WriteWalletsTo))
+			logger.Info(
+				"successfully cached wallets",
+				zap.Int("num_wallets", len(ws)),
+				zap.String("file", spec.Cache.WriteWalletsTo),
+			)
 		}
 	}
 	return ws, nil

@@ -6,11 +6,11 @@ import (
 	"go.uber.org/zap"
 )
 
-// TxDistributionBootstrapped is a generic wallet distribution strategy that
+// Bootstrapped is a generic wallet distribution strategy that
 // supports bootstrapping (gradually funding wallets) and role rotation between
 // senders and receivers. W is the wallet type (e.g.
 // *cosmosWallet.InteractingWallet or *ethWallet.InteractingWallet).
-type TxDistributionBootstrapped[W any] struct {
+type Bootstrapped[W any] struct {
 	mu      sync.Mutex
 	logger  *zap.Logger
 	wallets []W
@@ -23,13 +23,13 @@ type TxDistributionBootstrapped[W any] struct {
 }
 
 // NewBootstrapped creates a new bootstrapped distribution.
-func NewBootstrapped[W any](logger *zap.Logger, wallets []W, fundedWallets int) *TxDistributionBootstrapped[W] {
+func NewBootstrapped[W any](logger *zap.Logger, wallets []W, fundedWallets int) *Bootstrapped[W] {
 	numWallets := len(wallets)
 	receiverIndex := fundedWallets
 	if fundedWallets == numWallets {
 		receiverIndex = numWallets / 2
 	}
-	return &TxDistributionBootstrapped[W]{
+	return &Bootstrapped[W]{
 		logger:        logger,
 		wallets:       wallets,
 		FundedWallets: fundedWallets,
@@ -42,7 +42,7 @@ func NewBootstrapped[W any](logger *zap.Logger, wallets []W, fundedWallets int) 
 // GetNextSender returns the next sender wallet.
 // Returns the zero value of W (nil for pointer types) if no further senders can be used
 // during this load generation.
-func (d *TxDistributionBootstrapped[W]) GetNextSender() W {
+func (d *Bootstrapped[W]) GetNextSender() W {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -56,7 +56,7 @@ func (d *TxDistributionBootstrapped[W]) GetNextSender() W {
 }
 
 // GetNextReceiver returns the next receiver wallet using round-robin within the current load.
-func (d *TxDistributionBootstrapped[W]) GetNextReceiver() W {
+func (d *Bootstrapped[W]) GetNextReceiver() W {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -66,13 +66,13 @@ func (d *TxDistributionBootstrapped[W]) GetNextReceiver() W {
 }
 
 // GetWallet returns the wallet at the given index.
-func (d *TxDistributionBootstrapped[W]) GetWallet(index int) W {
+func (d *Bootstrapped[W]) GetWallet(index int) W {
 	return d.wallets[index]
 }
 
 // ResetWalletAllocation resets wallet allocation for a new load and rotates roles.
 // Returns (oldFundedWallets, newFundedWallets).
-func (d *TxDistributionBootstrapped[W]) ResetWalletAllocation() (int, int) {
+func (d *Bootstrapped[W]) ResetWalletAllocation() (int, int) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 

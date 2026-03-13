@@ -169,7 +169,12 @@ func TestTrimBlocks(t *testing.T) {
 
 				for i, expected := range tt.expected {
 					require.Equal(t, expected.BlockHeight, result[i].BlockHeight, "Block height should match")
-					require.Equal(t, len(expected.MessageStats), len(result[i].MessageStats), "MessageStats length should match")
+					require.Equal(
+						t,
+						len(expected.MessageStats),
+						len(result[i].MessageStats),
+						"MessageStats length should match",
+					)
 				}
 			}
 		})

@@ -4,10 +4,10 @@ import (
 	"sync"
 )
 
-// TxDistributionEven is a generic wallet distribution strategy that evenly splits
+// Even is a generic wallet distribution strategy that evenly splits
 // wallets into sender and receiver pools with role rotation between loads.
 // W is the wallet type (e.g. *cosmosWallet.InteractingWallet or *ethWallet.InteractingWallet).
-type TxDistributionEven[W any] struct {
+type Even[W any] struct {
 	mu      sync.Mutex
 	wallets []W
 	// Wallet allocation tracking for minimizing reuse with role rotation
@@ -18,15 +18,15 @@ type TxDistributionEven[W any] struct {
 }
 
 // NewEven creates a new even distribution.
-func NewEven[W any](wallets []W) *TxDistributionEven[W] {
-	return &TxDistributionEven[W]{
+func NewEven[W any](wallets []W) *Even[W] {
+	return &Even[W]{
 		wallets:    wallets,
 		NumWallets: len(wallets),
 	}
 }
 
 // GetNextSender returns the next sender wallet using round-robin within the current load.
-func (d *TxDistributionEven[W]) GetNextSender() W {
+func (d *Even[W]) GetNextSender() W {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -38,7 +38,7 @@ func (d *TxDistributionEven[W]) GetNextSender() W {
 }
 
 // GetCurrentSenderPool returns the current sender pool with role rotation.
-func (d *TxDistributionEven[W]) GetCurrentSenderPool() []W {
+func (d *Even[W]) GetCurrentSenderPool() []W {
 	if d.NumWallets < 2 {
 		return d.wallets
 	}
@@ -58,7 +58,7 @@ func (d *TxDistributionEven[W]) GetCurrentSenderPool() []W {
 }
 
 // GetCurrentReceiverPool returns the current receiver pool with role rotation.
-func (d *TxDistributionEven[W]) GetCurrentReceiverPool() []W {
+func (d *Even[W]) GetCurrentReceiverPool() []W {
 	if d.NumWallets < 2 {
 		return d.wallets
 	}
@@ -78,7 +78,7 @@ func (d *TxDistributionEven[W]) GetCurrentReceiverPool() []W {
 }
 
 // GetNextReceiver returns the next receiver wallet using round-robin within the current load.
-func (d *TxDistributionEven[W]) GetNextReceiver() W {
+func (d *Even[W]) GetNextReceiver() W {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -91,7 +91,7 @@ func (d *TxDistributionEven[W]) GetNextReceiver() W {
 
 // ResetWalletAllocation resets wallet allocation for a new load and rotates roles.
 // Returns (0, 0) as TxDistributionEven does not track funded wallet counts.
-func (d *TxDistributionEven[W]) ResetWalletAllocation() (int, int) {
+func (d *Even[W]) ResetWalletAllocation() (int, int) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -102,6 +102,6 @@ func (d *TxDistributionEven[W]) ResetWalletAllocation() (int, int) {
 }
 
 // GetWallet returns the wallet at the given index.
-func (d *TxDistributionEven[W]) GetWallet(index int) W {
+func (d *Even[W]) GetWallet(index int) W {
 	return d.wallets[index]
 }

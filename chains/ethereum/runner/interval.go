@@ -65,7 +65,11 @@ func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResul
 				zap.String("file", r.spec.Cache.WriteTxsTo),
 			)
 		} else {
-			r.logger.Info("successfully cached txs", zap.Int("num_batches", len(batchLoads)), zap.String("file", r.spec.Cache.WriteTxsTo))
+			r.logger.Info(
+				"successfully cached txs",
+				zap.Int("num_batches", len(batchLoads)),
+				zap.String("file", r.spec.Cache.WriteTxsTo),
+			)
 		}
 	}
 

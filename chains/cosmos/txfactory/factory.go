@@ -30,7 +30,10 @@ func NewTxFactory(gasDenom string, wallets []*wallet.InteractingWallet, distribu
 }
 
 // CreateMsgSendWithAmount creates a MsgSend with a specific transfer amount.
-func (f *TxFactory) CreateMsgSendWithAmount(fromWallet *wallet.InteractingWallet, sendAmount sdkmath.Int) (sdk.Msg, error) {
+func (f *TxFactory) CreateMsgSendWithAmount(
+	fromWallet *wallet.InteractingWallet,
+	sendAmount sdkmath.Int,
+) (sdk.Msg, error) {
 	return f.createMsgSend(fromWallet, &sendAmount)
 }
 

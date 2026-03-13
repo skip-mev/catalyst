@@ -20,9 +20,9 @@ import (
 
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
-	"github.com/skip-mev/catalyst/chains/txdistribution"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
+	"github.com/skip-mev/catalyst/chains/txdistribution"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
@@ -239,7 +239,11 @@ func (r *Runner) deployContracts(ctx context.Context, deployer ContractDeployer)
 			if err == nil {
 				addresses[index] = rec.ContractAddress
 			} else {
-				r.logger.Error("failed to find receipt", zap.String("msg_type", deployer.msgType.String()), zap.Error(err))
+				r.logger.Error(
+					"failed to find receipt",
+					zap.String("msg_type", deployer.msgType.String()),
+					zap.Error(err),
+				)
 			}
 		}(i, tx)
 	}

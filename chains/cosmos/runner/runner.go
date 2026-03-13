@@ -20,10 +20,10 @@ import (
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
 	"github.com/skip-mev/catalyst/chains/cosmos/metrics"
 	"github.com/skip-mev/catalyst/chains/cosmos/txfactory"
-	"github.com/skip-mev/catalyst/chains/txdistribution"
 	inttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
 	logging "github.com/skip-mev/catalyst/chains/log"
+	"github.com/skip-mev/catalyst/chains/txdistribution"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
@@ -77,7 +77,11 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		}
 		clients = append(clients, client)
 	}
-	logger.Info("created clients", zap.Int("num_clients", len(clients)), zap.Duration("duration", time.Since(clientStart)))
+	logger.Info(
+		"created clients",
+		zap.Int("num_clients", len(clients)),
+		zap.Duration("duration", time.Since(clientStart)),
+	)
 
 	if len(clients) == 0 {
 		return nil, fmt.Errorf("no valid clients created")
@@ -99,7 +103,11 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 			privKeys = append(privKeys, &secp256k1.PrivKey{Key: derivedPrivKey})
 		}
 	}
-	logger.Info("derived wallet keys", zap.Int("num_keys", len(privKeys)), zap.Duration("duration", time.Since(keyStart)))
+	logger.Info(
+		"derived wallet keys",
+		zap.Int("num_keys", len(privKeys)),
+		zap.Duration("duration", time.Since(keyStart)),
+	)
 
 	if len(privKeys) == 0 {
 		return nil, fmt.Errorf("no private keys available: either provide base mnemonic or private keys")
@@ -113,7 +121,11 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		wallet := wallet.NewInteractingWallet(privKey, chainCfg.Bech32Prefix, client)
 		wallets = append(wallets, wallet)
 	}
-	logger.Info("created wallets", zap.Int("num_wallets", len(wallets)), zap.Duration("duration", time.Since(walletStart)))
+	logger.Info(
+		"created wallets",
+		zap.Int("num_wallets", len(wallets)),
+		zap.Duration("duration", time.Since(walletStart)),
+	)
 
 	gasPrice := sdkmath.LegacyOneDec()
 	if chainCfg.GasPrice != "" {
@@ -392,7 +404,14 @@ func (r *Runner) sendBlockTransactions(
 			go func(msgSpec loadtesttypes.LoadTestMsg, _ int) {
 				defer wg.Done()
 
-				if sentTx, _ := r.processSingleTransaction(ctx, msgSpec, getLatestNonce, updateNonce, &txsSentMu, &txsSent); sentTx != (inttypes.SentTx{}) {
+				if sentTx, _ := r.processSingleTransaction(
+					ctx,
+					msgSpec,
+					getLatestNonce,
+					updateNonce,
+					&txsSentMu,
+					&txsSent,
+				); sentTx != (inttypes.SentTx{}) {
 					sentTxsMu.Lock()
 					sentTxs = append(sentTxs, sentTx)
 					sentTxsMu.Unlock()
