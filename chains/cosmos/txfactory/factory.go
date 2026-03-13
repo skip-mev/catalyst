@@ -13,18 +13,54 @@ import (
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
+// TxDistribution controls sender/receiver selection for load testing.
+type TxDistribution interface {
+	GetNextSender() *wallet.InteractingWallet
+	GetNextReceiver() *wallet.InteractingWallet
+	// ResetWalletAllocation resets allocation for a new load and returns
+	// (oldFundedWallets, newFundedWallets) so callers can init only the delta.
+	ResetWalletAllocation() (int, int)
+}
+
 // TxFactory creates transactions for load testing
 type TxFactory struct {
-	gasDenom string
-	wallets  []*wallet.InteractingWallet
+	gasDenom       string
+	wallets        []*wallet.InteractingWallet
+	txDistribution TxDistribution
 }
 
 // NewTxFactory creates a new transaction factory
-func NewTxFactory(gasDenom string, wallets []*wallet.InteractingWallet) *TxFactory {
+func NewTxFactory(gasDenom string, wallets []*wallet.InteractingWallet, distribution TxDistribution) *TxFactory {
 	return &TxFactory{
-		gasDenom: gasDenom,
-		wallets:  wallets,
+		gasDenom:       gasDenom,
+		wallets:        wallets,
+		txDistribution: distribution,
 	}
+}
+
+// CreateMsgSendWithAmount creates a MsgSend with a specific transfer amount.
+func (f *TxFactory) CreateMsgSendWithAmount(
+	fromWallet *wallet.InteractingWallet,
+	sendAmount sdkmath.Int,
+) (sdk.Msg, error) {
+	return f.createMsgSend(fromWallet, &sendAmount)
+}
+
+// GetNextSender returns the next sender from the distribution, or nil if no distribution is set.
+func (f *TxFactory) GetNextSender() *wallet.InteractingWallet {
+	if f.txDistribution == nil {
+		return nil
+	}
+	return f.txDistribution.GetNextSender()
+}
+
+// ResetWalletAllocation resets wallet allocation for a new load.
+// Returns (oldFundedWallets, newFundedWallets).
+func (f *TxFactory) ResetWalletAllocation() (int, int) {
+	if f.txDistribution != nil {
+		return f.txDistribution.ResetWalletAllocation()
+	}
+	return 0, 0
 }
 
 // CreateMsg creates a message of the specified type
@@ -34,7 +70,7 @@ func (f *TxFactory) CreateMsg(
 ) (sdk.Msg, error) {
 	switch msgSpec.Type {
 	case types.MsgSend:
-		return f.createMsgSend(fromWallet)
+		return f.createMsgSend(fromWallet, nil)
 	case types.MsgMultiSend:
 		return f.createMsgMultiSend(fromWallet, msgSpec.NumOfRecipients)
 	case types.MsgArr:
@@ -44,34 +80,45 @@ func (f *TxFactory) CreateMsg(
 	}
 }
 
-// createMsgSend creates a basic bank send message
-func (f *TxFactory) createMsgSend(fromWallet *wallet.InteractingWallet) (sdk.Msg, error) {
-	amount := sdk.NewCoins(sdk.NewCoin(f.gasDenom, sdkmath.NewInt(10)))
-
-	var toWallet *wallet.InteractingWallet
-	if len(f.wallets) == 1 {
-		toWallet = fromWallet
-	} else {
-		// Keep selecting until we get a different wallet
-		for {
-			toWallet = f.wallets[rand.Intn(len(f.wallets))]
-			if toWallet.FormattedAddress() != fromWallet.FormattedAddress() {
-				break
-			}
-		}
+// createMsgSend creates a basic bank send message.
+// If sendAmount is non-nil and positive, it is used as the transfer amount.
+func (f *TxFactory) createMsgSend(fromWallet *wallet.InteractingWallet, sendAmount *sdkmath.Int) (sdk.Msg, error) {
+	transferAmt := sdkmath.NewInt(10)
+	if sendAmount != nil && sendAmount.IsPositive() {
+		transferAmt = *sendAmount
 	}
+	amount := sdk.NewCoins(sdk.NewCoin(f.gasDenom, transferAmt))
 
 	fromAddr, err := sdk.AccAddressFromBech32(fromWallet.FormattedAddress())
 	if err != nil {
 		return nil, fmt.Errorf("invalid from address: %w", err)
 	}
 
+	toWallet := f.getToWallet(fromWallet)
 	toAddr, err := sdk.AccAddressFromBech32(toWallet.FormattedAddress())
 	if err != nil {
 		return nil, fmt.Errorf("invalid to address: %w", err)
 	}
 
 	return banktypes.NewMsgSend(fromAddr, toAddr, amount), nil
+}
+
+func (f *TxFactory) getToWallet(fromWallet *wallet.InteractingWallet) *wallet.InteractingWallet {
+	if f.txDistribution != nil {
+		return f.txDistribution.GetNextReceiver()
+	}
+	if len(f.wallets) == 1 {
+		return fromWallet
+	}
+
+	// Keep selecting until we get a different wallet
+	fromAddr := fromWallet.FormattedAddress()
+	for {
+		toWallet := f.wallets[rand.Intn(len(f.wallets))]
+		if toWallet.FormattedAddress() != fromAddr {
+			return toWallet
+		}
+	}
 }
 
 // createMsgMultiSend creates a multi-send message that distributes funds to all other wallets
@@ -116,7 +163,7 @@ func (f *TxFactory) createMsgArray(
 
 		switch msgSpec.ContainedType {
 		case types.MsgSend:
-			msg, err = f.createMsgSend(fromWallet)
+			msg, err = f.createMsgSend(fromWallet, nil)
 		case types.MsgMultiSend:
 			msg, err = f.createMsgMultiSend(fromWallet, msgSpec.NumOfRecipients)
 		default:

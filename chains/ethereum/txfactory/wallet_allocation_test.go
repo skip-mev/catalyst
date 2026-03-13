@@ -9,6 +9,7 @@ import (
 
 	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
+	"github.com/skip-mev/catalyst/chains/txdistribution"
 )
 
 func TestWalletAllocationMinimizesReuse(t *testing.T) {
@@ -17,20 +18,18 @@ func TestWalletAllocationMinimizesReuse(t *testing.T) {
 	mockWallets := make([]*ethwallet.InteractingWallet, numWallets)
 	for i := range mockWallets {
 		mockWallets[i] = &ethwallet.InteractingWallet{}
-		// Note: In real implementation, we would need to mock the Address() method
-		// For this test, we'll focus on the logic
 	}
 
 	logger := zap.NewNop()
 	txOpts := ethtypes.TxOpts{}
-	distr := NewTxDistributionEven(mockWallets)
+	distr := txdistribution.NewEven(mockWallets)
 	factory := NewTxFactory(logger, txOpts, distr)
 
 	// Test 1: Verify that sender and receiver pools are non-overlapping within a load
 	factory.ResetWalletAllocation()
 
-	senderPool := distr.getCurrentSenderPool()
-	receiverPool := distr.getCurrentReceiverPool()
+	senderPool := distr.GetCurrentSenderPool()
+	receiverPool := distr.GetCurrentReceiverPool()
 
 	// Ensure pools have expected sizes
 	expectedSenderSize := numWallets / 2
@@ -39,16 +38,16 @@ func TestWalletAllocationMinimizesReuse(t *testing.T) {
 	assert.Equal(t, expectedReceiverSize, len(receiverPool), "Receiver pool should be the remaining wallets")
 
 	// Test 2: Verify load generation increments
-	initialGeneration := distr.loadGeneration
+	initialGeneration := distr.LoadGeneration
 	factory.ResetWalletAllocation()
-	assert.Equal(t, initialGeneration+1, distr.loadGeneration, "Load generation should increment")
+	assert.Equal(t, initialGeneration+1, distr.LoadGeneration, "Load generation should increment")
 
 	// Test 3: Verify round-robin within pools
 	factory.ResetWalletAllocation()
 
 	// Get all senders in the pool
 	senders := make([]*ethwallet.InteractingWallet, 0)
-	poolSize := len(distr.getCurrentSenderPool())
+	poolSize := len(distr.GetCurrentSenderPool())
 
 	for i := 0; i < poolSize*2; i++ { // Go through the pool twice
 		sender := factory.GetNextSender()
@@ -67,12 +66,12 @@ func TestWalletAllocationHandlesEdgeCases(t *testing.T) {
 	// Test with single wallet
 	t.Run("single wallet", func(t *testing.T) {
 		singleWallet := []*ethwallet.InteractingWallet{{}}
-		distr := NewTxDistributionEven(singleWallet)
+		distr := txdistribution.NewEven(singleWallet)
 		factory := NewTxFactory(logger, txOpts, distr)
 		factory.ResetWalletAllocation()
 
-		senderPool := distr.getCurrentSenderPool()
-		receiverPool := distr.getCurrentReceiverPool()
+		senderPool := distr.GetCurrentSenderPool()
+		receiverPool := distr.GetCurrentReceiverPool()
 
 		// With a single wallet, both pools should contain the same wallet
 		require.Len(t, senderPool, 1)
@@ -85,17 +84,16 @@ func TestWalletAllocationHandlesEdgeCases(t *testing.T) {
 			{},
 			{},
 		}
-		distr := NewTxDistributionEven(twoWallets)
+		distr := txdistribution.NewEven(twoWallets)
 		factory := NewTxFactory(logger, txOpts, distr)
 		factory.ResetWalletAllocation()
 
-		senderPool := distr.getCurrentSenderPool()
-		receiverPool := distr.getCurrentReceiverPool()
+		senderPool := distr.GetCurrentSenderPool()
+		receiverPool := distr.GetCurrentReceiverPool()
 
 		// With two wallets, each pool should have one wallet
 		assert.Len(t, senderPool, 1)
 		assert.Len(t, receiverPool, 1)
-		// With mock wallets, we can't easily test non-overlap, so just verify pool sizes
 	})
 }
 
@@ -108,14 +106,14 @@ func TestLoadGenerationProgression(t *testing.T) {
 
 	logger := zap.NewNop()
 	txOpts := ethtypes.TxOpts{}
-	distr := NewTxDistributionEven(mockWallets)
+	distr := txdistribution.NewEven(mockWallets)
 	factory := NewTxFactory(logger, txOpts, distr)
 
 	// Test that load generation progresses
-	initialGeneration := distr.loadGeneration
+	initialGeneration := distr.LoadGeneration
 
 	for i := 0; i < 5; i++ {
 		factory.ResetWalletAllocation()
-		assert.Equal(t, initialGeneration+i+1, distr.loadGeneration, "Load generation should increment with each reset")
+		assert.Equal(t, initialGeneration+i+1, distr.LoadGeneration, "Load generation should increment with each reset")
 	}
 }
