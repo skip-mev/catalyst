@@ -12,17 +12,19 @@ import (
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	cosmosift "github.com/skip-mev/catalyst/chains/cosmos/ift"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
 const (
-	MsgSend      loadtesttypes.MsgType = "MsgSend"
-	MsgMultiSend loadtesttypes.MsgType = "MsgMultiSend"
-	MsgArr       loadtesttypes.MsgType = "MsgArr"
+	MsgSend        loadtesttypes.MsgType = "MsgSend"
+	MsgMultiSend   loadtesttypes.MsgType = "MsgMultiSend"
+	MsgArr         loadtesttypes.MsgType = "MsgArr"
+	MsgIFTTransfer loadtesttypes.MsgType = "MsgIFTTransfer"
 )
 
 var (
-	validMsgTypes       = []loadtesttypes.MsgType{MsgSend, MsgMultiSend, MsgArr}
+	validMsgTypes       = []loadtesttypes.MsgType{MsgSend, MsgMultiSend, MsgArr, MsgIFTTransfer}
 	validContainedTypes = []loadtesttypes.MsgType{MsgSend, MsgMultiSend}
 )
 
@@ -71,6 +73,8 @@ type SentTx struct {
 	NodeAddress       string
 	MsgType           loadtesttypes.MsgType
 	Err               error
+	SourceErr         error
+	RelayerErr        error
 	TxResponse        *sdk.TxResponse
 	InitialTxResponse *sdk.TxResponse
 }
@@ -117,6 +121,10 @@ func (s ChainConfig) Validate(mainCfg loadtesttypes.LoadTestSpec) error {
 			if msg.NumOfRecipients > mainCfg.NumWallets {
 				return fmt.Errorf("number of recipients must be less than or equal to number of wallets available")
 			}
+		case MsgIFTTransfer:
+			if mainCfg.IFT == nil {
+				return fmt.Errorf("ift config must be specified when using MsgIFTTransfer")
+			}
 		default:
 			if seenMsgTypes[msg.Type] {
 				return fmt.Errorf("duplicate message type: %s", msg.Type)
@@ -147,6 +155,7 @@ func init() {
 
 func Register() {
 	loadtesttypes.Register("cosmos", func() loadtesttypes.ChainConfig { return &ChainConfig{} })
+	cosmosift.RegisterTypeURL(cosmosift.DefaultMsgIFTTransferTypeURL)
 }
 
 func validateMsgType(msg loadtesttypes.LoadTestMsg) error {

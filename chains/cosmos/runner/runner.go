@@ -18,8 +18,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
+	cosmosift "github.com/skip-mev/catalyst/chains/cosmos/ift"
 	"github.com/skip-mev/catalyst/chains/cosmos/metrics"
-	"github.com/skip-mev/catalyst/chains/cosmos/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
 	logging "github.com/skip-mev/catalyst/chains/log"
@@ -47,7 +47,7 @@ type Runner struct {
 	logger             *zap.Logger
 	sentTxs            []inttypes.SentTx
 	sentTxsMu          sync.RWMutex
-	txFactory          *txfactory.TxFactory
+	mode               txMode
 	accountNumbers     map[string]uint64
 	walletNonces       map[string]uint64
 	walletNoncesMu     sync.Mutex
@@ -59,6 +59,10 @@ type Runner struct {
 func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
 	logger := logging.FromContext(ctx)
 	chainCfg := spec.ChainCfg.(*inttypes.ChainConfig)
+
+	if spec.IFT != nil && spec.IFT.Cosmos != nil {
+		cosmosift.RegisterTypeURL(spec.IFT.Cosmos.MsgTypeURL)
+	}
 
 	if err := spec.Validate(); err != nil {
 		return nil, err
@@ -116,7 +120,15 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		chainCfg:       *chainCfg,
 	}
 
-	runner.txFactory = txfactory.NewTxFactory(chainCfg.GasDenom, wallets)
+	if spec.IFT != nil {
+		var err error
+		runner.mode, err = newIFTTxMode(spec)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		runner.mode = newLocalTxMode(chainCfg.GasDenom, wallets)
+	}
 
 	if err := runner.initGasEstimation(ctx); err != nil {
 		return nil, err
@@ -156,21 +168,9 @@ func (r *Runner) calculateMsgGasEstimations(
 	gasEstimations := make(map[loadtesttypes.LoadTestMsg]uint64)
 
 	for _, msgSpec := range r.spec.Msgs {
-		var msgs []sdk.Msg
-		var err error
-
-		if msgSpec.Type == inttypes.MsgArr {
-			msgs, err = r.txFactory.CreateMsgs(msgSpec, fromWallet)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create messages for gas estimation: %w", err)
-			}
-
-		} else {
-			msg, err := r.txFactory.CreateMsg(msgSpec, fromWallet)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create message for gas estimation: %w", err)
-			}
-			msgs = []sdk.Msg{msg}
+		msgs, err := r.mode.CreateMessages(msgSpec, fromWallet)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create messages for gas estimation: %w", err)
 		}
 
 		acc, err := client.GetAccount(ctx, fromWallet.FormattedAddress())
@@ -430,23 +430,7 @@ func (r *Runner) createMessagesForType(
 	msgSpec loadtesttypes.LoadTestMsg,
 	fromWallet *wallet.InteractingWallet,
 ) ([]sdk.Msg, error) {
-	var msgs []sdk.Msg
-	var err error
-
-	if msgSpec.Type == inttypes.MsgArr {
-		if msgSpec.ContainedType == "" {
-			return nil, fmt.Errorf("msgSpec.ContainedType must not be empty")
-		}
-
-		msgs, err = r.txFactory.CreateMsgs(msgSpec, fromWallet)
-	} else {
-		msg, err := r.txFactory.CreateMsg(msgSpec, fromWallet)
-		if err == nil {
-			msgs = []sdk.Msg{msg}
-		}
-	}
-
-	return msgs, err
+	return r.mode.CreateMessages(msgSpec, fromWallet)
 }
 
 // createAndSendTransaction creates and sends a transaction, handling the response
@@ -532,6 +516,7 @@ func (r *Runner) broadcastAndHandleResponse(
 
 		sentTx := inttypes.SentTx{
 			Err:         err,
+			SourceErr:   err,
 			NodeAddress: client.GetNodeAddress().RPC,
 			MsgType:     msgType,
 		}
@@ -550,6 +535,18 @@ func (r *Runner) broadcastAndHandleResponse(
 		NodeAddress: client.GetNodeAddress().RPC,
 		MsgType:     msgType,
 		Err:         nil,
+	}
+
+	if err := r.mode.HandlePostBroadcast(ctx, msgType, res.TxHash); err != nil {
+		if msgType == inttypes.MsgIFTTransfer {
+			sentTx.RelayerErr = err
+		}
+		sentTx.Err = err
+		r.logger.Error("post-broadcast handling failed",
+			zap.Error(err),
+			zap.String("tx_hash", res.TxHash),
+			zap.String("node", client.GetNodeAddress().RPC),
+			zap.String("msg_type", msgType.String()))
 	}
 
 	updateNonce(walletAddress)

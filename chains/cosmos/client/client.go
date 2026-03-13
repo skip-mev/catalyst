@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	cosmosift "github.com/skip-mev/catalyst/chains/cosmos/ift"
 	"github.com/skip-mev/catalyst/chains/cosmos/types"
 	logging "github.com/skip-mev/catalyst/chains/log"
 )
@@ -260,6 +261,7 @@ func getInterfaceRegistry() codectypes.InterfaceRegistry {
 	std.RegisterInterfaces(registry)
 	authtypes.RegisterInterfaces(registry)
 	banktypes.RegisterInterfaces(registry)
+	cosmosift.RegisterInterfaces(registry)
 	return registry
 }
 

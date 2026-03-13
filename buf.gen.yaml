@@ -1,0 +1,15 @@
+version: v2
+inputs:
+  - git_repo: https://github.com/cosmos/platform.git
+    subdir: apps/relayer/proto
+    paths:
+      - relayerapi/service.proto
+plugins:
+  - remote: buf.build/protocolbuffers/go
+    out: ift/relayer/pb
+    opt:
+      - paths=source_relative
+  - remote: buf.build/grpc/go
+    out: ift/relayer/pb
+    opt:
+      - paths=source_relative
