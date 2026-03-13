@@ -50,6 +50,7 @@ type Runner struct {
 	sentTxsMu          sync.RWMutex
 	txFactory          *txfactory.TxFactory
 	accountNumbers     map[string]uint64
+	accountNumbersMu   sync.Mutex
 	walletNonces       map[string]uint64
 	walletNoncesMu     sync.Mutex
 	gasPrice           sdkmath.LegacyDec

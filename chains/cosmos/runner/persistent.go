@@ -139,13 +139,7 @@ func (r *Runner) submitLoadPersistent(ctx context.Context) int {
 	failures := r.sendTxs(ctx, allTxs)
 	r.logSendResults(allTxs, failures, time.Since(sendStart))
 
-	oldFunded, newFunded := r.txFactory.ResetWalletAllocation()
-	if newFunded > oldFunded {
-		// Init account numbers for newly funded wallets.
-		// Wallets whose funding tx failed won't exist on chain yet — skip them silently.
-		// They'll be funded in a future round once nonces correct.
-		_ = r.initWallets(ctx, r.wallets[oldFunded:newFunded])
-	}
+	r.txFactory.ResetWalletAllocation()
 
 	return len(allTxs)
 }
@@ -211,9 +205,25 @@ func (r *Runner) buildPersistentTx(
 	walletAddress := sender.FormattedAddress()
 	client := sender.GetClient()
 
-	if _, ok := r.accountNumbers[walletAddress]; !ok {
-		skippedNoAccount.Add(1)
-		return nil, errSkipped
+	r.accountNumbersMu.Lock()
+	_, initialized := r.accountNumbers[walletAddress]
+	r.accountNumbersMu.Unlock()
+
+	if !initialized {
+		// Wallet may have been funded in a previous round but never initialized.
+		// Try to initialize it now — this is a single gRPC call and runs in parallel
+		// with other goroutines building txs.
+		acc, err := client.GetAccount(ctx, walletAddress)
+		if err != nil {
+			skippedNoAccount.Add(1)
+			return nil, errSkipped
+		}
+		r.accountNumbersMu.Lock()
+		r.accountNumbers[walletAddress] = acc.GetAccountNumber()
+		r.accountNumbersMu.Unlock()
+		r.walletNoncesMu.Lock()
+		r.walletNonces[walletAddress] = acc.GetSequence()
+		r.walletNoncesMu.Unlock()
 	}
 
 	msgs, err := r.createMsgsForPersistent(ctx, msgSpec, sender, client, walletAddress)
@@ -226,8 +236,11 @@ func (r *Runner) buildPersistentTx(
 
 	gasWithBuffer := int64(float64(r.gasEstimations[msgSpec].gasUsed) * 1.3)
 
-	// Get nonce optimistically just before signing — after all fallible
-	// message-creation steps so a failure there does not burn a nonce.
+	// Read account number and nonce under their respective locks, just before signing.
+	r.accountNumbersMu.Lock()
+	accountNumber := r.accountNumbers[walletAddress]
+	r.accountNumbersMu.Unlock()
+
 	r.walletNoncesMu.Lock()
 	nonce := r.walletNonces[walletAddress]
 	r.walletNonces[walletAddress] = nonce + 1
@@ -239,7 +252,7 @@ func (r *Runner) buildPersistentTx(
 		uint64(gasWithBuffer), //nolint:gosec // G115: overflow unlikely in practice
 		r.computeFees(gasWithBuffer),
 		nonce,
-		r.accountNumbers[walletAddress],
+		accountNumber,
 		RandomString(16), // Avoid ErrTxInMempoolCache
 		r.chainCfg.UnorderedTxs,
 		r.spec.TxTimeout,
@@ -396,7 +409,9 @@ func (r *Runner) initWallets(ctx context.Context, walletsToInit []*wallet.Intera
 			errs = append(errs, res.err)
 			continue
 		}
+		r.accountNumbersMu.Lock()
 		r.accountNumbers[res.info.address] = res.info.accountNumber
+		r.accountNumbersMu.Unlock()
 		r.walletNoncesMu.Lock()
 		r.walletNonces[res.info.address] = res.info.sequence
 		r.walletNoncesMu.Unlock()
