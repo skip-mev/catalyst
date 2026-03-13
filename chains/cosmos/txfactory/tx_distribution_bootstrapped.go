@@ -65,10 +65,12 @@ func (d *TxDistributionBootstrapped) GetNextReceiver() *wallet.InteractingWallet
 }
 
 // ResetWalletAllocation resets wallet allocation for a new load and rotates roles.
-func (d *TxDistributionBootstrapped) ResetWalletAllocation() {
+// Returns (oldFundedWallets, newFundedWallets).
+func (d *TxDistributionBootstrapped) ResetWalletAllocation() (int, int) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	oldFunded := d.fundedWallets
 	newFunded := d.fundedWallets + d.senderIndex
 	newSender := 0
 	newReceiver := newFunded
@@ -86,11 +88,6 @@ func (d *TxDistributionBootstrapped) ResetWalletAllocation() {
 	d.fundedWallets = newFunded
 	d.senderIndex = newSender
 	d.receiverIndex = newReceiver
+	return oldFunded, newFunded
 }
 
-// FundedWallets returns the current number of funded wallets.
-func (d *TxDistributionBootstrapped) FundedWallets() int {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.fundedWallets
-}

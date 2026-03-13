@@ -29,6 +29,11 @@ func NewTxFactory(gasDenom string, wallets []*wallet.InteractingWallet, distribu
 	}
 }
 
+// CreateMsgSendWithAmount creates a MsgSend with a specific transfer amount.
+func (f *TxFactory) CreateMsgSendWithAmount(fromWallet *wallet.InteractingWallet, sendAmount sdkmath.Int) (sdk.Msg, error) {
+	return f.createMsgSend(fromWallet, &sendAmount)
+}
+
 // GetNextSender returns the next sender from the distribution, or nil if no distribution is set.
 func (f *TxFactory) GetNextSender() *wallet.InteractingWallet {
 	if f.txDistribution == nil {
@@ -38,10 +43,12 @@ func (f *TxFactory) GetNextSender() *wallet.InteractingWallet {
 }
 
 // ResetWalletAllocation resets wallet allocation for a new load.
-func (f *TxFactory) ResetWalletAllocation() {
+// Returns (oldFundedWallets, newFundedWallets).
+func (f *TxFactory) ResetWalletAllocation() (int, int) {
 	if f.txDistribution != nil {
-		f.txDistribution.ResetWalletAllocation()
+		return f.txDistribution.ResetWalletAllocation()
 	}
+	return 0, 0
 }
 
 // CreateMsg creates a message of the specified type
@@ -51,7 +58,7 @@ func (f *TxFactory) CreateMsg(
 ) (sdk.Msg, error) {
 	switch msgSpec.Type {
 	case types.MsgSend:
-		return f.createMsgSend(fromWallet)
+		return f.createMsgSend(fromWallet, nil)
 	case types.MsgMultiSend:
 		return f.createMsgMultiSend(fromWallet, msgSpec.NumOfRecipients)
 	case types.MsgArr:
@@ -61,9 +68,14 @@ func (f *TxFactory) CreateMsg(
 	}
 }
 
-// createMsgSend creates a basic bank send message
-func (f *TxFactory) createMsgSend(fromWallet *wallet.InteractingWallet) (sdk.Msg, error) {
-	amount := sdk.NewCoins(sdk.NewCoin(f.gasDenom, sdkmath.NewInt(10)))
+// createMsgSend creates a basic bank send message.
+// If sendAmount is non-nil and positive, it is used as the transfer amount.
+func (f *TxFactory) createMsgSend(fromWallet *wallet.InteractingWallet, sendAmount *sdkmath.Int) (sdk.Msg, error) {
+	transferAmt := sdkmath.NewInt(10)
+	if sendAmount != nil && sendAmount.IsPositive() {
+		transferAmt = *sendAmount
+	}
+	amount := sdk.NewCoins(sdk.NewCoin(f.gasDenom, transferAmt))
 
 	var toWallet *wallet.InteractingWallet
 	if f.txDistribution != nil {
@@ -137,7 +149,7 @@ func (f *TxFactory) createMsgArray(
 
 		switch msgSpec.ContainedType {
 		case types.MsgSend:
-			msg, err = f.createMsgSend(fromWallet)
+			msg, err = f.createMsgSend(fromWallet, nil)
 		case types.MsgMultiSend:
 			msg, err = f.createMsgMultiSend(fromWallet, msgSpec.NumOfRecipients)
 		default:

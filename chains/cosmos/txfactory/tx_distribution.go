@@ -8,5 +8,7 @@ import (
 type TxDistribution interface {
 	GetNextSender() *wallet.InteractingWallet
 	GetNextReceiver() *wallet.InteractingWallet
-	ResetWalletAllocation()
+	// ResetWalletAllocation resets allocation for a new load and returns
+	// (oldFundedWallets, newFundedWallets) so callers can init only the delta.
+	ResetWalletAllocation() (int, int)
 }
