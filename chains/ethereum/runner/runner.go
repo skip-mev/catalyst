@@ -20,6 +20,7 @@ import (
 
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
+	"github.com/skip-mev/catalyst/chains/txdistribution"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
@@ -98,10 +99,10 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 			zap.Int("initial_wallets", spec.InitialWallets),
 			zap.Int("num_wallets", spec.NumWallets),
 		)
-		distribution = txfactory.NewTxDistributionBootstrapped(logger, wallets, spec.InitialWallets)
+		distribution = txdistribution.NewBootstrapped(logger, wallets, spec.InitialWallets)
 	} else {
 		logger.Info("Using TxDistributionEven")
-		distribution = txfactory.NewTxDistributionEven(wallets)
+		distribution = txdistribution.NewEven(wallets)
 	}
 
 	var (

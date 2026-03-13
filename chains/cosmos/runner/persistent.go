@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"go.uber.org/zap"
 
+	"github.com/skip-mev/catalyst/chains/cosmos/client"
 	inttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
@@ -26,6 +28,7 @@ type persistentTx struct {
 	txBytes       []byte
 	walletAddress string
 	msgType       loadtesttypes.MsgType
+	client        *client.Chain
 }
 
 func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
@@ -34,7 +37,7 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 	if initialWallets <= 0 {
 		initialWallets = len(r.wallets)
 	}
-	if err := r.initAccountNumbersForWallets(ctx, r.wallets[:initialWallets]); err != nil {
+	if err := r.initWallets(ctx, r.wallets[:initialWallets]); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
 
@@ -156,12 +159,6 @@ func (r *Runner) submitLoadPersistent(ctx context.Context) int {
 					return
 				}
 
-				// Get nonce optimistically
-				r.walletNoncesMu.Lock()
-				nonce := r.walletNonces[walletAddress]
-				r.walletNonces[walletAddress] = nonce + 1
-				r.walletNoncesMu.Unlock()
-
 				var msgs []sdk.Msg
 				var err error
 				if msgSpec.Type == inttypes.MsgSend {
@@ -189,21 +186,24 @@ func (r *Runner) submitLoadPersistent(ctx context.Context) int {
 					}
 				}
 
-				gasBufferFactor := 2.0
-				estimation := r.gasEstimations[msgSpec]
-				gasWithBuffer := int64(float64(estimation.gasUsed) * gasBufferFactor)
-				fees := r.computeFees(gasWithBuffer)
-				accountNumber := r.accountNumbers[walletAddress]
-				memo := RandomString(16)
+				gasBufferFactor := 1.3
+				gasWithBuffer := int64(float64(r.gasEstimations[msgSpec].gasUsed) * gasBufferFactor)
+
+				// Get nonce optimistically just before signing — after all fallible
+				// message-creation steps so a failure there does not burn a nonce.
+				r.walletNoncesMu.Lock()
+				nonce := r.walletNonces[walletAddress]
+				r.walletNonces[walletAddress] = nonce + 1
+				r.walletNoncesMu.Unlock()
 
 				tx, err := sender.CreateSignedTx(
 					ctx,
 					client,
 					uint64(gasWithBuffer), //nolint:gosec // G115: overflow unlikely in practice
-					fees,
+					r.computeFees(gasWithBuffer),
 					nonce,
-					accountNumber,
-					memo,
+					r.accountNumbers[walletAddress],
+					RandomString(16), // Avoid ErrTxInMempoolCache
 					r.chainCfg.UnorderedTxs,
 					r.spec.TxTimeout,
 					msgs...)
@@ -222,6 +222,7 @@ func (r *Runner) submitLoadPersistent(ctx context.Context) int {
 					txBytes:       txBytes,
 					walletAddress: walletAddress,
 					msgType:       msgSpec.Type,
+					client:        client,
 				}
 			}()
 		}
@@ -246,12 +247,7 @@ func (r *Runner) submitLoadPersistent(ctx context.Context) int {
 	r.logger.Info("built load", zap.Int("num_txs", len(allTxs)), zap.Duration("duration", buildDuration))
 
 	sendStart := time.Now()
-	var failures map[uint32]int
-	if r.spec.MetricsEnabled {
-		failures = r.sendAndRecordPersistent(ctx, allTxs)
-	} else {
-		failures = r.sendAsyncPersistent(ctx, allTxs)
-	}
+	failures := r.sendTxs(ctx, allTxs)
 	sendDuration := time.Since(sendStart)
 
 	totalFailures := 0
@@ -274,24 +270,23 @@ func (r *Runner) submitLoadPersistent(ctx context.Context) int {
 	// Wallets whose funding tx failed won't exist on chain yet — skip them silently.
 	// They'll be funded in a future round once nonces correct.
 	if newFunded > oldFunded {
-		r.initNewlyFundedWallets(ctx, r.wallets[oldFunded:newFunded])
+		_ = r.initWallets(ctx, r.wallets[oldFunded:newFunded])
 	}
 
 	return len(allTxs)
 }
 
-func (r *Runner) sendAndRecordPersistent(ctx context.Context, txs []persistentTx) map[uint32]int {
+func (r *Runner) sendTxs(ctx context.Context, txs []persistentTx) map[uint32]int {
 	var (
-		wg        sync.WaitGroup
-		mu        sync.Mutex
-		failures  = make(map[uint32]int)
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		failures = make(map[uint32]int)
 	)
 	for _, tx := range txs {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			client := r.clients[0]
-			res, err := client.BroadcastTx(ctx, tx.txBytes)
+			res, err := tx.client.BroadcastTx(ctx, tx.txBytes)
 			if err != nil {
 				if res != nil {
 					mu.Lock()
@@ -312,146 +307,73 @@ func (r *Runner) sendAndRecordPersistent(ctx context.Context, txs []persistentTx
 	return failures
 }
 
-func (r *Runner) sendAsyncPersistent(ctx context.Context, txs []persistentTx) map[uint32]int {
-	var (
-		wg        sync.WaitGroup
-		mu        sync.Mutex
-		failures  = make(map[uint32]int)
-	)
-	for _, tx := range txs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			client := r.clients[0]
-			res, err := client.BroadcastTx(ctx, tx.txBytes)
-			if err != nil {
-				if res != nil {
-					mu.Lock()
-					failures[res.Code]++
-					mu.Unlock()
-					if res.Code == 32 && strings.Contains(res.RawLog, "account sequence mismatch") {
-						r.handleNonceMismatch(tx.walletAddress, 0, res.RawLog)
-					}
-				} else {
-					mu.Lock()
-					failures[0]++
-					mu.Unlock()
-				}
-			}
-		}()
-	}
-	wg.Wait()
-	return failures
+type accountInfo struct {
+	address       string
+	accountNumber uint64
+	sequence      uint64
 }
 
-// initAccountNumbersForWallets initializes account numbers and nonces for a subset of wallets concurrently.
-func (r *Runner) initAccountNumbersForWallets(ctx context.Context, wallets []*wallet.InteractingWallet) error {
-	start := time.Now()
+type accountFetchResult struct {
+	info accountInfo
+	err  error
+}
 
-	type accountInfo struct {
-		address       string
-		accountNumber uint64
-		sequence      uint64
-	}
-
-	var (
-		mu      sync.Mutex
-		firstErr error
-	)
-
-	results := make(chan accountInfo, len(wallets))
+// fetchAccountInfoConcurrently queries account info for all wallets concurrently and
+// returns one result per wallet. Each result contains either valid account info or an error.
+func fetchAccountInfoConcurrently(ctx context.Context, wallets []*wallet.InteractingWallet) []accountFetchResult {
+	results := make([]accountFetchResult, len(wallets))
 	var wg sync.WaitGroup
-	for _, w := range wallets {
+	for i, w := range wallets {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			walletAddress := w.FormattedAddress()
 			acc, err := w.GetClient().GetAccount(ctx, walletAddress)
 			if err != nil {
-				mu.Lock()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("failed to initialize account for wallet %s: %w", walletAddress, err)
+				results[i] = accountFetchResult{
+					info: accountInfo{address: walletAddress},
+					err:  fmt.Errorf("failed to initialize account for wallet %s: %w", walletAddress, err),
 				}
-				mu.Unlock()
 				return
 			}
-			results <- accountInfo{
-				address:       walletAddress,
-				accountNumber: acc.GetAccountNumber(),
-				sequence:      acc.GetSequence(),
+			results[i] = accountFetchResult{
+				info: accountInfo{
+					address:       walletAddress,
+					accountNumber: acc.GetAccountNumber(),
+					sequence:      acc.GetSequence(),
+				},
 			}
 		}()
 	}
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	for info := range results {
-		r.accountNumbers[info.address] = info.accountNumber
-		r.walletNoncesMu.Lock()
-		r.walletNonces[info.address] = info.sequence
-		r.walletNoncesMu.Unlock()
-	}
-
-	if firstErr != nil {
-		return firstErr
-	}
-
-	r.logger.Info("Account numbers and nonces initialized",
-		zap.Int("num_wallets", len(wallets)),
-		zap.Duration("duration", time.Since(start)),
-	)
-	return nil
+	wg.Wait()
+	return results
 }
 
 // initNewlyFundedWallets queries account info for the given wallets concurrently.
 // Wallets whose funding tx hasn't landed yet are silently skipped.
-func (r *Runner) initNewlyFundedWallets(ctx context.Context, walletsToInit []*wallet.InteractingWallet) {
+func (r *Runner) initWallets(ctx context.Context, walletsToInit []*wallet.InteractingWallet) error {
 	start := time.Now()
 
-	type accountInfo struct {
-		address       string
-		accountNumber uint64
-		sequence      uint64
-	}
+	results := fetchAccountInfoConcurrently(ctx, walletsToInit)
 
-	results := make(chan accountInfo, len(walletsToInit))
-	var wg sync.WaitGroup
-	for _, w := range walletsToInit {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			walletAddress := w.FormattedAddress()
-			acc, err := w.GetClient().GetAccount(ctx, walletAddress)
-			if err != nil {
-				return
-			}
-			results <- accountInfo{
-				address:       walletAddress,
-				accountNumber: acc.GetAccountNumber(),
-				sequence:      acc.GetSequence(),
-			}
-		}()
-	}
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
+	var errs []error
 	initialized := 0
-	for info := range results {
-		r.accountNumbers[info.address] = info.accountNumber
+	for _, res := range results {
+		if res.err != nil {
+			errs = append(errs, res.err)
+			continue
+		}
+		r.accountNumbers[res.info.address] = res.info.accountNumber
 		r.walletNoncesMu.Lock()
-		r.walletNonces[info.address] = info.sequence
+		r.walletNonces[res.info.address] = res.info.sequence
 		r.walletNoncesMu.Unlock()
 		initialized++
 	}
 
-	r.logger.Info("initialized newly funded accounts",
+	r.logger.Info("initialized wallets",
 		zap.Int("initialized", initialized),
 		zap.Int("checked", len(walletsToInit)),
 		zap.Duration("duration", time.Since(start)),
 	)
+	return errors.Join(errs...)
 }
-

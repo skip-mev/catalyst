@@ -20,6 +20,7 @@ import (
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
 	"github.com/skip-mev/catalyst/chains/cosmos/metrics"
 	"github.com/skip-mev/catalyst/chains/cosmos/txfactory"
+	"github.com/skip-mev/catalyst/chains/txdistribution"
 	inttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
 	logging "github.com/skip-mev/catalyst/chains/log"
@@ -143,7 +144,7 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 			zap.Int("initial_wallets", spec.InitialWallets),
 			zap.Int("num_wallets", spec.NumWallets),
 		)
-		distribution = txfactory.NewTxDistributionBootstrapped(logger, wallets, spec.InitialWallets)
+		distribution = txdistribution.NewBootstrapped(logger, wallets, spec.InitialWallets)
 	}
 	runner.txFactory = txfactory.NewTxFactory(chainCfg.GasDenom, wallets, distribution)
 
