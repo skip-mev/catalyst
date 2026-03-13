@@ -7,7 +7,6 @@ import (
 	"math"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
@@ -144,7 +143,8 @@ func (r *Runner) submitLoadPersistent(ctx context.Context) int {
 	return len(allTxs)
 }
 
-// buildTxsForMsgSpec concurrently builds transactions for a single message spec.
+// buildTxsForMsgSpec collects senders, initializes any uninitialized ones, then
+// concurrently builds transactions for a single message spec.
 func (r *Runner) buildTxsForMsgSpec(ctx context.Context, msgSpec loadtesttypes.LoadTestMsg) []persistentTx {
 	numTxs := int(float64(r.spec.NumOfTxs) * msgSpec.Weight)
 	r.logger.Info("building load for msg spec",
@@ -153,17 +153,30 @@ func (r *Runner) buildTxsForMsgSpec(ctx context.Context, msgSpec loadtesttypes.L
 		zap.Int("num_txs", numTxs),
 	)
 
-	txCh := make(chan persistentTx, numTxs)
-	var (
-		skippedNoSender  atomic.Int64
-		skippedNoAccount atomic.Int64
-		wg               sync.WaitGroup
-	)
+	// Collect senders for this round.
+	senders := make([]*wallet.InteractingWallet, 0, numTxs)
 	for range numTxs {
+		sender := r.txFactory.GetNextSender()
+		if sender == nil {
+			break
+		}
+		senders = append(senders, sender)
+	}
+	if skipped := numTxs - len(senders); skipped > 0 {
+		r.logger.Info("skipped txs: no sender available", zap.Int("count", skipped))
+	}
+
+	// Initialize any senders missing from accountNumbers.
+	r.initUninitializedSenders(ctx, senders)
+
+	// Build txs concurrently.
+	txCh := make(chan persistentTx, len(senders))
+	var wg sync.WaitGroup
+	for _, sender := range senders {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			tx, err := r.buildPersistentTx(ctx, msgSpec, &skippedNoSender, &skippedNoAccount)
+			tx, err := r.buildPersistentTx(ctx, msgSpec, sender)
 			if err != nil {
 				return
 			}
@@ -180,50 +193,55 @@ func (r *Runner) buildTxsForMsgSpec(ctx context.Context, msgSpec loadtesttypes.L
 	for tx := range txCh {
 		txs = append(txs, tx)
 	}
-
-	if s := skippedNoSender.Load(); s > 0 {
-		r.logger.Info("skipped txs: no sender available", zap.Int64("count", s))
-	}
-	if s := skippedNoAccount.Load(); s > 0 {
-		r.logger.Info("skipped txs: sender not initialized", zap.Int64("count", s))
-	}
 	return txs
 }
 
+// initUninitializedSenders queries account info for senders not yet in
+// accountNumbers.
+func (r *Runner) initUninitializedSenders(ctx context.Context, senders []*wallet.InteractingWallet) {
+	var toInit []*wallet.InteractingWallet
+	for _, s := range senders {
+		if _, ok := r.accountNumbers[s.FormattedAddress()]; !ok {
+			toInit = append(toInit, s)
+		}
+	}
+	if len(toInit) == 0 {
+		return
+	}
+
+	results := fetchAccountInfo(ctx, toInit)
+	initialized := 0
+	for _, res := range results {
+		if res.err != nil {
+			continue
+		}
+		r.accountNumbersMu.Lock()
+		r.accountNumbers[res.info.address] = res.info.accountNumber
+		r.accountNumbersMu.Unlock()
+		r.walletNoncesMu.Lock()
+		r.walletNonces[res.info.address] = res.info.sequence
+		r.walletNoncesMu.Unlock()
+		initialized++
+	}
+	if skipped := len(toInit) - initialized; skipped > 0 {
+		r.logger.Info("skipped txs: sender not initialized", zap.Int("count", skipped))
+	}
+}
+
 // buildPersistentTx creates a single signed transaction for persistent load.
-// Returns nil with a nil error for expected skip conditions (no sender, no account, zero balance).
 func (r *Runner) buildPersistentTx(
 	ctx context.Context,
 	msgSpec loadtesttypes.LoadTestMsg,
-	skippedNoSender, skippedNoAccount *atomic.Int64,
+	sender *wallet.InteractingWallet,
 ) (*persistentTx, error) {
-	sender := r.txFactory.GetNextSender()
-	if sender == nil {
-		skippedNoSender.Add(1)
-		return nil, errSkipped
-	}
 	walletAddress := sender.FormattedAddress()
 	client := sender.GetClient()
 
 	r.accountNumbersMu.Lock()
 	_, initialized := r.accountNumbers[walletAddress]
 	r.accountNumbersMu.Unlock()
-
 	if !initialized {
-		// Wallet may have been funded in a previous round but never initialized.
-		// Try to initialize it now — this is a single gRPC call and runs in parallel
-		// with other goroutines building txs.
-		acc, err := client.GetAccount(ctx, walletAddress)
-		if err != nil {
-			skippedNoAccount.Add(1)
-			return nil, errSkipped
-		}
-		r.accountNumbersMu.Lock()
-		r.accountNumbers[walletAddress] = acc.GetAccountNumber()
-		r.accountNumbersMu.Unlock()
-		r.walletNoncesMu.Lock()
-		r.walletNonces[walletAddress] = acc.GetSequence()
-		r.walletNoncesMu.Unlock()
+		return nil, errSkipped
 	}
 
 	msgs, err := r.createMsgsForPersistent(ctx, msgSpec, sender, client, walletAddress)

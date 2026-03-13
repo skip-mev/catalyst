@@ -153,7 +153,7 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 	var distribution txfactory.TxDistribution
 	if spec.InitialWallets > 0 && spec.InitialWallets < spec.NumWallets {
 		logger.Info(
-			"Using TxDistributionBootstrapped",
+			"using bootstrapped tx distribution",
 			zap.Int("initial_wallets", spec.InitialWallets),
 			zap.Int("num_wallets", spec.NumWallets),
 		)
@@ -161,12 +161,9 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 	}
 	runner.txFactory = txfactory.NewTxFactory(chainCfg.GasDenom, wallets, distribution)
 
-	logger.Info("estimating gas")
-	gasStart := time.Now()
 	if err := runner.initGasEstimation(ctx); err != nil {
 		return nil, err
 	}
-	logger.Info("gas estimation complete", zap.Duration("duration", time.Since(gasStart)))
 
 	return runner, nil
 }
