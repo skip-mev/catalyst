@@ -76,11 +76,12 @@ func (m *Collector) GroupSentTxs(
 					continue
 				}
 
-				if tx.Err == nil {
+				if tx.SourceErr == nil {
 					randomClient := &clients[rand.Intn(len(clients))]
 					txResponse, err := wallet.GetTxResponse(ctx, *randomClient, tx.TxHash)
 					if err != nil {
 						m.logger.Error("tx not found", zap.Error(err), zap.String("tx_hash", tx.TxHash))
+						tx.SourceErr = err
 						tx.Err = err
 						mu.Lock()
 						txNotFoundCount++
@@ -90,7 +91,7 @@ func (m *Collector) GroupSentTxs(
 
 					tx.TxResponse = txResponse
 
-					if txResponse.Code != 0 {
+					if txResponse.Code != 0 && tx.Err == nil {
 						tx.Err = fmt.Errorf("%s", txResponse.RawLog)
 					}
 
@@ -110,7 +111,7 @@ func (m *Collector) GroupSentTxs(
 	for i := range sentTxs {
 		tx := &sentTxs[i]
 
-		if tx.Err == nil {
+		if tx.SourceErr == nil {
 			workChan <- workItem{index: i, tx: tx}
 		}
 	}
