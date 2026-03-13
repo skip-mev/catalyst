@@ -520,7 +520,7 @@ func (r *Runner) createAndSendTransaction(
 ) (inttypes.SentTx, bool) {
 	walletAddress := fromWallet.FormattedAddress()
 
-	gasBufferFactor := 2.0
+	gasBufferFactor := 1.2
 	estimation := r.gasEstimations[mspSpec]
 	gasWithBuffer := int64(float64(estimation.gasUsed) * gasBufferFactor)
 	fees := r.computeFees(gasWithBuffer)
@@ -624,11 +624,7 @@ func (r *Runner) handleNonceMismatch(walletAddress string, _ uint64, rawLog stri
 	if len(expectedNonceStr) > 1 {
 		if expectedNonce, err := strconv.ParseUint(expectedNonceStr[1], 10, 64); err == nil {
 			r.walletNoncesMu.Lock()
-			// Only correct downward — the chain says we're ahead, so take the
-			// minimum of concurrent corrections to converge on the right value.
-			if current, ok := r.walletNonces[walletAddress]; !ok || expectedNonce < current {
-				r.walletNonces[walletAddress] = expectedNonce
-			}
+			r.walletNonces[walletAddress] = expectedNonce
 			r.walletNoncesMu.Unlock()
 		}
 	}
