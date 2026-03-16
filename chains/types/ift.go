@@ -80,6 +80,12 @@ func (c *IFTConfig) Validate(spec LoadTestSpec) error {
 		return fmt.Errorf("ift.relayer.timeout must be greater than or equal to zero")
 	}
 
+	for _, msg := range spec.Msgs {
+		if msg.Type != MsgType("MsgIFTTransfer") {
+			return fmt.Errorf("ift mode only supports MsgIFTTransfer messages, got %q", msg.Type)
+		}
+	}
+
 	if err := c.Destination.Validate(); err != nil {
 		return err
 	}

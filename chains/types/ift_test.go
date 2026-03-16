@@ -111,3 +111,35 @@ func TestIFTConfigValidate_EthRequiresEVMConfig(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ift.evm must be specified")
 }
+
+func TestIFTConfigValidate_RejectsNonIFTMessagesInIFTMode(t *testing.T) {
+	spec := loadtesttypes.LoadTestSpec{
+		Kind:         "cosmos",
+		ChainID:      "chain-a",
+		BaseMnemonic: "test test test test test test test test test test test junk",
+		NumWallets:   1,
+		Msgs: []loadtesttypes.LoadTestMsg{
+			{Type: cosmostypes.MsgSend, NumMsgs: 1},
+		},
+		IFT: &loadtesttypes.IFTConfig{
+			ClientID: "client-0",
+			Amount:   "1",
+			Timeout:  time.Second,
+			Cosmos: &loadtesttypes.IFTCosmosConfig{
+				Denom:      "stake",
+				MsgTypeURL: "/skip.ift.MsgIFTTransfer",
+			},
+			Destination: loadtesttypes.IFTDestinationConfig{
+				Kind: "evm",
+				EVM:  &loadtesttypes.IFTDestinationEVMConfig{},
+			},
+			Relayer: loadtesttypes.IFTRelayerConfig{
+				URL: "127.0.0.1:8080",
+			},
+		},
+	}
+
+	err := spec.IFT.Validate(spec)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ift mode only supports MsgIFTTransfer messages")
+}

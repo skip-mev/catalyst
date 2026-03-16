@@ -4,8 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
 
+	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
@@ -174,4 +177,30 @@ func TestTrimBlocks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCalculateTotalSentByTypeUsesRecordedMessageTypes(t *testing.T) {
+	txs := []*ethtypes.SentTx{
+		{MsgType: ethtypes.MsgIFTTransfer},
+		{MsgType: ethtypes.MsgIFTTransfer},
+		{MsgType: ethtypes.ContractCall},
+	}
+
+	totalSent := calculateTotalSentByType(txs)
+
+	require.Equal(t, uint64(2), totalSent[ethtypes.MsgIFTTransfer])
+	require.Equal(t, uint64(1), totalSent[ethtypes.ContractCall])
+}
+
+func TestClassifyReceiptMsgTypePrefersRecordedSentType(t *testing.T) {
+	txHash := common.HexToHash("0x1")
+	receipt := &gethtypes.Receipt{
+		TxHash: txHash,
+	}
+
+	msgType := classifyReceiptMsgType(receipt, map[common.Hash]loadtesttypes.MsgType{
+		txHash: ethtypes.MsgIFTTransfer,
+	})
+
+	require.Equal(t, ethtypes.MsgIFTTransfer, msgType)
 }

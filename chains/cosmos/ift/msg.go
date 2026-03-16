@@ -2,6 +2,7 @@ package ift
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -33,6 +34,7 @@ func RegisterTypeURL(typeURL string) {
 	if typeURL == "" {
 		typeURL = DefaultMsgIFTTransferTypeURL
 	}
+	typeURL = strings.TrimPrefix(typeURL, "/")
 
 	typeRegistrationMu.Lock()
 	defer typeRegistrationMu.Unlock()
