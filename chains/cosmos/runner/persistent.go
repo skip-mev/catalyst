@@ -322,7 +322,12 @@ func (r *Runner) logSendResults(txs []persistentTx, failures map[uint32]int, dur
 	)
 	for code, count := range failures {
 		desc := errorsmod.ABCIError("sdk", code, "").Error()
-		r.logger.Warn("broadcast failures", zap.Uint32("code", code), zap.String("description", desc), zap.Int("count", count))
+		r.logger.Warn(
+			"broadcast failures",
+			zap.Uint32("code", code),
+			zap.String("description", desc),
+			zap.Int("count", count),
+		)
 	}
 }
 
