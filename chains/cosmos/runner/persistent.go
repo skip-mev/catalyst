@@ -237,7 +237,7 @@ func (r *Runner) buildPersistentTx(
 		return nil, errSkipped // zero balance
 	}
 
-	gasWithBuffer := int64(float64(r.gasEstimations[msgSpec].gasUsed) * 1.5)
+	gasWithBuffer := int64(float64(r.gasEstimations[msgSpec].gasUsed) * 2)
 
 	// Read account number and nonce under their respective locks, just before signing.
 	r.accountNumbersMu.Lock()
