@@ -47,6 +47,9 @@ func TestIFTConfigValidate_EthToEVMRejected(t *testing.T) {
 			ClientID: "client-0",
 			Amount:   "1",
 			Timeout:  time.Second,
+			EVM: &loadtesttypes.IFTEVMConfig{
+				ContractAddress: "0x1234",
+			},
 			Destination: loadtesttypes.IFTDestinationConfig{
 				Kind: "evm",
 				EVM:  &loadtesttypes.IFTDestinationEVMConfig{},
@@ -57,12 +60,35 @@ func TestIFTConfigValidate_EthToEVMRejected(t *testing.T) {
 		},
 	}
 
-	err := spec.IFT.Validate(spec)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "incompatible with source kind")
+	require.NoError(t, spec.IFT.Validate(spec))
 }
 
 func TestIFTConfigValidate_EthToCosmos(t *testing.T) {
+	spec := loadtesttypes.LoadTestSpec{
+		Kind: "eth",
+		IFT: &loadtesttypes.IFTConfig{
+			ClientID: "client-0",
+			Amount:   "1",
+			Timeout:  time.Second,
+			EVM: &loadtesttypes.IFTEVMConfig{
+				ContractAddress: "0x1234",
+			},
+			Destination: loadtesttypes.IFTDestinationConfig{
+				Kind: "cosmos",
+				Cosmos: &loadtesttypes.IFTDestinationCosmosConfig{
+					Bech32Prefix: "cosmos",
+				},
+			},
+			Relayer: loadtesttypes.IFTRelayerConfig{
+				URL: "127.0.0.1:8080",
+			},
+		},
+	}
+
+	require.NoError(t, spec.IFT.Validate(spec))
+}
+
+func TestIFTConfigValidate_EthRequiresEVMConfig(t *testing.T) {
 	spec := loadtesttypes.LoadTestSpec{
 		Kind: "eth",
 		IFT: &loadtesttypes.IFTConfig{
@@ -81,5 +107,7 @@ func TestIFTConfigValidate_EthToCosmos(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, spec.IFT.Validate(spec))
+	err := spec.IFT.Validate(spec)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ift.evm must be specified")
 }

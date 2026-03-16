@@ -13,6 +13,7 @@ type IFTConfig struct {
 	Destination IFTDestinationConfig `yaml:"destination" json:"destination"`
 	Relayer     IFTRelayerConfig     `yaml:"relayer" json:"relayer"`
 	Cosmos      *IFTCosmosConfig     `yaml:"cosmos,omitempty" json:"cosmos,omitempty"`
+	EVM         *IFTEVMConfig        `yaml:"evm,omitempty" json:"evm,omitempty"`
 }
 
 type IFTRecipientsConfig struct {
@@ -23,6 +24,10 @@ type IFTRecipientsConfig struct {
 type IFTCosmosConfig struct {
 	Denom      string `yaml:"denom" json:"denom"`
 	MsgTypeURL string `yaml:"msg_type_url" json:"msg_type_url"`
+}
+
+type IFTEVMConfig struct {
+	ContractAddress string `yaml:"contract_address" json:"contract_address"`
 }
 
 type IFTDestinationConfig struct {
@@ -88,7 +93,10 @@ func (c *IFTConfig) Validate(spec LoadTestSpec) error {
 			return fmt.Errorf("ift.destination.kind %q is incompatible with source kind %q", c.Destination.Kind, spec.Kind)
 		}
 	case "eth":
-		if c.Destination.Kind != "cosmos" {
+		if err := c.validateEVM(); err != nil {
+			return err
+		}
+		if c.Destination.Kind != "cosmos" && c.Destination.Kind != "evm" {
 			return fmt.Errorf("ift.destination.kind %q is incompatible with source kind %q", c.Destination.Kind, spec.Kind)
 		}
 	default:
@@ -107,6 +115,16 @@ func (c *IFTConfig) validateCosmos() error {
 	}
 	if c.Cosmos.MsgTypeURL == "" {
 		return fmt.Errorf("ift.cosmos.msg_type_url must be specified")
+	}
+	return nil
+}
+
+func (c *IFTConfig) validateEVM() error {
+	if c.EVM == nil {
+		return fmt.Errorf("ift.evm must be specified for eth runners")
+	}
+	if c.EVM.ContractAddress == "" {
+		return fmt.Errorf("ift.evm.contract_address must be specified")
 	}
 	return nil
 }

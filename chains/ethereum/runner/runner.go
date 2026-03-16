@@ -3,7 +3,6 @@ package runner
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/http"
 	"slices"
@@ -37,9 +36,11 @@ type Runner struct {
 	wallets     []*wallet.InteractingWallet
 
 	txFactory *txfactory.TxFactory
+	mode      txMode
 
 	sentTxs         []*inttypes.SentTx
 	blocksProcessed uint64
+	txTypes         sync.Map
 
 	// senderToWallet maps sender addresses to their assigned wallet
 	senderToWallet map[common.Address]*wallet.InteractingWallet
@@ -149,7 +150,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 
 	logger.Info("Runner construction complete", zap.Stringer("duration", time.Since(start)))
 
-	return &Runner{
+	runner := &Runner{
 		logger:          logger,
 		clients:         clients,
 		wsClients:       wsClients,
@@ -162,7 +163,19 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		nonces:          &nonces,
 		senderToWallet:  senderToWallet,
 		promMetrics:     metrics.NewMetrics(),
-	}, nil
+	}
+
+	if spec.IFT != nil {
+		runnerMode, err := newIFTTxMode(runner)
+		if err != nil {
+			return nil, err
+		}
+		runner.mode = runnerMode
+	} else {
+		runner.mode = newLocalTxMode(runner)
+	}
+
+	return runner, nil
 }
 
 // getWalletForTx returns the appropriate wallet for sending a transaction based on the sender address.
@@ -313,38 +326,40 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 }
 
 func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
-	// For ERC20 transactions, use optimal sender selection from factory
-	var fromWallet *wallet.InteractingWallet
-	switch msgSpec.Type {
-	case inttypes.MsgTransferERC0, inttypes.MsgNativeTransferERC20:
-		fromWallet = r.txFactory.GetNextSender()
-	case inttypes.MsgDeployERC20, inttypes.MsgCreateContract:
-		fromWallet = r.wallets[0]
-	default:
-		// For non-ERC20 transactions, keep random selection
-		fromWallet = r.wallets[rand.Intn(len(r.wallets))]
-	}
-
-	nonce, ok := r.nonces.Load(fromWallet.Address())
-	if !ok {
-		// this really should not happen ever. better safe than sorry.
-		return nil, fmt.Errorf("nonce for wallet %s not found", fromWallet.Address())
-	}
-	txs, err := r.txFactory.BuildTxs(msgSpec, fromWallet, nonce.(uint64), useBaseline)
+	txs, err := r.mode.BuildLoad(msgSpec, useBaseline)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build tx for %q: %w", msgSpec.Type, err)
+		return nil, err
 	}
-	if len(txs) == 0 {
-		return nil, nil
+	for _, tx := range txs {
+		if tx == nil {
+			continue
+		}
+		r.txTypes.Store(tx.Hash(), msgSpec.Type)
 	}
-
-	// some cases, like contract creation, will give us more than one tx to send.
-	// the tx factory will correctly handle setting the correct nonces for these txs.
-	// naturally, the final tx will have the latest nonce that should be set for the account.
-	lastTx := txs[len(txs)-1]
-	if lastTx == nil {
-		return nil, nil
-	}
-	r.nonces.Store(fromWallet.Address(), lastTx.Nonce()+1)
 	return txs, nil
+}
+
+func (r *Runner) messageTypeForTx(tx *gethtypes.Transaction) loadtesttypes.MsgType {
+	if tx == nil {
+		return inttypes.ContractCall
+	}
+	if r.spec.IFT != nil {
+		return inttypes.MsgIFTTransfer
+	}
+	if msgType, ok := r.txTypes.Load(tx.Hash()); ok {
+		return msgType.(loadtesttypes.MsgType)
+	}
+	return getTxType(tx)
+}
+
+func (r *Runner) handlePostBroadcast(
+	ctx context.Context,
+	tx *gethtypes.Transaction,
+	sourceErr error,
+) (loadtesttypes.MsgType, error) {
+	msgType := r.messageTypeForTx(tx)
+	if err := r.mode.HandlePostBroadcast(ctx, msgType, tx.Hash(), sourceErr); err != nil {
+		return msgType, err
+	}
+	return msgType, nil
 }

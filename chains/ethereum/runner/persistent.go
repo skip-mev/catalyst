@@ -25,7 +25,7 @@ const (
 func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
 	// TODO Eric -- all runners do this--refactor it out
 	// deploy the initial contracts needed by the runner.
-	if err := r.deployInitialContracts(ctx); err != nil {
+	if err := r.mode.Prepare(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
 
@@ -42,7 +42,7 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 	defer cancel()
 
 	// Run one tx to get gas baselines -- this won't work as soon as the feemarket is enabled
-	if err := r.txFactory.SetBaselines(ctx, r.spec.Msgs); err != nil {
+	if err := r.mode.SetBaselines(ctx, r.spec.Msgs); err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to set Baseline txs: %w", err)
 	}
 
@@ -175,7 +175,7 @@ func (r *Runner) submitLoadPersistent(
 		r.sendAsync(ctx, txs)
 	}
 
-	r.txFactory.ResetWalletAllocation()
+	r.mode.ResetAllocation()
 	return len(txs)
 }
 
@@ -192,18 +192,24 @@ func (r *Runner) sendAndRecord(
 	for i, tx := range txs {
 		wg.Go(func() {
 			fromWallet := r.getWalletForTx(tx)
-			err := fromWallet.SendTransaction(ctx, tx)
-			if err != nil {
-				r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
+			sourceErr := fromWallet.SendTransaction(ctx, tx)
+			if sourceErr != nil {
+				r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(sourceErr))
 				r.promMetrics.BroadcastFailure.Add(1)
 			} else {
 				r.promMetrics.BroadcastSuccess.Add(1)
 			}
+			msgType, relayerErr := r.handlePostBroadcast(ctx, tx, sourceErr)
+			if relayerErr != nil {
+				r.logger.Info("failed post-broadcast handling", zap.String("tx_hash", tx.Hash().String()), zap.Error(relayerErr))
+			}
 			sentTxs[i] = &inttypes.SentTx{
-				TxHash:  tx.Hash(),
-				MsgType: inttypes.ContractCall,
-				Err:     err,
-				Tx:      tx,
+				TxHash:     tx.Hash(),
+				MsgType:    msgType,
+				Err:        sourceErr,
+				SourceErr:  sourceErr,
+				RelayerErr: relayerErr,
+				Tx:         tx,
 			}
 		})
 	}
@@ -226,7 +232,10 @@ func (r *Runner) sendAsync(ctx context.Context, txs gethtypes.Transactions) {
 	for _, tx := range txs {
 		fromWallet := r.getWalletForTx(tx)
 		go func() {
-			_ = fromWallet.SendTransaction(ctx, tx)
+			sourceErr := fromWallet.SendTransaction(ctx, tx)
+			if _, err := r.handlePostBroadcast(ctx, tx, sourceErr); err != nil {
+				r.logger.Debug("failed post-broadcast handling", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
+			}
 		}()
 	}
 }
@@ -242,28 +251,11 @@ func (r *Runner) buildLoadPersistent(
 	txChan := make(chan *gethtypes.Transaction, maxLoadSize)
 	for range maxLoadSize {
 		wg.Go(func() {
-			sender := r.txFactory.GetNextSender()
-
-			if sender == nil {
-				return
-			}
-			nonce, ok := r.nonces.Load(sender.Address())
-			if !ok {
-				// this really should not happen ever. better safe than sorry.
-				r.logger.Error("nonce for wallet not found", zap.String("wallet", sender.Address().String()))
-				return
-			}
-			tx, err := r.txFactory.BuildTxs(msgSpec, sender, nonce.(uint64), useBaseline)
+			tx, err := r.buildLoad(msgSpec, useBaseline)
 			if err != nil {
 				r.logger.Error("failed to build txs", zap.Error(err))
 				return
 			}
-			lastTx := tx[len(tx)-1]
-			if lastTx == nil {
-				return
-			}
-			r.nonces.Store(sender.Address(), lastTx.Nonce()+1)
-			// Only use single txn builders here
 			for _, txn := range tx {
 				txChan <- txn
 			}

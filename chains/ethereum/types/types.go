@@ -37,6 +37,7 @@ const (
 	MsgNativeTransferERC20 loadtesttypes.MsgType = "MsgNativeTransferERC20"
 
 	MsgNativeGasTransfer loadtesttypes.MsgType = "MsgNativeGasTransfer"
+	MsgIFTTransfer       loadtesttypes.MsgType = "MsgIFTTransfer"
 )
 
 var (
@@ -47,6 +48,7 @@ var (
 		MsgCallDataBlast,
 		MsgDeployERC20,
 		MsgTransferERC0,
+		MsgIFTTransfer,
 	}
 
 	// LoaderDependencies are the msg types that require the presence of the Loader contract.
@@ -60,6 +62,8 @@ type SentTx struct {
 	NodeAddress string
 	MsgType     loadtesttypes.MsgType
 	Err         error
+	SourceErr   error
+	RelayerErr  error
 	Tx          *gethtypes.Transaction
 	Receipt     *gethtypes.Receipt
 }
