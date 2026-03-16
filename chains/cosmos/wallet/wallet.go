@@ -18,15 +18,18 @@ import (
 
 // InteractingWallet represents a wallet that can interact with the chain
 type InteractingWallet struct {
-	signer *Signer
-	client *client.Chain
+	signer           *Signer
+	client           *client.Chain
+	formattedAddress string
 }
 
 // NewInteractingWallet creates a new wallet
 func NewInteractingWallet(privKey cryptotypes.PrivKey, bech32Prefix string, client *client.Chain) *InteractingWallet {
+	signer := NewSigner(privKey, bech32Prefix)
 	return &InteractingWallet{
-		signer: NewSigner(privKey, bech32Prefix),
-		client: client,
+		signer:           signer,
+		client:           client,
+		formattedAddress: signer.FormattedAddress(),
 	}
 }
 
@@ -116,9 +119,9 @@ func (w *InteractingWallet) CreateSignedTx(
 	return txBuilder.GetTx(), nil
 }
 
-// FormattedAddress returns the Bech32 formatted address for the wallet
+// FormattedAddress returns the cached Bech32 formatted address for the wallet.
 func (w *InteractingWallet) FormattedAddress() string {
-	return w.signer.FormattedAddress()
+	return w.formattedAddress
 }
 
 // Address returns the raw address bytes for the wallet

@@ -23,6 +23,7 @@ import (
 	inttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
 	logging "github.com/skip-mev/catalyst/chains/log"
+	"github.com/skip-mev/catalyst/chains/txdistribution"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
@@ -49,8 +50,10 @@ type Runner struct {
 	sentTxsMu          sync.RWMutex
 	txFactory          *txfactory.TxFactory
 	accountNumbers     map[string]uint64
+	accountNumbersMu   sync.Mutex
 	walletNonces       map[string]uint64
 	walletNoncesMu     sync.Mutex
+	gasPrice           sdkmath.LegacyDec
 
 	chainCfg inttypes.ChainConfig
 }
@@ -64,6 +67,8 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		return nil, err
 	}
 
+	logger.Info("creating clients", zap.Int("num_nodes", len(chainCfg.NodesAddresses)))
+	clientStart := time.Now()
 	var clients []*client.Chain
 	for _, node := range chainCfg.NodesAddresses {
 		client, err := client.NewClient(ctx, node.RPC, node.GRPC, spec.ChainID)
@@ -73,11 +78,18 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		}
 		clients = append(clients, client)
 	}
+	logger.Info(
+		"created clients",
+		zap.Int("num_clients", len(clients)),
+		zap.Duration("duration", time.Since(clientStart)),
+	)
 
 	if len(clients) == 0 {
 		return nil, fmt.Errorf("no valid clients created")
 	}
 
+	logger.Info("deriving wallet keys", zap.Int("num_wallets", spec.NumWallets))
+	keyStart := time.Now()
 	privKeys := make([]types.PrivKey, 0, spec.NumWallets)
 	if spec.NumWallets > 0 {
 		for i := range spec.NumWallets {
@@ -92,16 +104,37 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 			privKeys = append(privKeys, &secp256k1.PrivKey{Key: derivedPrivKey})
 		}
 	}
+	logger.Info(
+		"derived wallet keys",
+		zap.Int("num_keys", len(privKeys)),
+		zap.Duration("duration", time.Since(keyStart)),
+	)
 
 	if len(privKeys) == 0 {
 		return nil, fmt.Errorf("no private keys available: either provide base mnemonic or private keys")
 	}
 
+	logger.Info("creating wallets", zap.Int("num_wallets", len(privKeys)))
+	walletStart := time.Now()
 	var wallets []*wallet.InteractingWallet
 	for i, privKey := range privKeys {
 		client := clients[i%len(clients)]
 		wallet := wallet.NewInteractingWallet(privKey, chainCfg.Bech32Prefix, client)
 		wallets = append(wallets, wallet)
+	}
+	logger.Info(
+		"created wallets",
+		zap.Int("num_wallets", len(wallets)),
+		zap.Duration("duration", time.Since(walletStart)),
+	)
+
+	gasPrice := sdkmath.LegacyOneDec()
+	if chainCfg.GasPrice != "" {
+		parsed, err := sdkmath.LegacyNewDecFromStr(chainCfg.GasPrice)
+		if err != nil {
+			return nil, fmt.Errorf("invalid gas_price %q: %w", chainCfg.GasPrice, err)
+		}
+		gasPrice = parsed
 	}
 
 	runner := &Runner{
@@ -114,9 +147,19 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		accountNumbers: make(map[string]uint64),
 		walletNonces:   make(map[string]uint64),
 		chainCfg:       *chainCfg,
+		gasPrice:       gasPrice,
 	}
 
-	runner.txFactory = txfactory.NewTxFactory(chainCfg.GasDenom, wallets)
+	var distribution txfactory.TxDistribution
+	if spec.InitialWallets > 0 && spec.InitialWallets < spec.NumWallets {
+		logger.Info(
+			"using bootstrapped tx distribution",
+			zap.Int("initial_wallets", spec.InitialWallets),
+			zap.Int("num_wallets", spec.NumWallets),
+		)
+		distribution = txdistribution.NewBootstrapped(logger, wallets, spec.InitialWallets)
+	}
+	runner.txFactory = txfactory.NewTxFactory(chainCfg.GasDenom, wallets, distribution)
 
 	if err := runner.initGasEstimation(ctx); err != nil {
 		return nil, err
@@ -234,6 +277,11 @@ func (r *Runner) initNumOfTxsWorkflow(gasEstimations map[loadtesttypes.LoadTestM
 
 // Run executes the load test
 func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
+	if r.spec.NumOfBlocks == 0 {
+		r.logger.Info("Running loadtest persistently")
+		return r.runPersistent(ctx)
+	}
+
 	if err := r.initAccountNumbers(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
@@ -354,7 +402,14 @@ func (r *Runner) sendBlockTransactions(
 			go func(msgSpec loadtesttypes.LoadTestMsg, _ int) {
 				defer wg.Done()
 
-				if sentTx, _ := r.processSingleTransaction(ctx, msgSpec, getLatestNonce, updateNonce, &txsSentMu, &txsSent); sentTx != (inttypes.SentTx{}) {
+				if sentTx, _ := r.processSingleTransaction(
+					ctx,
+					msgSpec,
+					getLatestNonce,
+					updateNonce,
+					&txsSentMu,
+					&txsSent,
+				); sentTx != (inttypes.SentTx{}) {
 					sentTxsMu.Lock()
 					sentTxs = append(sentTxs, sentTx)
 					sentTxsMu.Unlock()
@@ -463,10 +518,10 @@ func (r *Runner) createAndSendTransaction(
 ) (inttypes.SentTx, bool) {
 	walletAddress := fromWallet.FormattedAddress()
 
-	gasBufferFactor := 1.1
+	gasBufferFactor := 1.5
 	estimation := r.gasEstimations[mspSpec]
 	gasWithBuffer := int64(float64(estimation.gasUsed) * gasBufferFactor)
-	fees := sdk.NewCoins(sdk.NewCoin(r.chainCfg.GasDenom, sdkmath.NewInt(gasWithBuffer)))
+	fees := r.computeFees(gasWithBuffer)
 	accountNumber := r.accountNumbers[walletAddress]
 	memo := RandomString(16) // Avoid ErrTxInMempoolCache
 
@@ -589,6 +644,12 @@ func RandomString(n int) string {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
 	}
 	return string(b)
+}
+
+// computeFees returns fees = ceil(gasLimit * gasPrice) in the gas denom.
+func (r *Runner) computeFees(gasLimit int64) sdk.Coins {
+	fee := r.gasPrice.MulInt64(gasLimit).Ceil().TruncateInt()
+	return sdk.NewCoins(sdk.NewCoin(r.chainCfg.GasDenom, fee))
 }
 
 func (r *Runner) initAccountNumbers(ctx context.Context) error {
