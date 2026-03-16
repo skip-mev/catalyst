@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	sdkmath "cosmossdk.io/math"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	"github.com/cometbft/cometbft/rpc/jsonrpc/client"
@@ -203,8 +204,6 @@ func (c *Chain) BroadcastTx(ctx context.Context, txBytes []byte) (*sdk.TxRespons
 	}
 
 	if resp.TxResponse.Code != 0 {
-		c.logger.Debug("checktx failed", zap.String("tx_hash", resp.TxResponse.TxHash),
-			zap.Uint32("code", resp.TxResponse.Code), zap.String("raw_log", resp.TxResponse.RawLog))
 		return resp.TxResponse, fmt.Errorf("transaction %s failed with error code: %d. Raw log: %s",
 			resp.TxResponse.TxHash, resp.TxResponse.Code, resp.TxResponse.RawLog)
 	}
@@ -241,6 +240,18 @@ func (c *Chain) GetEncodingConfig() types.EncodingConfig {
 
 func (c *Chain) GetChainID() string {
 	return c.chainID
+}
+
+func (c *Chain) GetBalance(ctx context.Context, address, denom string) (sdkmath.Int, error) {
+	bankClient := banktypes.NewQueryClient(c.gRPCConn)
+	res, err := bankClient.Balance(ctx, &banktypes.QueryBalanceRequest{
+		Address: address,
+		Denom:   denom,
+	})
+	if err != nil {
+		return sdkmath.Int{}, fmt.Errorf("failed to query balance: %w", err)
+	}
+	return res.Balance.Amount, nil
 }
 
 func (c *Chain) getAuthClient() authtypes.QueryClient {
