@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
+	"github.com/skip-mev/catalyst/chains/cosmos/metrics"
 	inttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
@@ -68,6 +69,9 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 		subscriptionErr <- err
 	}()
 
+	tracker := metrics.NewTPSTracker(r.logger)
+	defer tracker.Close()
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -105,7 +109,8 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 				if (sentBootstrapLoads <= requiredBootstrapLoads) && (blocksProcessed%bootstrapBackoff != 0) {
 					continue
 				}
-				numTxsSubmitted := r.submitLoadPersistent(ctx)
+				numTxsSubmitted, numSucceeded := r.submitLoadPersistent(ctx)
+				tracker.RecordSend(numSucceeded, numTxsSubmitted)
 				r.logger.Info(
 					"submitted transactions",
 					zap.Int64("height", block.Height),
@@ -124,7 +129,7 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 	return loadtesttypes.LoadTestResult{}, nil
 }
 
-func (r *Runner) submitLoadPersistent(ctx context.Context) int {
+func (r *Runner) submitLoadPersistent(ctx context.Context) (int, int) {
 	r.logger.Info("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
 
 	buildStart := time.Now()
@@ -140,7 +145,12 @@ func (r *Runner) submitLoadPersistent(ctx context.Context) int {
 
 	r.txFactory.ResetWalletAllocation()
 
-	return len(allTxs)
+	totalFailures := 0
+	for _, count := range failures {
+		totalFailures += count
+	}
+
+	return len(allTxs), len(allTxs) - totalFailures
 }
 
 // buildTxsForMsgSpec collects senders, initializes any uninitialized ones, then
@@ -344,6 +354,7 @@ func (r *Runner) sendTxs(ctx context.Context, txs []persistentTx) map[uint32]int
 			res, err := tx.client.BroadcastTx(ctx, tx.txBytes)
 			if err != nil {
 				if res != nil {
+					r.promMetrics.RecordBroadcastFailure(res.Code)
 					mu.Lock()
 					failures[res.Code]++
 					mu.Unlock()
@@ -351,11 +362,14 @@ func (r *Runner) sendTxs(ctx context.Context, txs []persistentTx) map[uint32]int
 						r.handleNonceMismatch(tx.walletAddress, 0, res.RawLog)
 					}
 				} else {
+					r.promMetrics.RecordBroadcastFailure(0)
 					mu.Lock()
 					failures[0]++
 					mu.Unlock()
 				}
+				return
 			}
+			r.promMetrics.BroadcastSuccess.Add(1)
 		}()
 	}
 	wg.Wait()

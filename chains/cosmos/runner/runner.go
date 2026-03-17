@@ -45,6 +45,7 @@ type Runner struct {
 	mu                 sync.Mutex
 	numBlocksProcessed int
 	collector          *metrics.Collector
+	promMetrics        *metrics.Metrics
 	logger             *zap.Logger
 	sentTxs            []inttypes.SentTx
 	sentTxsMu          sync.RWMutex
@@ -142,6 +143,7 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		clients:        clients,
 		wallets:        wallets,
 		collector:      metrics.NewCollector(logger),
+		promMetrics:    metrics.NewMetrics(),
 		logger:         logger,
 		sentTxs:        make([]inttypes.SentTx, 0),
 		accountNumbers: make(map[string]uint64),
