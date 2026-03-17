@@ -142,14 +142,17 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		spec:           spec,
 		clients:        clients,
 		wallets:        wallets,
-		collector:      metrics.NewCollector(logger),
-		promMetrics:    metrics.NewMetrics(),
-		logger:         logger,
+		collector:   metrics.NewCollector(logger),
+		logger:      logger,
 		sentTxs:        make([]inttypes.SentTx, 0),
 		accountNumbers: make(map[string]uint64),
 		walletNonces:   make(map[string]uint64),
 		chainCfg:       *chainCfg,
 		gasPrice:       gasPrice,
+	}
+
+	if spec.MetricsEnabled {
+		runner.promMetrics = metrics.NewMetrics()
 	}
 
 	var distribution txfactory.TxDistribution
