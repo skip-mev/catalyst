@@ -45,6 +45,7 @@ type Runner struct {
 	mu                 sync.Mutex
 	numBlocksProcessed int
 	collector          *metrics.Collector
+	promMetrics        *metrics.Metrics
 	logger             *zap.Logger
 	sentTxs            []inttypes.SentTx
 	sentTxsMu          sync.RWMutex
@@ -148,6 +149,10 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		walletNonces:   make(map[string]uint64),
 		chainCfg:       *chainCfg,
 		gasPrice:       gasPrice,
+	}
+
+	if spec.MetricsEnabled {
+		runner.promMetrics = metrics.NewMetrics()
 	}
 
 	var distribution txfactory.TxDistribution
