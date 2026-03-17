@@ -6,9 +6,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var (
+const (
 	PromNamespace      = "catalyst"
-	TxMetricsNamespace = "cosmos_tx_metrics"
+	TxMetricsNamespace = "tx_metrics"
 )
 
 type Metrics struct {
