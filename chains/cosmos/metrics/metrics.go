@@ -8,7 +8,7 @@ import (
 
 var (
 	PromNamespace      = "catalyst"
-	TxMetricsNamespace = "tx_metrics"
+	TxMetricsNamespace = "cosmos_tx_metrics"
 )
 
 type Metrics struct {

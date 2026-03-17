@@ -6,7 +6,7 @@ import (
 
 var (
 	PromNamespace      = "catalyst"
-	TxMetricsNamespace = "tx_metrics"
+	TxMetricsNamespace = "ethereum_tx_metrics"
 )
 
 type Metrics struct {
