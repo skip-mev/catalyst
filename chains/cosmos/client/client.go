@@ -59,7 +59,7 @@ func NewClient(ctx context.Context, rpcAddress, grpcAddress, chainID string) (*C
 
 	var transportCreds credentials.TransportCredentials
 	if strings.HasSuffix(grpcAddress, ":443") {
-		transportCreds = credentials.NewTLS(&tls.Config{})
+		transportCreds = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
 	} else {
 		transportCreds = insecure.NewCredentials()
 	}
