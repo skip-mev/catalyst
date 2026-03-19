@@ -2,7 +2,9 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"strings"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
@@ -22,6 +24,7 @@ import (
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/skip-mev/catalyst/chains/cosmos/types"
@@ -54,9 +57,16 @@ func NewClient(ctx context.Context, rpcAddress, grpcAddress, chainID string) (*C
 		return nil, fmt.Errorf("failed to start rpc client: %w", err)
 	}
 
+	var transportCreds credentials.TransportCredentials
+	if strings.HasSuffix(grpcAddress, ":443") {
+		transportCreds = credentials.NewTLS(&tls.Config{})
+	} else {
+		transportCreds = insecure.NewCredentials()
+	}
+
 	grpcConn, err := grpc.NewClient(
 		grpcAddress,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(transportCreds),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create grpc connection: %w", err)
