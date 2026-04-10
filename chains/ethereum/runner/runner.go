@@ -3,7 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"net"
 	"net/http"
 	"slices"
@@ -92,11 +92,36 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 		return nil, err
 	}
 
+	isNonPersistentRun := (spec.NumBatches > 0 && spec.SendInterval > 0) || spec.NumOfBlocks > 0
+	if isNonPersistentRun {
+		if err := preFundDerivedWallets(ctx, logger, wallets); err != nil {
+			return nil, fmt.Errorf("prefund derived wallets: %w", err)
+		}
+	}
+
+	initialWallets := spec.InitialWallets
+	if initialWallets <= 0 {
+		initialWallets = 1
+	}
+
+	if isNonPersistentRun {
+		if initialWallets < spec.NumWallets {
+			logger.Info(
+				"prefund complete; using all wallets for sender distribution",
+				zap.Int("initial_wallets", initialWallets),
+				zap.Int("num_wallets", spec.NumWallets),
+			)
+		}
+		initialWallets = spec.NumWallets
+	} else if spec.InitialWallets <= 0 {
+		logger.Info("initial_wallets not set; defaulting to 1", zap.Int("num_wallets", spec.NumWallets))
+	}
+
 	var distribution txfactory.TxDistribution
-	if spec.InitialWallets > 0 && spec.InitialWallets < spec.NumWallets {
+	if initialWallets > 0 && initialWallets < spec.NumWallets {
 		logger.Info(
 			"Using TxDistributionBootstrapped",
-			zap.Int("initial_wallets", spec.InitialWallets),
+			zap.Int("initial_wallets", initialWallets),
 			zap.Int("num_wallets", spec.NumWallets),
 		)
 		distribution = txdistribution.NewBootstrapped(logger, wallets, spec.InitialWallets)
@@ -318,16 +343,16 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 }
 
 func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
-	// For ERC20 transactions, use optimal sender selection from factory
+	// Deployments must come from wallet[0] and must not advance sender distribution state.
 	var fromWallet *wallet.InteractingWallet
-	switch msgSpec.Type {
-	case inttypes.MsgTransferERC0, inttypes.MsgNativeTransferERC20:
-		fromWallet = r.txFactory.GetNextSender()
-	case inttypes.MsgDeployERC20, inttypes.MsgCreateContract:
+	if msgSpec.Type == inttypes.MsgDeployERC20 || msgSpec.Type == inttypes.MsgCreateContract {
 		fromWallet = r.wallets[0]
-	default:
-		// For non-ERC20 transactions, keep random selection
-		fromWallet = r.wallets[rand.Intn(len(r.wallets))]
+	} else {
+		fromWallet = r.txFactory.GetNextSender()
+	}
+
+	if fromWallet == nil {
+		return nil, nil
 	}
 
 	nonce, ok := r.nonces.Load(fromWallet.Address())
@@ -352,4 +377,94 @@ func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) 
 	}
 	r.nonces.Store(fromWallet.Address(), lastTx.Nonce()+1)
 	return txs, nil
+}
+
+func preFundDerivedWallets(ctx context.Context, logger *zap.Logger, wallets []*wallet.InteractingWallet) error {
+	if len(wallets) <= 1 {
+		return nil
+	}
+
+	balanceMu := sync.Mutex{}
+	unfunded := make([]int, 0, len(wallets)-1)
+	balanceEG := errgroup.Group{}
+	balanceEG.SetLimit(16)
+	for i := 1; i < len(wallets); i++ {
+		i := i
+		balanceEG.Go(func() error {
+			bal, err := wallets[i].GetBalance(ctx)
+			if err != nil {
+				return fmt.Errorf("getting balance for wallet[%d] %s: %w", i, wallets[i].FormattedAddress(), err)
+			}
+			if bal.Sign() == 0 {
+				balanceMu.Lock()
+				unfunded = append(unfunded, i)
+				balanceMu.Unlock()
+			}
+			return nil
+		})
+	}
+	if err := balanceEG.Wait(); err != nil {
+		return err
+	}
+
+	if len(unfunded) == 0 {
+		return nil
+	}
+
+	funder := wallets[0]
+	funderBal, err := funder.GetBalance(ctx)
+	if err != nil {
+		return fmt.Errorf("getting funder balance for %s: %w", funder.FormattedAddress(), err)
+	}
+	if funderBal.Sign() == 0 {
+		return fmt.Errorf("funder %s has zero balance", funder.FormattedAddress())
+	}
+
+	denom := big.NewInt(int64((len(unfunded) + 1) * 2))
+	amountPerWallet := new(big.Int).Div(funderBal, denom)
+	if amountPerWallet.Sign() == 0 {
+		return fmt.Errorf("insufficient funder balance %s to pre-fund %d wallets", funderBal.String(), len(unfunded))
+	}
+
+	startNonce, err := funder.GetNonce(ctx)
+	if err != nil {
+		return fmt.Errorf("getting funder nonce for %s: %w", funder.FormattedAddress(), err)
+	}
+
+	type prefundTx struct {
+		walletIndex int
+		address     common.Address
+		txHash      common.Hash
+	}
+	prefundTxs := make([]prefundTx, 0, len(unfunded))
+	nextNonce := startNonce
+
+	for _, i := range unfunded {
+		to := wallets[i].Address()
+		nonce := nextNonce
+		nextNonce++
+		txHash, err := funder.CreateAndSendTransaction(ctx, &to, amountPerWallet, 21_000, nil, nil, &nonce)
+		if err != nil {
+			return fmt.Errorf("sending prefund tx to wallet[%d] %s: %w", i, to.Hex(), err)
+		}
+		prefundTxs = append(prefundTxs, prefundTx{walletIndex: i, address: to, txHash: txHash})
+	}
+
+	receiptEG := errgroup.Group{}
+	receiptEG.SetLimit(16)
+	for i := range prefundTxs {
+		tx := prefundTxs[i]
+		receiptEG.Go(func() error {
+			if _, err := funder.WaitForTxReceipt(ctx, tx.txHash, 30*time.Second); err != nil {
+				return fmt.Errorf("waiting prefund receipt for wallet[%d] %s (tx=%s): %w", tx.walletIndex, tx.address.Hex(), tx.txHash.Hex(), err)
+			}
+			logger.Info("prefunded derived wallet", zap.Int("wallet_index", tx.walletIndex), zap.String("address", tx.address.Hex()), zap.String("amount", amountPerWallet.String()))
+			return nil
+		})
+	}
+	if err := receiptEG.Wait(); err != nil {
+		return err
+	}
+
+	return nil
 }
