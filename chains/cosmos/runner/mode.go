@@ -93,7 +93,7 @@ func (m *iftTxMode) CreateMessages(
 	}
 
 	receiver := m.recipients[rand.Intn(len(m.recipients))]
-	timeout := uint64(time.Now().Add(m.cfg.Timeout).UnixNano())
+	timeout := uint64(time.Now().Add(m.cfg.Timeout).Unix())
 
 	return []sdk.Msg{
 		&cosmosift.MsgIFTTransfer{

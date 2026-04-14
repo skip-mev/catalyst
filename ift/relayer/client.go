@@ -12,6 +12,11 @@ import (
 	relayerapi "github.com/skip-mev/catalyst/ift/relayer/pb/relayerapi"
 )
 
+const (
+	maxRelayRetries = 5
+	relayRetryDelay = 2 * time.Second
+)
+
 type Client interface {
 	SubmitTxHash(ctx context.Context, txHash string) error
 }
@@ -46,18 +51,30 @@ func NewGRPCClient(cfg loadtesttypes.IFTRelayerConfig, chainID string) (*GRPCCli
 }
 
 func (c *GRPCClient) SubmitTxHash(ctx context.Context, txHash string) error {
-	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
-	defer cancel()
+	var lastErr error
+	for attempt := range maxRelayRetries {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(relayRetryDelay):
+			}
+		}
 
-	_, err := c.client.Relay(callCtx, &relayerapi.RelayRequest{
-		TxHash:  txHash,
-		ChainId: c.chainID,
-	})
-	if err != nil {
-		return fmt.Errorf("submit tx hash to relayer: %w", err)
+		callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+		_, err := c.client.Relay(callCtx, &relayerapi.RelayRequest{
+			TxHash:  txHash,
+			ChainId: c.chainID,
+		})
+		cancel()
+
+		if err == nil {
+			return nil
+		}
+		lastErr = err
 	}
 
-	return nil
+	return fmt.Errorf("submit tx hash to relayer after %d attempts: %w", maxRelayRetries, lastErr)
 }
 
 func (c *GRPCClient) Close() error {

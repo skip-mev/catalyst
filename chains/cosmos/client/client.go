@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
@@ -178,6 +179,9 @@ func (c *Chain) GetGasLimit(ctx context.Context) (int64, error) {
 	}
 
 	maxGas := params.ConsensusParams.Block.MaxGas
+	if maxGas == -1 {
+		return math.MaxInt64, nil
+	}
 	if maxGas <= 0 {
 		return 0, fmt.Errorf("invalid max gas value: %d", maxGas)
 	}

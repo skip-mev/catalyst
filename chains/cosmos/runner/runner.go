@@ -258,6 +258,8 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 		subscriptionErr <- err
 	}()
 
+	var lastSendTime time.Time
+
 	go func() {
 		for {
 			select {
@@ -270,10 +272,16 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 				r.logger.Debug("processing block", zap.Int64("height", block.Height),
 					zap.Time("timestamp", block.Timestamp), zap.Int64("gas_limit", block.GasLimit))
 
+				if r.spec.SendInterval > 0 && time.Since(lastSendTime) < r.spec.SendInterval {
+					r.mu.Unlock()
+					continue
+				}
+
 				_, err := r.sendBlockTransactions(ctx)
 				if err != nil {
 					r.logger.Error("error sending block transactions", zap.Error(err))
 				}
+				lastSendTime = time.Now()
 
 				r.logger.Info("processed block", zap.Int64("height", block.Height))
 
@@ -447,7 +455,7 @@ func (r *Runner) createAndSendTransaction(
 ) (inttypes.SentTx, bool) {
 	walletAddress := fromWallet.FormattedAddress()
 
-	gasBufferFactor := 1.1
+	gasBufferFactor := 1.5
 	estimation := r.gasEstimations[mspSpec]
 	gasWithBuffer := int64(float64(estimation.gasUsed) * gasBufferFactor)
 	fees := sdk.NewCoins(sdk.NewCoin(r.chainCfg.GasDenom, sdkmath.NewInt(gasWithBuffer)))
