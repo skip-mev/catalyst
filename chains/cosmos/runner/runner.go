@@ -523,10 +523,9 @@ func (r *Runner) broadcastAndHandleResponse(
 		}
 
 		sentTx := inttypes.SentTx{
-			Err:         err,
-			SourceErr:   err,
-			NodeAddress: client.GetNodeAddress().RPC,
-			MsgType:     msgType,
+			BroadcastErr: err,
+			NodeAddress:  client.GetNodeAddress().RPC,
+			MsgType:      msgType,
 		}
 		if res != nil {
 			sentTx.TxHash = res.TxHash
@@ -542,14 +541,10 @@ func (r *Runner) broadcastAndHandleResponse(
 		TxHash:      res.TxHash,
 		NodeAddress: client.GetNodeAddress().RPC,
 		MsgType:     msgType,
-		Err:         nil,
 	}
 
 	if err := r.mode.HandlePostBroadcast(ctx, msgType, res.TxHash); err != nil {
-		if msgType == inttypes.MsgIFTTransfer {
-			sentTx.RelayerErr = err
-		}
-		sentTx.Err = err
+		sentTx.PostBroadcastErr = err
 		r.logger.Error("post-broadcast handling failed",
 			zap.Error(err),
 			zap.String("tx_hash", res.TxHash),

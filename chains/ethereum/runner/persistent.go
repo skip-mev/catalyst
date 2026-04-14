@@ -204,12 +204,11 @@ func (r *Runner) sendAndRecord(
 				r.logger.Info("failed post-broadcast handling", zap.String("tx_hash", tx.Hash().String()), zap.Error(relayerErr))
 			}
 			sentTxs[i] = &inttypes.SentTx{
-				TxHash:     tx.Hash(),
-				MsgType:    msgType,
-				Err:        sourceErr,
-				SourceErr:  sourceErr,
-				RelayerErr: relayerErr,
-				Tx:         tx,
+				TxHash:           tx.Hash(),
+				MsgType:          msgType,
+				BroadcastErr:     sourceErr,
+				PostBroadcastErr: relayerErr,
+				Tx:               tx,
 			}
 		})
 	}
@@ -219,7 +218,7 @@ func (r *Runner) sendAndRecord(
 	// should be pretty close anyways.
 	broadcastTime := time.Now()
 	for _, tx := range sentTxs {
-		if tx.Err != nil {
+		if tx.BroadcastErr != nil {
 			continue
 		}
 		tracker.Set(tx.TxHash, broadcastTime)

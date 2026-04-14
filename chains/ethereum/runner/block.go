@@ -159,13 +159,12 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 				r.logger.Debug("failed post-broadcast handling", zap.String("tx_hash", tx.Hash().String()), zap.Error(relayerErr))
 			}
 			sentTxs[i] = &inttypes.SentTx{
-				TxHash:      tx.Hash(),
-				NodeAddress: "", // TODO: figure out what to do here.
-				MsgType:     msgType,
-				Err:         sourceErr,
-				SourceErr:   sourceErr,
-				RelayerErr:  relayerErr,
-				Tx:          tx,
+				TxHash:           tx.Hash(),
+				NodeAddress:      "", // TODO: figure out what to do here.
+				MsgType:          msgType,
+				BroadcastErr:     sourceErr,
+				PostBroadcastErr: relayerErr,
+				Tx:               tx,
 			}
 		}()
 	}

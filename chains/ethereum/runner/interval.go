@@ -130,12 +130,11 @@ loop:
 					sourceErr := wallet.SendTransaction(ctx, tx)
 					if sourceErr != nil {
 						r.logger.Error("failed to send tx", zap.Error(sourceErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
-						sentTx.Err = sourceErr
-						sentTx.SourceErr = sourceErr
+						sentTx.BroadcastErr = sourceErr
 					}
-					sentTx.MsgType, sentTx.RelayerErr = r.handlePostBroadcast(ctx, tx, sourceErr)
-					if sentTx.RelayerErr != nil {
-						r.logger.Error("failed post-broadcast handling", zap.Error(sentTx.RelayerErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
+					sentTx.MsgType, sentTx.PostBroadcastErr = r.handlePostBroadcast(ctx, tx, sourceErr)
+					if sentTx.PostBroadcastErr != nil {
+						r.logger.Error("failed post-broadcast handling", zap.Error(sentTx.PostBroadcastErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
 					}
 					collectionChannel <- &sentTx
 				}()

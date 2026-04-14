@@ -58,14 +58,27 @@ var (
 )
 
 type SentTx struct {
-	TxHash      common.Hash
-	NodeAddress string
-	MsgType     loadtesttypes.MsgType
-	Err         error
-	SourceErr   error
-	RelayerErr  error
-	Tx          *gethtypes.Transaction
-	Receipt     *gethtypes.Receipt
+	TxHash           common.Hash
+	NodeAddress      string
+	MsgType          loadtesttypes.MsgType
+	BroadcastErr     error
+	PostBroadcastErr error
+	Tx               *gethtypes.Transaction
+	Receipt          *gethtypes.Receipt
+}
+
+func (s SentTx) Failed() bool {
+	return s.BroadcastErr != nil || s.PostBroadcastErr != nil
+}
+
+func (s SentTx) Error() error {
+	if s.BroadcastErr != nil {
+		return s.BroadcastErr
+	}
+	if s.PostBroadcastErr != nil {
+		return s.PostBroadcastErr
+	}
+	return nil
 }
 
 type NodeAddress struct {

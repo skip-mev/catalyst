@@ -69,14 +69,29 @@ type BroadcastError struct {
 }
 
 type SentTx struct {
-	TxHash            string
-	NodeAddress       string
-	MsgType           loadtesttypes.MsgType
-	Err               error
-	SourceErr         error
-	RelayerErr        error
-	TxResponse        *sdk.TxResponse
-	InitialTxResponse *sdk.TxResponse
+	TxHash           string
+	NodeAddress      string
+	MsgType          loadtesttypes.MsgType
+	BroadcastErr     error
+	PostBroadcastErr error
+	TxResponse       *sdk.TxResponse
+}
+
+func (s SentTx) Failed() bool {
+	return s.BroadcastErr != nil || s.PostBroadcastErr != nil || (s.TxResponse != nil && s.TxResponse.Code != 0)
+}
+
+func (s SentTx) Error() error {
+	if s.BroadcastErr != nil {
+		return s.BroadcastErr
+	}
+	if s.PostBroadcastErr != nil {
+		return s.PostBroadcastErr
+	}
+	if s.TxResponse != nil && s.TxResponse.Code != 0 {
+		return fmt.Errorf("%s", s.TxResponse.RawLog)
+	}
+	return nil
 }
 
 type ChainConfig struct {

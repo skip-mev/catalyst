@@ -76,13 +76,12 @@ func (m *Collector) GroupSentTxs(
 					continue
 				}
 
-				if tx.SourceErr == nil {
+				if tx.BroadcastErr == nil {
 					randomClient := &clients[rand.Intn(len(clients))]
 					txResponse, err := wallet.GetTxResponse(ctx, *randomClient, tx.TxHash)
 					if err != nil {
 						m.logger.Error("tx not found", zap.Error(err), zap.String("tx_hash", tx.TxHash))
-						tx.SourceErr = err
-						tx.Err = err
+						tx.BroadcastErr = err
 						mu.Lock()
 						txNotFoundCount++
 						mu.Unlock()
@@ -90,10 +89,6 @@ func (m *Collector) GroupSentTxs(
 					}
 
 					tx.TxResponse = txResponse
-
-					if txResponse.Code != 0 && tx.Err == nil {
-						tx.Err = fmt.Errorf("%s", txResponse.RawLog)
-					}
 
 					mu.Lock()
 					m.txsByBlock[tx.TxResponse.Height] = append(m.txsByBlock[tx.TxResponse.Height], *tx)
@@ -111,7 +106,7 @@ func (m *Collector) GroupSentTxs(
 	for i := range sentTxs {
 		tx := &sentTxs[i]
 
-		if tx.SourceErr == nil {
+		if tx.BroadcastErr == nil {
 			workChan <- workItem{index: i, tx: tx}
 		}
 	}
@@ -167,9 +162,9 @@ func (m *Collector) processMessageTypeStats(result *loadtesttypes.LoadTestResult
 		failed := 0
 		errorCounts := make(map[string]int)
 		for _, tx := range txs {
-			if tx.Err != nil {
+			if tx.Failed() {
 				failed++
-				errMsg := tx.Err.Error()
+				errMsg := tx.Error().Error()
 				errorCounts[errMsg]++
 			} else {
 				successful++
@@ -217,7 +212,7 @@ func (m *Collector) processNodeStats(result *loadtesttypes.LoadTestResult) {
 		for _, tx := range txs {
 			msgCounts[tx.MsgType]++
 
-			if tx.Err != nil {
+			if tx.Failed() {
 				failed++
 			} else {
 				successful++
@@ -270,7 +265,7 @@ func (m *Collector) processBlockStats(result *loadtesttypes.LoadTestResult, gasL
 			stats := msgStats[tx.MsgType]
 			stats.TransactionsSent++
 
-			if tx.Err != nil {
+			if tx.Failed() {
 				stats.FailedTxs++
 				if tx.TxResponse != nil && tx.TxResponse.GasUsed > 0 {
 					stats.GasUsed += tx.TxResponse.GasUsed
