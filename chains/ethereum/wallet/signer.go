@@ -103,17 +103,6 @@ func (s *Signer) SignMessage(messageHash []byte) ([]byte, error) {
 	return crypto.Sign(messageHash, s.PrivKey)
 }
 
-// SignPersonalMessage signs a message with Ethereum's personal message format
-// This prepends "\x19Ethereum Signed Message:\n" + len(message) to the message
-func (s *Signer) SignPersonalMessage(message []byte) ([]byte, error) {
-	hash := crypto.Keccak256Hash(
-		[]byte("\x19Ethereum Signed Message:\n"),
-		[]byte(string(rune(len(message)))),
-		message,
-	)
-	return crypto.Sign(hash.Bytes(), s.PrivKey)
-}
-
 // PrivateKey returns the private key
 func (s *Signer) PrivateKey() *ecdsa.PrivateKey {
 	return s.PrivKey

@@ -24,6 +24,7 @@ import (
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
+	"github.com/skip-mev/catalyst/chains/txdistribution"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 	iftaccounts "github.com/skip-mev/catalyst/ift/accounts"
 	iftrelayer "github.com/skip-mev/catalyst/ift/relayer"
@@ -104,10 +105,10 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 			zap.Int("initial_wallets", spec.InitialWallets),
 			zap.Int("num_wallets", spec.NumWallets),
 		)
-		distribution = txfactory.NewTxDistributionBootstrapped(logger, wallets, spec.InitialWallets)
+		distribution = txdistribution.NewBootstrapped(logger, wallets, spec.InitialWallets)
 	} else {
 		logger.Info("Using TxDistributionEven")
-		distribution = txfactory.NewTxDistributionEven(wallets)
+		distribution = txdistribution.NewEven(wallets)
 	}
 
 	var (
@@ -260,7 +261,11 @@ func (r *Runner) deployContracts(ctx context.Context, deployer ContractDeployer)
 			if err == nil {
 				addresses[index] = rec.ContractAddress
 			} else {
-				r.logger.Error("failed to find receipt", zap.String("msg_type", deployer.msgType.String()), zap.Error(err))
+				r.logger.Error(
+					"failed to find receipt",
+					zap.String("msg_type", deployer.msgType.String()),
+					zap.Error(err),
+				)
 			}
 		}(i, tx)
 	}

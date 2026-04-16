@@ -17,6 +17,7 @@ import (
 	"github.com/skip-mev/catalyst/chains/ethereum/contracts/load/target"
 	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
+	"github.com/skip-mev/catalyst/chains/txdistribution"
 )
 
 func TestApplyBaselinesToTxOpts(t *testing.T) {
@@ -117,7 +118,7 @@ func TestCreateContract_SuccessfulTxs(t *testing.T) {
 	for range 10 {
 		sim, wallet := setupTest(t)
 		ctx := context.Background()
-		distr := NewTxDistributionEven([]*ethwallet.InteractingWallet{wallet})
+		distr := txdistribution.NewEven([]*ethwallet.InteractingWallet{wallet})
 		f := NewTxFactory(logger, ethtypes.TxOpts{}, distr)
 		nonce, err := wallet.GetNonce(ctx)
 		require.NoError(t, err)
@@ -144,7 +145,7 @@ func TestCreateMsgWriteTo(t *testing.T) {
 
 	sim, wallet := setupTest(t)
 	ctx := context.Background()
-	distr := NewTxDistributionEven([]*ethwallet.InteractingWallet{wallet})
+	distr := txdistribution.NewEven([]*ethwallet.InteractingWallet{wallet})
 	f := NewTxFactory(logger, ethtypes.TxOpts{}, distr)
 	deployContract(t, sim, f, distr)
 
@@ -172,7 +173,7 @@ func TestCallDataBlast(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	sim, wallet := setupTest(t)
 	ctx := context.Background()
-	distr := NewTxDistributionEven([]*ethwallet.InteractingWallet{wallet})
+	distr := txdistribution.NewEven([]*ethwallet.InteractingWallet{wallet})
 	f := NewTxFactory(logger, ethtypes.TxOpts{}, distr)
 	deployContract(t, sim, f, distr)
 
@@ -192,7 +193,7 @@ func TestCrossContractCall(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	sim, wallet := setupTest(t)
 	ctx := context.Background()
-	distr := NewTxDistributionEven([]*ethwallet.InteractingWallet{wallet})
+	distr := txdistribution.NewEven([]*ethwallet.InteractingWallet{wallet})
 	f := NewTxFactory(logger, ethtypes.TxOpts{}, distr)
 	deployContract(t, sim, f, distr)
 
@@ -224,7 +225,7 @@ func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory, distr Tx
 	t.Helper()
 	ctx := context.Background()
 	numContracts := 1
-	wallet := distr.GetBaselineWallet()
+	wallet := distr.GetWallet(0)
 	nonce, err := wallet.GetNonce(ctx)
 	require.NoError(t, err)
 	txs, err := f.createMsgCreateContract(ctx, wallet, &numContracts, nonce, false)

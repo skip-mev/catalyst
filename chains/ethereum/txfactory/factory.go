@@ -25,9 +25,9 @@ import (
 
 type TxDistribution interface {
 	GetNextSender() *ethwallet.InteractingWallet
-	GetNextReceiver() common.Address
-	GetBaselineWallet() *ethwallet.InteractingWallet
-	ResetWalletAllocation()
+	GetNextReceiver() *ethwallet.InteractingWallet
+	GetWallet(index int) *ethwallet.InteractingWallet
+	ResetWalletAllocation() (int, int)
 }
 
 type TxFactory struct {
@@ -73,7 +73,7 @@ func NewTxFactory(logger *zap.Logger, txOpts ethtypes.TxOpts, txDistribution TxD
 func (f *TxFactory) SetBaselines(ctx context.Context, msgs []loadtesttypes.LoadTestMsg) error {
 	f.logger.Info("Setting baselines for transactions...")
 	for _, msg := range msgs {
-		wallet := f.txDistribution.GetBaselineWallet()
+		wallet := f.txDistribution.GetWallet(0)
 		nonce, err := wallet.GetNonce(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get nonce of %s: %w", wallet.FormattedAddress(), err)
@@ -190,7 +190,7 @@ func (f *TxFactory) SetWETHAddresses(addrs ...common.Address) {
 
 // ResetWalletAllocation resets wallet allocation for a new load and rotates roles
 func (f *TxFactory) ResetWalletAllocation() {
-	f.txDistribution.ResetWalletAllocation()
+	f.txDistribution.ResetWalletAllocation() //nolint:errcheck // ETH side does not use return values
 }
 
 func (f *TxFactory) GetNextSender() *ethwallet.InteractingWallet {
@@ -437,7 +437,7 @@ func (f *TxFactory) createMsgTransferERC20(
 	contractAddr := f.wethAddresses[rand.Intn(len(f.wethAddresses))]
 
 	// Use optimal recipient selection to minimize reuse and prevent self-transfers
-	recipient := f.txDistribution.GetNextReceiver()
+	recipient := f.txDistribution.GetNextReceiver().Address()
 
 	// random amount. weth calls amounts wad for some reason.
 	wad := big.NewInt(int64(rand.Intn(10_000)))
@@ -478,7 +478,7 @@ func (f *TxFactory) createMsgNativeTransferERC20(
 	useBaseline bool,
 ) (*types.Transaction, error) {
 	// Use optimal recipient selection to minimize reuse and prevent self-transfers
-	recipient := f.txDistribution.GetNextReceiver()
+	recipient := f.txDistribution.GetNextReceiver().Address()
 
 	// random amount. weth calls amounts wad for some reason. we continue that trend here.
 	wad := big.NewInt(int64(rand.Intn(10_000)))
@@ -522,7 +522,7 @@ func (f *TxFactory) createMsgNativeGasTransfer(ctx context.Context, fromWallet *
 	_ uint64, useBaseline bool,
 ) (*types.Transaction, error) {
 	// Use optimal recipient selection to minimize reuse and prevent self-transfers
-	recipient := f.txDistribution.GetNextReceiver()
+	recipient := f.txDistribution.GetNextReceiver().Address()
 
 	// Get balance and transfer half of it
 	bal, err := fromWallet.GetClient().PendingBalanceAt(ctx, fromWallet.Address())

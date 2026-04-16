@@ -96,6 +96,7 @@ func (s SentTx) Error() error {
 
 type ChainConfig struct {
 	GasDenom       string        `yaml:"gas_denom"               json:"GasDenom"`
+	GasPrice       string        `yaml:"gas_price,omitempty"     json:"GasPrice,omitempty"` // e.g. "0.0005" — defaults to "1" if unset
 	Bech32Prefix   string        `yaml:"bech32_prefix"           json:"Bech32Prefix"`
 	UnorderedTxs   bool          `yaml:"unordered_txs,omitempty" json:"UnorderedTxs,omitempty"`
 	NodesAddresses []NodeAddress `yaml:"nodes_addresses"         json:"NodesAddresses"`

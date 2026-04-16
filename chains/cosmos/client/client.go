@@ -2,10 +2,13 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
+	sdkmath "cosmossdk.io/math"
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	"github.com/cometbft/cometbft/rpc/jsonrpc/client"
@@ -22,6 +25,7 @@ import (
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	cosmosift "github.com/skip-mev/catalyst/chains/cosmos/ift"
@@ -55,9 +59,16 @@ func NewClient(ctx context.Context, rpcAddress, grpcAddress, chainID string) (*C
 		return nil, fmt.Errorf("failed to start rpc client: %w", err)
 	}
 
+	var transportCreds credentials.TransportCredentials
+	if strings.HasSuffix(grpcAddress, ":443") {
+		transportCreds = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12})
+	} else {
+		transportCreds = insecure.NewCredentials()
+	}
+
 	grpcConn, err := grpc.NewClient(
 		grpcAddress,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(transportCreds),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create grpc connection: %w", err)
@@ -208,8 +219,6 @@ func (c *Chain) BroadcastTx(ctx context.Context, txBytes []byte) (*sdk.TxRespons
 	}
 
 	if resp.TxResponse.Code != 0 {
-		c.logger.Debug("checktx failed", zap.String("tx_hash", resp.TxResponse.TxHash),
-			zap.Uint32("code", resp.TxResponse.Code), zap.String("raw_log", resp.TxResponse.RawLog))
 		return resp.TxResponse, fmt.Errorf("transaction %s failed with error code: %d. Raw log: %s",
 			resp.TxResponse.TxHash, resp.TxResponse.Code, resp.TxResponse.RawLog)
 	}
@@ -246,6 +255,18 @@ func (c *Chain) GetEncodingConfig() types.EncodingConfig {
 
 func (c *Chain) GetChainID() string {
 	return c.chainID
+}
+
+func (c *Chain) GetBalance(ctx context.Context, address, denom string) (sdkmath.Int, error) {
+	bankClient := banktypes.NewQueryClient(c.gRPCConn)
+	res, err := bankClient.Balance(ctx, &banktypes.QueryBalanceRequest{
+		Address: address,
+		Denom:   denom,
+	})
+	if err != nil {
+		return sdkmath.Int{}, fmt.Errorf("failed to query balance: %w", err)
+	}
+	return res.Balance.Amount, nil
 }
 
 func (c *Chain) getAuthClient() authtypes.QueryClient {
