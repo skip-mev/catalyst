@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	maxRelayRetries = 5
-	relayRetryDelay = 2 * time.Second
+	maxRelayRetries = 15
+	relayRetryDelay = 3 * time.Second
 )
 
 type Client interface {
