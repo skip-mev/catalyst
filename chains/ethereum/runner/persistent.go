@@ -25,7 +25,7 @@ const (
 func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
 	// TODO Eric -- all runners do this--refactor it out
 	// deploy the initial contracts needed by the runner.
-	if err := r.mode.Prepare(ctx); err != nil {
+	if err := r.deployInitialContracts(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
 
@@ -42,7 +42,7 @@ func (r *Runner) runPersistent(ctx context.Context) (loadtesttypes.LoadTestResul
 	defer cancel()
 
 	// Run one tx to get gas baselines -- this won't work as soon as the feemarket is enabled
-	if err := r.mode.SetBaselines(ctx, r.spec.Msgs); err != nil {
+	if err := r.txFactory.SetBaselines(ctx, r.spec.Msgs); err != nil {
 		return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to set Baseline txs: %w", err)
 	}
 
@@ -175,7 +175,7 @@ func (r *Runner) submitLoadPersistent(
 		r.sendAsync(ctx, txs)
 	}
 
-	r.mode.ResetAllocation()
+	r.txFactory.ResetWalletAllocation()
 	return len(txs)
 }
 
@@ -192,22 +192,23 @@ func (r *Runner) sendAndRecord(
 	for i, tx := range txs {
 		wg.Go(func() {
 			fromWallet := r.getWalletForTx(tx)
-			sourceErr := fromWallet.SendTransaction(ctx, tx)
-			if sourceErr != nil {
-				r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(sourceErr))
+			broadcastErr := fromWallet.SendTransaction(ctx, tx)
+			if broadcastErr != nil {
+				r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(broadcastErr))
 				r.promMetrics.BroadcastFailure.Add(1)
 			} else {
 				r.promMetrics.BroadcastSuccess.Add(1)
 			}
-			msgType, relayerErr := r.handlePostBroadcast(ctx, tx, sourceErr)
-			if relayerErr != nil {
-				r.logger.Info("failed post-broadcast handling", zap.String("tx_hash", tx.Hash().String()), zap.Error(relayerErr))
+			msgType := r.messageTypeForTx(tx)
+			relayErr := r.relayTxHash(ctx, msgType, tx.Hash(), broadcastErr)
+			if relayErr != nil {
+				r.logger.Info("failed to relay tx", zap.String("tx_hash", tx.Hash().String()), zap.Error(relayErr))
 			}
 			sentTxs[i] = &inttypes.SentTx{
 				TxHash:           tx.Hash(),
 				MsgType:          msgType,
-				BroadcastErr:     sourceErr,
-				PostBroadcastErr: relayerErr,
+				BroadcastErr:     broadcastErr,
+				PostBroadcastErr: relayErr,
 				Tx:               tx,
 			}
 		})
@@ -231,9 +232,10 @@ func (r *Runner) sendAsync(ctx context.Context, txs gethtypes.Transactions) {
 	for _, tx := range txs {
 		fromWallet := r.getWalletForTx(tx)
 		go func() {
-			sourceErr := fromWallet.SendTransaction(ctx, tx)
-			if _, err := r.handlePostBroadcast(ctx, tx, sourceErr); err != nil {
-				r.logger.Debug("failed post-broadcast handling", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
+			broadcastErr := fromWallet.SendTransaction(ctx, tx)
+			msgType := r.messageTypeForTx(tx)
+			if err := r.relayTxHash(ctx, msgType, tx.Hash(), broadcastErr); err != nil {
+				r.logger.Debug("failed to relay tx", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
 			}
 		}()
 	}

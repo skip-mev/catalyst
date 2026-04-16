@@ -25,6 +25,12 @@ msgs:
   - type: "MsgIFTTransfer"
     weight: 1.0
 
+relay:
+  url: "127.0.0.1:8080"
+  timeout: "10s"
+  msg_types:
+    - "MsgIFTTransfer"
+
 ift:
   client_id: "07-tendermint-0"
   amount: "1000"
@@ -36,9 +42,6 @@ ift:
     kind: "cosmos"
     cosmos:
       bech32_prefix: "cosmos"
-  relayer:
-    url: "127.0.0.1:8080"
-    timeout: "10s"
   cosmos:
     denom: "stake"
     msg_type_url: "/skip.ift.v1.MsgIFTTransfer"

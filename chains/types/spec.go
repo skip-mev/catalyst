@@ -2,10 +2,24 @@ package types
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+type RelayConfig struct {
+	URL      string        `yaml:"url" json:"url"`
+	Timeout  time.Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	MsgTypes []MsgType     `yaml:"msg_types" json:"msg_types"`
+}
+
+func (c *RelayConfig) ShouldRelay(msgType MsgType) bool {
+	if c == nil {
+		return false
+	}
+	return slices.Contains(c.MsgTypes, msgType)
+}
 
 type LoadTestSpec struct {
 	Name                 string        `yaml:"name"                   json:"name"`
@@ -23,6 +37,7 @@ type LoadTestSpec struct {
 	TxTimeout            time.Duration `yaml:"tx_timeout,omitempty"   json:"tx_timeout,omitempty"`
 	ChainCfg             ChainConfig   `yaml:"-"                      json:"-"` // decoded via custom UnmarshalYAML
 	IFT                  *IFTConfig    `yaml:"ift,omitempty"          json:"ift,omitempty"`
+	Relay                *RelayConfig  `yaml:"relay,omitempty"        json:"relay,omitempty"`
 	Cache                CacheConfig   `yaml:"cache_config"           json:"cache_config"`
 	PrometheusListenAddr string        `yaml:"prometheus_listen_addr" json:"prometheus_listen_addr"`
 	MetricsEnabled       bool          `yaml:"metrics_enabled"        json:"metrics_enabled"`

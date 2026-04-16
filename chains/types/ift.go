@@ -11,7 +11,6 @@ type IFTConfig struct {
 	Timeout     time.Duration        `yaml:"timeout" json:"timeout"`
 	Recipients  IFTRecipientsConfig  `yaml:"recipients,omitempty" json:"recipients,omitempty"`
 	Destination IFTDestinationConfig `yaml:"destination" json:"destination"`
-	Relayer     IFTRelayerConfig     `yaml:"relayer" json:"relayer"`
 	Cosmos      *IFTCosmosConfig     `yaml:"cosmos,omitempty" json:"cosmos,omitempty"`
 	EVM         *IFTEVMConfig        `yaml:"evm,omitempty" json:"evm,omitempty"`
 }
@@ -42,11 +41,6 @@ type IFTDestinationCosmosConfig struct {
 
 type IFTDestinationEVMConfig struct{}
 
-type IFTRelayerConfig struct {
-	URL     string        `yaml:"url" json:"url"`
-	Timeout time.Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-}
-
 func (c *IFTConfig) Validate(spec LoadTestSpec) error {
 	if c == nil {
 		return nil
@@ -70,20 +64,6 @@ func (c *IFTConfig) Validate(spec LoadTestSpec) error {
 
 	if c.Timeout <= 0 {
 		return fmt.Errorf("ift.timeout must be greater than zero")
-	}
-
-	if c.Relayer.URL == "" {
-		return fmt.Errorf("ift.relayer.url must be specified")
-	}
-
-	if c.Relayer.Timeout < 0 {
-		return fmt.Errorf("ift.relayer.timeout must be greater than or equal to zero")
-	}
-
-	for _, msg := range spec.Msgs {
-		if msg.Type != MsgType("MsgIFTTransfer") {
-			return fmt.Errorf("ift mode only supports MsgIFTTransfer messages, got %q", msg.Type)
-		}
 	}
 
 	if err := c.Destination.Validate(); err != nil {

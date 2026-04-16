@@ -20,10 +20,13 @@ import (
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
 	cosmosift "github.com/skip-mev/catalyst/chains/cosmos/ift"
 	"github.com/skip-mev/catalyst/chains/cosmos/metrics"
+	"github.com/skip-mev/catalyst/chains/cosmos/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
 	logging "github.com/skip-mev/catalyst/chains/log"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	iftaccounts "github.com/skip-mev/catalyst/ift/accounts"
+	iftrelayer "github.com/skip-mev/catalyst/ift/relayer"
 )
 
 // MsgGasEstimation stores gas estimation for a specific message type
@@ -47,7 +50,8 @@ type Runner struct {
 	logger             *zap.Logger
 	sentTxs            []inttypes.SentTx
 	sentTxsMu          sync.RWMutex
-	mode               txMode
+	txFactory          *txfactory.TxFactory
+	relayer            iftrelayer.Client
 	accountNumbers     map[string]uint64
 	walletNonces       map[string]uint64
 	walletNoncesMu     sync.Mutex
@@ -120,14 +124,22 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		chainCfg:       *chainCfg,
 	}
 
+	runner.txFactory = txfactory.NewTxFactory(chainCfg.GasDenom, wallets)
+
 	if spec.IFT != nil {
-		var err error
-		runner.mode, err = newIFTTxMode(spec)
+		recipients, err := iftaccounts.GenerateRecipients(spec)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("generate ift recipients: %w", err)
 		}
-	} else {
-		runner.mode = newLocalTxMode(chainCfg.GasDenom, wallets)
+		runner.txFactory.SetIFTConfig(recipients, spec.IFT.ClientID, spec.IFT.Amount, spec.IFT.Cosmos.Denom, spec.IFT.Timeout)
+	}
+
+	if spec.Relay != nil {
+		relayerClient, err := iftrelayer.NewGRPCClient(*spec.Relay, spec.ChainID)
+		if err != nil {
+			return nil, fmt.Errorf("create relayer client: %w", err)
+		}
+		runner.relayer = relayerClient
 	}
 
 	if err := runner.initGasEstimation(ctx); err != nil {
@@ -168,7 +180,7 @@ func (r *Runner) calculateMsgGasEstimations(
 	gasEstimations := make(map[loadtesttypes.LoadTestMsg]uint64)
 
 	for _, msgSpec := range r.spec.Msgs {
-		msgs, err := r.mode.CreateMessages(msgSpec, fromWallet)
+		msgs, err := r.createMessagesForType(msgSpec, fromWallet)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create messages for gas estimation: %w", err)
 		}
@@ -438,7 +450,18 @@ func (r *Runner) createMessagesForType(
 	msgSpec loadtesttypes.LoadTestMsg,
 	fromWallet *wallet.InteractingWallet,
 ) ([]sdk.Msg, error) {
-	return r.mode.CreateMessages(msgSpec, fromWallet)
+	if msgSpec.Type == inttypes.MsgArr {
+		if msgSpec.ContainedType == "" {
+			return nil, fmt.Errorf("msgSpec.ContainedType must not be empty")
+		}
+		return r.txFactory.CreateMsgs(msgSpec, fromWallet)
+	}
+
+	msg, err := r.txFactory.CreateMsg(msgSpec, fromWallet)
+	if err != nil {
+		return nil, err
+	}
+	return []sdk.Msg{msg}, nil
 }
 
 // createAndSendTransaction creates and sends a transaction, handling the response
@@ -543,9 +566,9 @@ func (r *Runner) broadcastAndHandleResponse(
 		MsgType:     msgType,
 	}
 
-	if err := r.mode.HandlePostBroadcast(ctx, msgType, res.TxHash); err != nil {
+	if err := r.relayTxHash(ctx, msgType, res.TxHash); err != nil {
 		sentTx.PostBroadcastErr = err
-		r.logger.Error("post-broadcast handling failed",
+		r.logger.Error("failed to relay tx",
 			zap.Error(err),
 			zap.String("tx_hash", res.TxHash),
 			zap.String("node", client.GetNodeAddress().RPC),
@@ -559,6 +582,16 @@ func (r *Runner) broadcastAndHandleResponse(
 	txsSentMu.Unlock()
 
 	return sentTx, true
+}
+
+func (r *Runner) relayTxHash(ctx context.Context, msgType loadtesttypes.MsgType, txHash string) error {
+	if r.relayer == nil {
+		return nil
+	}
+	if !r.spec.Relay.ShouldRelay(msgType) {
+		return nil
+	}
+	return r.relayer.SubmitTxHash(ctx, txHash)
 }
 
 // handleNonceMismatch extracts the expected nonce from the error message and updates the wallet nonce
