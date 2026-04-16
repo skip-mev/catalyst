@@ -335,6 +335,7 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 }
 
 func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
+	// For ERC20 transactions, use optimal sender selection from factory
 	var fromWallet *wallet.InteractingWallet
 	switch msgSpec.Type {
 	case inttypes.MsgTransferERC0, inttypes.MsgNativeTransferERC20:
@@ -342,11 +343,20 @@ func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) 
 	case inttypes.MsgDeployERC20, inttypes.MsgCreateContract:
 		fromWallet = r.wallets[0]
 	default:
+		// For non-ERC20 transactions, keep random selection
 		fromWallet = r.wallets[rand.Intn(len(r.wallets))]
 	}
+	return r.buildTxsForWallet(msgSpec, fromWallet, useBaseline)
+}
 
+func (r *Runner) buildTxsForWallet(
+	msgSpec loadtesttypes.LoadTestMsg,
+	fromWallet *wallet.InteractingWallet,
+	useBaseline bool,
+) ([]*gethtypes.Transaction, error) {
 	nonce, ok := r.nonces.Load(fromWallet.Address())
 	if !ok {
+		// this really should not happen ever. better safe than sorry.
 		return nil, fmt.Errorf("nonce for wallet %s not found", fromWallet.Address())
 	}
 
@@ -358,7 +368,13 @@ func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) 
 		return nil, nil
 	}
 
+	// some cases, like contract creation, will give us more than one tx to send.
+	// the tx factory will correctly handle setting the correct nonces for these txs.
+	// naturally, the final tx will have the latest nonce that should be set for the account.
 	lastTx := txs[len(txs)-1]
+	if lastTx == nil {
+		return nil, nil
+	}
 	r.nonces.Store(fromWallet.Address(), lastTx.Nonce()+1)
 
 	for _, tx := range txs {
@@ -374,8 +390,8 @@ func (r *Runner) messageTypeForTx(tx *gethtypes.Transaction) loadtesttypes.MsgTy
 	return getTxType(tx)
 }
 
-func (r *Runner) relayTxHash(ctx context.Context, msgType loadtesttypes.MsgType, txHash common.Hash, broadcastErr error) error {
-	if r.relayer == nil || broadcastErr != nil {
+func (r *Runner) relayTxHash(ctx context.Context, msgType loadtesttypes.MsgType, txHash common.Hash) error {
+	if r.relayer == nil {
 		return nil
 	}
 	if !r.spec.Relay.ShouldRelay(msgType) {

@@ -59,8 +59,8 @@ type NodeAddress struct {
 	RPC  string `json:"rpc"`
 }
 
-// BroadcastError represents errors during broadcasting transactions
-type BroadcastError struct {
+// SendTransactionError represents errors during broadcasting transactions
+type SendTransactionError struct {
 	BlockHeight int64                 // Block height where the error occurred (0 indicates tx did not make it to a block)
 	TxHash      string                // Hash of the transaction that failed
 	Error       string                // Error message
@@ -69,24 +69,24 @@ type BroadcastError struct {
 }
 
 type SentTx struct {
-	TxHash           string
-	NodeAddress      string
-	MsgType          loadtesttypes.MsgType
-	BroadcastErr     error
-	PostBroadcastErr error
-	TxResponse       *sdk.TxResponse
+	TxHash             string
+	NodeAddress        string
+	MsgType            loadtesttypes.MsgType
+	SendTransactionErr error
+	RelayErr           error
+	TxResponse         *sdk.TxResponse
 }
 
 func (s SentTx) Failed() bool {
-	return s.BroadcastErr != nil || s.PostBroadcastErr != nil || (s.TxResponse != nil && s.TxResponse.Code != 0)
+	return s.SendTransactionErr != nil || s.RelayErr != nil || (s.TxResponse != nil && s.TxResponse.Code != 0)
 }
 
 func (s SentTx) Error() error {
-	if s.BroadcastErr != nil {
-		return s.BroadcastErr
+	if s.SendTransactionErr != nil {
+		return s.SendTransactionErr
 	}
-	if s.PostBroadcastErr != nil {
-		return s.PostBroadcastErr
+	if s.RelayErr != nil {
+		return s.RelayErr
 	}
 	if s.TxResponse != nil && s.TxResponse.Code != 0 {
 		return fmt.Errorf("%s", s.TxResponse.RawLog)

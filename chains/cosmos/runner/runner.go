@@ -546,9 +546,9 @@ func (r *Runner) broadcastAndHandleResponse(
 		}
 
 		sentTx := inttypes.SentTx{
-			BroadcastErr: err,
-			NodeAddress:  client.GetNodeAddress().RPC,
-			MsgType:      msgType,
+			SendTransactionErr: err,
+			NodeAddress:        client.GetNodeAddress().RPC,
+			MsgType:            msgType,
 		}
 		if res != nil {
 			sentTx.TxHash = res.TxHash
@@ -567,7 +567,7 @@ func (r *Runner) broadcastAndHandleResponse(
 	}
 
 	if err := r.relayTxHash(ctx, msgType, res.TxHash); err != nil {
-		sentTx.PostBroadcastErr = err
+		sentTx.RelayErr = err
 		r.logger.Error("failed to relay tx",
 			zap.Error(err),
 			zap.String("tx_hash", res.TxHash),

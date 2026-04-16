@@ -149,23 +149,26 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 			defer wg.Done()
 			// send the tx from the wallet assigned to this transaction's sender
 			fromWallet := r.getWalletForTx(tx)
-			broadcastErr := fromWallet.SendTransaction(ctx, tx)
-			if broadcastErr != nil {
-				r.logger.Debug("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(broadcastErr))
+			sendTransactionErr := fromWallet.SendTransaction(ctx, tx)
+			if sendTransactionErr != nil {
+				r.logger.Debug("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(sendTransactionErr))
 			}
 
 			msgType := r.messageTypeForTx(tx)
-			relayErr := r.relayTxHash(ctx, msgType, tx.Hash(), broadcastErr)
-			if relayErr != nil {
-				r.logger.Debug("failed to relay tx", zap.String("tx_hash", tx.Hash().String()), zap.Error(relayErr))
+			var relayErr error
+			if sendTransactionErr == nil {
+				relayErr = r.relayTxHash(ctx, msgType, tx.Hash())
+				if relayErr != nil {
+					r.logger.Debug("failed to relay tx", zap.String("tx_hash", tx.Hash().String()), zap.Error(relayErr))
+				}
 			}
 			sentTxs[i] = &inttypes.SentTx{
-				TxHash:           tx.Hash(),
-				NodeAddress:      "", // TODO: figure out what to do here.
-				MsgType:          msgType,
-				BroadcastErr:     broadcastErr,
-				PostBroadcastErr: relayErr,
-				Tx:               tx,
+				TxHash:             tx.Hash(),
+				NodeAddress:        "", // TODO: figure out what to do here.
+				MsgType:            msgType,
+				SendTransactionErr: sendTransactionErr,
+				RelayErr:           relayErr,
+				Tx:                 tx,
 			}
 		}()
 	}

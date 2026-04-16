@@ -76,12 +76,12 @@ func (m *Collector) GroupSentTxs(
 					continue
 				}
 
-				if tx.BroadcastErr == nil {
+				if tx.SendTransactionErr == nil {
 					randomClient := &clients[rand.Intn(len(clients))]
 					txResponse, err := wallet.GetTxResponse(ctx, *randomClient, tx.TxHash)
 					if err != nil {
 						m.logger.Error("tx not found", zap.Error(err), zap.String("tx_hash", tx.TxHash))
-						tx.BroadcastErr = err
+						tx.SendTransactionErr = err
 						mu.Lock()
 						txNotFoundCount++
 						mu.Unlock()
@@ -106,7 +106,7 @@ func (m *Collector) GroupSentTxs(
 	for i := range sentTxs {
 		tx := &sentTxs[i]
 
-		if tx.BroadcastErr == nil {
+		if tx.SendTransactionErr == nil {
 			workChan <- workItem{index: i, tx: tx}
 		}
 	}

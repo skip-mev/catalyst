@@ -311,9 +311,6 @@ func trimBlocks(blocks []loadtesttypes.BlockStat) ([]loadtesttypes.BlockStat, er
 func calculateTotalSentByType(sentTxs []*types.SentTx) map[loadtesttypes.MsgType]uint64 {
 	totalSentByType := make(map[loadtesttypes.MsgType]uint64)
 	for _, tx := range sentTxs {
-		if tx == nil {
-			continue
-		}
 		totalSentByType[tx.MsgType]++
 	}
 	return totalSentByType
