@@ -67,20 +67,6 @@ type SentTx struct {
 	Receipt            *gethtypes.Receipt
 }
 
-func (s SentTx) Failed() bool {
-	return s.SendTransactionErr != nil || s.RelayErr != nil
-}
-
-func (s SentTx) Error() error {
-	if s.SendTransactionErr != nil {
-		return s.SendTransactionErr
-	}
-	if s.RelayErr != nil {
-		return s.RelayErr
-	}
-	return nil
-}
-
 type NodeAddress struct {
 	RPC       string `yaml:"rpc"`
 	Websocket string `yaml:"websocket"`
