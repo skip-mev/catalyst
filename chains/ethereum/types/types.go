@@ -58,25 +58,25 @@ var (
 )
 
 type SentTx struct {
-	TxHash           common.Hash
-	NodeAddress      string
-	MsgType          loadtesttypes.MsgType
-	BroadcastErr     error
-	PostBroadcastErr error
-	Tx               *gethtypes.Transaction
-	Receipt          *gethtypes.Receipt
+	TxHash             common.Hash
+	NodeAddress        string
+	MsgType            loadtesttypes.MsgType
+	SendTransactionErr error
+	RelayErr           error
+	Tx                 *gethtypes.Transaction
+	Receipt            *gethtypes.Receipt
 }
 
 func (s SentTx) Failed() bool {
-	return s.BroadcastErr != nil || s.PostBroadcastErr != nil
+	return s.SendTransactionErr != nil || s.RelayErr != nil
 }
 
 func (s SentTx) Error() error {
-	if s.BroadcastErr != nil {
-		return s.BroadcastErr
+	if s.SendTransactionErr != nil {
+		return s.SendTransactionErr
 	}
-	if s.PostBroadcastErr != nil {
-		return s.PostBroadcastErr
+	if s.RelayErr != nil {
+		return s.RelayErr
 	}
 	return nil
 }

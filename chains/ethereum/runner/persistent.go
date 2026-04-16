@@ -192,24 +192,27 @@ func (r *Runner) sendAndRecord(
 	for i, tx := range txs {
 		wg.Go(func() {
 			fromWallet := r.getWalletForTx(tx)
-			broadcastErr := fromWallet.SendTransaction(ctx, tx)
-			if broadcastErr != nil {
-				r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(broadcastErr))
+			sendTransactionErr := fromWallet.SendTransaction(ctx, tx)
+			if sendTransactionErr != nil {
+				r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(sendTransactionErr))
 				r.promMetrics.BroadcastFailure.Add(1)
 			} else {
 				r.promMetrics.BroadcastSuccess.Add(1)
 			}
 			msgType := r.messageTypeForTx(tx)
-			relayErr := r.relayTxHash(ctx, msgType, tx.Hash(), broadcastErr)
-			if relayErr != nil {
-				r.logger.Info("failed to relay tx", zap.String("tx_hash", tx.Hash().String()), zap.Error(relayErr))
+			var relayErr error
+			if sendTransactionErr == nil {
+				relayErr = r.relayTxHash(ctx, msgType, tx.Hash())
+				if relayErr != nil {
+					r.logger.Info("failed to relay tx", zap.String("tx_hash", tx.Hash().String()), zap.Error(relayErr))
+				}
 			}
 			sentTxs[i] = &inttypes.SentTx{
-				TxHash:           tx.Hash(),
-				MsgType:          msgType,
-				BroadcastErr:     broadcastErr,
-				PostBroadcastErr: relayErr,
-				Tx:               tx,
+				TxHash:             tx.Hash(),
+				MsgType:            msgType,
+				SendTransactionErr: sendTransactionErr,
+				RelayErr:           relayErr,
+				Tx:                 tx,
 			}
 		})
 	}
@@ -219,7 +222,7 @@ func (r *Runner) sendAndRecord(
 	// should be pretty close anyways.
 	broadcastTime := time.Now()
 	for _, tx := range sentTxs {
-		if tx.BroadcastErr != nil {
+		if tx.SendTransactionErr != nil {
 			continue
 		}
 		tracker.Set(tx.TxHash, broadcastTime)
@@ -232,9 +235,11 @@ func (r *Runner) sendAsync(ctx context.Context, txs gethtypes.Transactions) {
 	for _, tx := range txs {
 		fromWallet := r.getWalletForTx(tx)
 		go func() {
-			broadcastErr := fromWallet.SendTransaction(ctx, tx)
+			if err := fromWallet.SendTransaction(ctx, tx); err != nil {
+				return
+			}
 			msgType := r.messageTypeForTx(tx)
-			if err := r.relayTxHash(ctx, msgType, tx.Hash(), broadcastErr); err != nil {
+			if err := r.relayTxHash(ctx, msgType, tx.Hash()); err != nil {
 				r.logger.Debug("failed to relay tx", zap.String("tx_hash", tx.Hash().String()), zap.Error(err))
 			}
 		}()
@@ -252,11 +257,16 @@ func (r *Runner) buildLoadPersistent(
 	txChan := make(chan *gethtypes.Transaction, maxLoadSize)
 	for range maxLoadSize {
 		wg.Go(func() {
-			tx, err := r.buildLoad(msgSpec, useBaseline)
+			sender := r.txFactory.GetNextSender()
+			if sender == nil {
+				return
+			}
+			tx, err := r.buildTxsForWallet(msgSpec, sender, useBaseline)
 			if err != nil {
 				r.logger.Error("failed to build txs", zap.Error(err))
 				return
 			}
+			// Only use single txn builders here
 			for _, txn := range tx {
 				txChan <- txn
 			}

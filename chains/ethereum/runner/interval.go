@@ -124,18 +124,19 @@ loop:
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: getTxType(tx)}
+					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: r.messageTypeForTx(tx)}
 					// send the tx from the wallet assigned to this transaction's sender
 					wallet := r.getWalletForTx(tx)
-					broadcastErr := wallet.SendTransaction(ctx, tx)
-					if broadcastErr != nil {
-						r.logger.Error("failed to send tx", zap.Error(broadcastErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
-						sentTx.BroadcastErr = broadcastErr
+					sendTransactionErr := wallet.SendTransaction(ctx, tx)
+					if sendTransactionErr != nil {
+						r.logger.Error("failed to send tx", zap.Error(sendTransactionErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
+						sentTx.SendTransactionErr = sendTransactionErr
 					}
-					sentTx.MsgType = r.messageTypeForTx(tx)
-					sentTx.PostBroadcastErr = r.relayTxHash(ctx, sentTx.MsgType, tx.Hash(), broadcastErr)
-					if sentTx.PostBroadcastErr != nil {
-						r.logger.Error("failed to relay tx", zap.Error(sentTx.PostBroadcastErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
+					if sendTransactionErr == nil {
+						sentTx.RelayErr = r.relayTxHash(ctx, sentTx.MsgType, tx.Hash())
+						if sentTx.RelayErr != nil {
+							r.logger.Error("failed to relay tx", zap.Error(sentTx.RelayErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
+						}
 					}
 					collectionChannel <- &sentTx
 				}()
@@ -193,6 +194,7 @@ func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction,
 	batchLoads := make([][]*gethtypes.Transaction, 0, 100)
 	total := 0
 	for i := range r.spec.NumBatches {
+		// Reset wallet allocation for each batch to enable role rotation
 		r.txFactory.ResetWalletAllocation()
 
 		batch := make([]*gethtypes.Transaction, 0)
