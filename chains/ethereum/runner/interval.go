@@ -17,7 +17,7 @@ import (
 // runOnInterval starts the runner configured for interval load sending.
 func (r *Runner) runOnInterval(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
 	// deploy the initial contracts needed by the runner.
-	if err := r.mode.Prepare(ctx); err != nil {
+	if err := r.deployInitialContracts(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
 
@@ -127,14 +127,15 @@ loop:
 					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: getTxType(tx)}
 					// send the tx from the wallet assigned to this transaction's sender
 					wallet := r.getWalletForTx(tx)
-					sourceErr := wallet.SendTransaction(ctx, tx)
-					if sourceErr != nil {
-						r.logger.Error("failed to send tx", zap.Error(sourceErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
-						sentTx.BroadcastErr = sourceErr
+					broadcastErr := wallet.SendTransaction(ctx, tx)
+					if broadcastErr != nil {
+						r.logger.Error("failed to send tx", zap.Error(broadcastErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
+						sentTx.BroadcastErr = broadcastErr
 					}
-					sentTx.MsgType, sentTx.PostBroadcastErr = r.handlePostBroadcast(ctx, tx, sourceErr)
+					sentTx.MsgType = r.messageTypeForTx(tx)
+					sentTx.PostBroadcastErr = r.relayTxHash(ctx, sentTx.MsgType, tx.Hash(), broadcastErr)
 					if sentTx.PostBroadcastErr != nil {
-						r.logger.Error("failed post-broadcast handling", zap.Error(sentTx.PostBroadcastErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
+						r.logger.Error("failed to relay tx", zap.Error(sentTx.PostBroadcastErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
 					}
 					collectionChannel <- &sentTx
 				}()
@@ -184,7 +185,7 @@ loop:
 }
 
 func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction, error) {
-	if err := r.mode.SetBaselines(ctx, r.spec.Msgs); err != nil {
+	if err := r.txFactory.SetBaselines(ctx, r.spec.Msgs); err != nil {
 		return nil, fmt.Errorf("failed to set Baseline txs: %w", err)
 	}
 
@@ -192,8 +193,7 @@ func (r *Runner) buildFullLoad(ctx context.Context) ([][]*gethtypes.Transaction,
 	batchLoads := make([][]*gethtypes.Transaction, 0, 100)
 	total := 0
 	for i := range r.spec.NumBatches {
-		// Reset wallet allocation for each batch to enable role rotation
-		r.mode.ResetAllocation()
+		r.txFactory.ResetWalletAllocation()
 
 		batch := make([]*gethtypes.Transaction, 0)
 		for _, msgSpec := range r.spec.Msgs {

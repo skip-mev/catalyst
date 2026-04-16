@@ -17,7 +17,7 @@ import (
 // runOnBlocks runs the loadtest via block signal.
 // It sets up a subscription to block headers, then builds and deploys the load when it receives a header.
 func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult, error) {
-	if err := r.mode.Prepare(ctx); err != nil {
+	if err := r.deployInitialContracts(ctx); err != nil {
 		return loadtesttypes.LoadTestResult{}, err
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -122,7 +122,7 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 
 func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 	// Reset wallet allocation for each block/load to enable role rotation
-	r.mode.ResetAllocation()
+	r.txFactory.ResetWalletAllocation()
 
 	// first we build the tx load. this constructs all the ethereum txs based in the spec.
 	r.logger.Debug("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
@@ -149,21 +149,22 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 			defer wg.Done()
 			// send the tx from the wallet assigned to this transaction's sender
 			fromWallet := r.getWalletForTx(tx)
-			sourceErr := fromWallet.SendTransaction(ctx, tx)
-			if sourceErr != nil {
-				r.logger.Debug("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(sourceErr))
+			broadcastErr := fromWallet.SendTransaction(ctx, tx)
+			if broadcastErr != nil {
+				r.logger.Debug("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(broadcastErr))
 			}
 
-			msgType, relayerErr := r.handlePostBroadcast(ctx, tx, sourceErr)
-			if relayerErr != nil {
-				r.logger.Debug("failed post-broadcast handling", zap.String("tx_hash", tx.Hash().String()), zap.Error(relayerErr))
+			msgType := r.messageTypeForTx(tx)
+			relayErr := r.relayTxHash(ctx, msgType, tx.Hash(), broadcastErr)
+			if relayErr != nil {
+				r.logger.Debug("failed to relay tx", zap.String("tx_hash", tx.Hash().String()), zap.Error(relayErr))
 			}
 			sentTxs[i] = &inttypes.SentTx{
 				TxHash:           tx.Hash(),
 				NodeAddress:      "", // TODO: figure out what to do here.
 				MsgType:          msgType,
-				BroadcastErr:     sourceErr,
-				PostBroadcastErr: relayerErr,
+				BroadcastErr:     broadcastErr,
+				PostBroadcastErr: relayErr,
 				Tx:               tx,
 			}
 		}()

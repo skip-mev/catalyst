@@ -28,7 +28,7 @@ type GRPCClient struct {
 	timeout time.Duration
 }
 
-func NewGRPCClient(cfg loadtesttypes.IFTRelayerConfig, chainID string) (*GRPCClient, error) {
+func NewGRPCClient(cfg loadtesttypes.RelayConfig, chainID string) (*GRPCClient, error) {
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = 10 * time.Second

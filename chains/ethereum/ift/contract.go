@@ -59,6 +59,7 @@ func (c *TransferContract) BuildTransferTx(
 	nonce uint64,
 	gasFeeCap *big.Int,
 	gasTipCap *big.Int,
+	gasLimit uint64,
 ) (*gethtypes.Transaction, error) {
 	calldata, err := c.abi.Pack("iftTransfer", clientID, receiver, amount, timeoutTimestamp)
 	if err != nil {
@@ -69,7 +70,7 @@ func (c *TransferContract) BuildTransferTx(
 		ctx,
 		&c.address,
 		big.NewInt(0),
-		0,
+		gasLimit,
 		gasFeeCap,
 		gasTipCap,
 		calldata,

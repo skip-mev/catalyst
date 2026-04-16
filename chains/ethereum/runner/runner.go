@@ -3,6 +3,8 @@ package runner
 import (
 	"context"
 	"fmt"
+	"math/big"
+	"math/rand"
 	"net"
 	"net/http"
 	"slices"
@@ -17,11 +19,14 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
+	ethift "github.com/skip-mev/catalyst/chains/ethereum/ift"
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	"github.com/skip-mev/catalyst/chains/ethereum/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	iftaccounts "github.com/skip-mev/catalyst/ift/accounts"
+	iftrelayer "github.com/skip-mev/catalyst/ift/relayer"
 )
 
 type Runner struct {
@@ -36,7 +41,7 @@ type Runner struct {
 	wallets     []*wallet.InteractingWallet
 
 	txFactory *txfactory.TxFactory
-	mode      txMode
+	relayer   iftrelayer.Client
 
 	sentTxs         []*inttypes.SentTx
 	blocksProcessed uint64
@@ -166,13 +171,17 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 	}
 
 	if spec.IFT != nil {
-		runnerMode, err := newIFTTxMode(runner)
-		if err != nil {
+		if err := initIFT(runner, spec); err != nil {
 			return nil, err
 		}
-		runner.mode = runnerMode
-	} else {
-		runner.mode = newLocalTxMode(runner)
+	}
+
+	if spec.Relay != nil {
+		relayerClient, err := iftrelayer.NewGRPCClient(*spec.Relay, spec.ChainID)
+		if err != nil {
+			return nil, fmt.Errorf("create relayer client: %w", err)
+		}
+		runner.relayer = relayerClient
 	}
 
 	return runner, nil
@@ -326,40 +335,71 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 }
 
 func (r *Runner) buildLoad(msgSpec loadtesttypes.LoadTestMsg, useBaseline bool) ([]*gethtypes.Transaction, error) {
-	txs, err := r.mode.BuildLoad(msgSpec, useBaseline)
-	if err != nil {
-		return nil, err
+	var fromWallet *wallet.InteractingWallet
+	switch msgSpec.Type {
+	case inttypes.MsgTransferERC0, inttypes.MsgNativeTransferERC20:
+		fromWallet = r.txFactory.GetNextSender()
+	case inttypes.MsgDeployERC20, inttypes.MsgCreateContract:
+		fromWallet = r.wallets[0]
+	default:
+		fromWallet = r.wallets[rand.Intn(len(r.wallets))]
 	}
+
+	nonce, ok := r.nonces.Load(fromWallet.Address())
+	if !ok {
+		return nil, fmt.Errorf("nonce for wallet %s not found", fromWallet.Address())
+	}
+
+	txs, err := r.txFactory.BuildTxs(msgSpec, fromWallet, nonce.(uint64), useBaseline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build tx for %q: %w", msgSpec.Type, err)
+	}
+	if len(txs) == 0 {
+		return nil, nil
+	}
+
+	lastTx := txs[len(txs)-1]
+	r.nonces.Store(fromWallet.Address(), lastTx.Nonce()+1)
+
 	for _, tx := range txs {
-		if tx == nil {
-			continue
-		}
 		r.txTypes.Store(tx.Hash(), msgSpec.Type)
 	}
 	return txs, nil
 }
 
 func (r *Runner) messageTypeForTx(tx *gethtypes.Transaction) loadtesttypes.MsgType {
-	if tx == nil {
-		return inttypes.ContractCall
-	}
-	if r.spec.IFT != nil {
-		return inttypes.MsgIFTTransfer
-	}
 	if msgType, ok := r.txTypes.Load(tx.Hash()); ok {
 		return msgType.(loadtesttypes.MsgType)
 	}
 	return getTxType(tx)
 }
 
-func (r *Runner) handlePostBroadcast(
-	ctx context.Context,
-	tx *gethtypes.Transaction,
-	sourceErr error,
-) (loadtesttypes.MsgType, error) {
-	msgType := r.messageTypeForTx(tx)
-	if err := r.mode.HandlePostBroadcast(ctx, msgType, tx.Hash(), sourceErr); err != nil {
-		return msgType, err
+func (r *Runner) relayTxHash(ctx context.Context, msgType loadtesttypes.MsgType, txHash common.Hash, broadcastErr error) error {
+	if r.relayer == nil || broadcastErr != nil {
+		return nil
 	}
-	return msgType, nil
+	if !r.spec.Relay.ShouldRelay(msgType) {
+		return nil
+	}
+	return r.relayer.SubmitTxHash(ctx, txHash.Hex())
+}
+
+func initIFT(runner *Runner, spec loadtesttypes.LoadTestSpec) error {
+	recipients, err := iftaccounts.GenerateRecipients(spec)
+	if err != nil {
+		return fmt.Errorf("generate ift recipients: %w", err)
+	}
+
+	contract, err := ethift.NewTransferContract(spec.IFT.EVM.ContractAddress)
+	if err != nil {
+		return fmt.Errorf("create ift transfer contract: %w", err)
+	}
+
+	amount, ok := new(big.Int).SetString(spec.IFT.Amount, 10)
+	if !ok {
+		return fmt.Errorf("parse ift.amount %q", spec.IFT.Amount)
+	}
+
+	runner.txFactory.SetIFTConfig(contract, recipients, spec.IFT.ClientID, amount, spec.IFT.Timeout)
+	return nil
 }

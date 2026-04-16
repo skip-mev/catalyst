@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"math/rand"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -16,6 +17,7 @@ import (
 	loader "github.com/skip-mev/catalyst/chains/ethereum/contracts/load"
 	"github.com/skip-mev/catalyst/chains/ethereum/contracts/load/target"
 	"github.com/skip-mev/catalyst/chains/ethereum/contracts/load/weth"
+	ethift "github.com/skip-mev/catalyst/chains/ethereum/ift"
 	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
@@ -45,6 +47,12 @@ type TxFactory struct {
 	baseLines map[loadtesttypes.MsgType][]*types.Transaction
 
 	txDistribution TxDistribution
+
+	iftContract   *ethift.TransferContract
+	iftRecipients []string
+	iftClientID   string
+	iftAmount     *big.Int
+	iftTimeout    time.Duration
 }
 
 func NewTxFactory(logger *zap.Logger, txOpts ethtypes.TxOpts, txDistribution TxDistribution) *TxFactory {
@@ -153,9 +161,23 @@ func (f *TxFactory) BuildTxs(
 			return nil, err
 		}
 		return []*types.Transaction{tx}, nil
+	case ethtypes.MsgIFTTransfer:
+		tx, err := f.createMsgIFTTransfer(ctx, fromWallet, nonce, useBaseline)
+		if err != nil {
+			return nil, err
+		}
+		return []*types.Transaction{tx}, nil
 	default:
 		return nil, fmt.Errorf("unsupported message type: %q", msgSpec.Type)
 	}
+}
+
+func (f *TxFactory) SetIFTConfig(contract *ethift.TransferContract, recipients []string, clientID string, amount *big.Int, timeout time.Duration) {
+	f.iftContract = contract
+	f.iftRecipients = recipients
+	f.iftClientID = clientID
+	f.iftAmount = amount
+	f.iftTimeout = timeout
 }
 
 func (f *TxFactory) SetLoaderAddresses(addrs ...common.Address) {
@@ -551,4 +573,49 @@ func (f *TxFactory) createMsgNativeGasTransfer(ctx context.Context, fromWallet *
 	}
 
 	return signedTx, nil
+}
+
+func (f *TxFactory) createMsgIFTTransfer(
+	ctx context.Context,
+	fromWallet *ethwallet.InteractingWallet,
+	nonce uint64,
+	useBaseline bool,
+) (*types.Transaction, error) {
+	if f.iftContract == nil {
+		return nil, fmt.Errorf("ift contract not configured")
+	}
+	if len(f.iftRecipients) == 0 {
+		return nil, fmt.Errorf("no ift recipients configured")
+	}
+
+	receiver := f.iftRecipients[rand.Intn(len(f.iftRecipients))]
+	timeout := uint64(time.Now().Add(f.iftTimeout).Unix())
+
+	gasFeeCap := f.txOpts.GasFeeCap
+	gasTipCap := f.txOpts.GasTipCap
+	var gasLimit uint64
+	if useBaseline {
+		if baseline, ok := f.baseLines[ethtypes.MsgIFTTransfer]; ok && len(baseline) > 0 {
+			gasLimit = baseline[0].Gas()
+			if gasFeeCap == nil {
+				gasFeeCap = baseline[0].GasFeeCap()
+			}
+			if gasTipCap == nil {
+				gasTipCap = baseline[0].GasTipCap()
+			}
+		}
+	}
+
+	return f.iftContract.BuildTransferTx(
+		ctx,
+		fromWallet,
+		f.iftClientID,
+		receiver,
+		new(big.Int).Set(f.iftAmount),
+		timeout,
+		nonce,
+		gasFeeCap,
+		gasTipCap,
+		gasLimit,
+	)
 }

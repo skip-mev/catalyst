@@ -3,11 +3,13 @@ package txfactory
 import (
 	"fmt"
 	"math/rand"
+	"time"
 
 	sdkmath "cosmossdk.io/math"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
+	cosmosift "github.com/skip-mev/catalyst/chains/cosmos/ift"
 	"github.com/skip-mev/catalyst/chains/cosmos/types"
 	"github.com/skip-mev/catalyst/chains/cosmos/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
@@ -17,6 +19,12 @@ import (
 type TxFactory struct {
 	gasDenom string
 	wallets  []*wallet.InteractingWallet
+
+	iftRecipients []string
+	iftClientID   string
+	iftAmount     string
+	iftDenom      string
+	iftTimeout    time.Duration
 }
 
 // NewTxFactory creates a new transaction factory
@@ -37,6 +45,8 @@ func (f *TxFactory) CreateMsg(
 		return f.createMsgSend(fromWallet)
 	case types.MsgMultiSend:
 		return f.createMsgMultiSend(fromWallet, msgSpec.NumOfRecipients)
+	case types.MsgIFTTransfer:
+		return f.createMsgIFTTransfer(fromWallet)
 	case types.MsgArr:
 		return nil, fmt.Errorf("MsgArr requires using CreateMsgs instead of CreateMsg")
 	default:
@@ -144,4 +154,30 @@ func (f *TxFactory) CreateMsgs(
 	}
 
 	return f.createMsgArray(msgSpec, fromWallet)
+}
+
+func (f *TxFactory) SetIFTConfig(recipients []string, clientID, amount, denom string, timeout time.Duration) {
+	f.iftRecipients = recipients
+	f.iftClientID = clientID
+	f.iftAmount = amount
+	f.iftDenom = denom
+	f.iftTimeout = timeout
+}
+
+func (f *TxFactory) createMsgIFTTransfer(fromWallet *wallet.InteractingWallet) (sdk.Msg, error) {
+	if len(f.iftRecipients) == 0 {
+		return nil, fmt.Errorf("no ift recipients configured")
+	}
+
+	receiver := f.iftRecipients[rand.Intn(len(f.iftRecipients))]
+	timeout := uint64(time.Now().Add(f.iftTimeout).Unix())
+
+	return &cosmosift.MsgIFTTransfer{
+		Signer:           fromWallet.FormattedAddress(),
+		Denom:            f.iftDenom,
+		ClientId:         f.iftClientID,
+		Receiver:         receiver,
+		Amount:           f.iftAmount,
+		TimeoutTimestamp: timeout,
+	}, nil
 }
