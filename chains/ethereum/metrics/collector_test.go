@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -195,6 +196,41 @@ func TestCalculateTotalSentByTypeUsesRecordedMessageTypes(t *testing.T) {
 
 	require.Equal(t, uint64(2), totalSent[ethtypes.MsgIFTTransfer])
 	require.Equal(t, uint64(1), totalSent[ethtypes.ContractCall])
+}
+
+func TestCountRelayFailures(t *testing.T) {
+	sentTxs := []*ethtypes.SentTx{
+		{MsgType: ethtypes.MsgIFTTransfer, RelayErr: errors.New("grpc down")},
+		{MsgType: ethtypes.MsgIFTTransfer, RelayErr: errors.New("grpc down")},
+		{MsgType: ethtypes.MsgIFTTransfer}, // clean — not counted
+		{MsgType: ethtypes.ContractCall, RelayErr: errors.New("grpc down")},
+		nil, // skipped
+	}
+	msgStats := map[loadtesttypes.MsgType]loadtesttypes.MessageStats{
+		ethtypes.MsgIFTTransfer: {},
+		ethtypes.ContractCall:   {},
+	}
+
+	total := countRelayFailures(sentTxs, msgStats)
+
+	require.Equal(t, 3, total)
+	require.Equal(t, 2, msgStats[ethtypes.MsgIFTTransfer].Transactions.RelayFailures)
+	require.Equal(t, 1, msgStats[ethtypes.ContractCall].Transactions.RelayFailures)
+}
+
+func TestCountRelayFailuresIgnoresBroadcastOrReceiptFailures(t *testing.T) {
+	sentTxs := []*ethtypes.SentTx{
+		{MsgType: ethtypes.MsgIFTTransfer, SendTransactionErr: errors.New("rejected")},
+		{MsgType: ethtypes.MsgIFTTransfer, Receipt: &gethtypes.Receipt{Status: gethtypes.ReceiptStatusFailed}},
+	}
+	msgStats := map[loadtesttypes.MsgType]loadtesttypes.MessageStats{
+		ethtypes.MsgIFTTransfer: {},
+	}
+
+	total := countRelayFailures(sentTxs, msgStats)
+
+	require.Equal(t, 0, total)
+	require.Equal(t, 0, msgStats[ethtypes.MsgIFTTransfer].Transactions.RelayFailures)
 }
 
 func TestClassifyReceiptMsgTypePrefersRecordedSentType(t *testing.T) {

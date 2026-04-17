@@ -67,6 +67,25 @@ type SentTx struct {
 	Receipt            *gethtypes.Receipt
 }
 
+func (s SentTx) Failed() bool {
+	return s.SendTransactionErr != nil ||
+		(s.Receipt != nil && s.Receipt.Status != gethtypes.ReceiptStatusSuccessful)
+}
+
+func (s SentTx) Error() error {
+	if s.SendTransactionErr != nil {
+		return s.SendTransactionErr
+	}
+	if s.Receipt != nil && s.Receipt.Status != gethtypes.ReceiptStatusSuccessful {
+		return fmt.Errorf("tx execution failed: status=%d", s.Receipt.Status)
+	}
+	return nil
+}
+
+func (s SentTx) RelayFailed() bool {
+	return s.RelayErr != nil
+}
+
 type NodeAddress struct {
 	RPC       string `yaml:"rpc"`
 	Websocket string `yaml:"websocket"`
@@ -78,12 +97,12 @@ type TxOpts struct {
 }
 
 type ChainConfig struct {
-	NodesAddresses []NodeAddress `yaml:"nodes_addresses" json:"NodesAddresses"`
+	NodesAddresses []NodeAddress `yaml:"nodes_addresses"       json:"NodesAddresses"`
 	// MaxContracts is the maximum number of contracts that the loadtest runner will hold in memory.
 	// The contracts in memory are used for the other load test message types to interact with.
 	NumInitialContracts uint64 `yaml:"num_initial_contracts" json:"NumInitialContracts"`
 	// Static gas options for transactions.
-	TxOpts TxOpts `yaml:"tx_opts" json:"TxOpts"`
+	TxOpts TxOpts `yaml:"tx_opts"               json:"TxOpts"`
 }
 
 func init() {

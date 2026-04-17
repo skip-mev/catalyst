@@ -78,20 +78,21 @@ type SentTx struct {
 }
 
 func (s SentTx) Failed() bool {
-	return s.SendTransactionErr != nil || s.RelayErr != nil || (s.TxResponse != nil && s.TxResponse.Code != 0)
+	return s.SendTransactionErr != nil || (s.TxResponse != nil && s.TxResponse.Code != 0)
 }
 
 func (s SentTx) Error() error {
 	if s.SendTransactionErr != nil {
 		return s.SendTransactionErr
 	}
-	if s.RelayErr != nil {
-		return s.RelayErr
-	}
 	if s.TxResponse != nil && s.TxResponse.Code != 0 {
 		return fmt.Errorf("%s", s.TxResponse.RawLog)
 	}
 	return nil
+}
+
+func (s SentTx) RelayFailed() bool {
+	return s.RelayErr != nil
 }
 
 type ChainConfig struct {

@@ -140,6 +140,8 @@ func ProcessResults(
 		}
 	}
 
+	totalRelayFailures := countRelayFailures(sentTxs, msgStats)
+
 	// calculate statistics for ALL txs by type. (totals)
 	// here we are using transactions from the blocks to update each msg type's statistics.
 	avgGasUtilization := 0.0
@@ -161,6 +163,7 @@ func ProcessResults(
 			TotalIncludedTransactions: totalIncluded,
 			SuccessfulTransactions:    totalSuccess,
 			FailedTransactions:        totalFailed,
+			RelayFailures:             totalRelayFailures,
 			AvgBlockGasUtilization:    avgGasUtilization,
 			AvgGasPerTransaction:      int64(avgGasPerTx),
 			Runtime:                   runtime,
@@ -314,4 +317,21 @@ func calculateTotalSentByType(sentTxs []*types.SentTx) map[loadtesttypes.MsgType
 		totalSentByType[tx.MsgType]++
 	}
 	return totalSentByType
+}
+
+func countRelayFailures(
+	sentTxs []*types.SentTx,
+	msgStats map[loadtesttypes.MsgType]loadtesttypes.MessageStats,
+) int {
+	total := 0
+	for _, sentTx := range sentTxs {
+		if sentTx == nil || !sentTx.RelayFailed() {
+			continue
+		}
+		stat := msgStats[sentTx.MsgType]
+		stat.Transactions.RelayFailures++
+		msgStats[sentTx.MsgType] = stat
+		total++
+	}
+	return total
 }
