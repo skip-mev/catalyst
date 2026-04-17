@@ -178,7 +178,7 @@ func NewRunner(ctx context.Context, logger *zap.Logger, spec loadtesttypes.LoadT
 	}
 
 	if spec.Relay != nil {
-		relayerClient, err := iftrelayer.NewGRPCClient(*spec.Relay, spec.ChainID)
+		relayerClient, err := iftrelayer.NewGRPCClient(*spec.Relay, spec.ChainID, iftrelayer.NewMetrics())
 		if err != nil {
 			return nil, fmt.Errorf("create relayer client: %w", err)
 		}

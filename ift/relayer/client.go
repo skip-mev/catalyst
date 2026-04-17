@@ -26,9 +26,10 @@ type GRPCClient struct {
 	client  relayerapi.RelayerApiServiceClient
 	chainID string
 	timeout time.Duration
+	metrics *Metrics
 }
 
-func NewGRPCClient(cfg loadtesttypes.RelayConfig, chainID string) (*GRPCClient, error) {
+func NewGRPCClient(cfg loadtesttypes.RelayConfig, chainID string, metrics *Metrics) (*GRPCClient, error) {
 	timeout := cfg.Timeout
 	if timeout == 0 {
 		timeout = 10 * time.Second
@@ -47,6 +48,7 @@ func NewGRPCClient(cfg loadtesttypes.RelayConfig, chainID string) (*GRPCClient, 
 		client:  relayerapi.NewRelayerApiServiceClient(conn),
 		chainID: chainID,
 		timeout: timeout,
+		metrics: metrics,
 	}, nil
 }
 
@@ -58,24 +60,37 @@ func (c *GRPCClient) SubmitTxHash(ctx context.Context, txHash string) error {
 			select {
 			case <-ctx.Done():
 				timer.Stop()
+				if c.metrics != nil {
+					c.metrics.Failure.WithLabelValues(c.chainID).Inc()
+				}
 				return ctx.Err()
 			case <-timer.C:
 			}
 		}
 
 		callCtx, cancel := context.WithTimeout(ctx, c.timeout)
+		start := time.Now()
 		_, err := c.client.Relay(callCtx, &relayerapi.RelayRequest{
 			TxHash:  txHash,
 			ChainId: c.chainID,
 		})
 		cancel()
+		if c.metrics != nil {
+			c.metrics.Duration.WithLabelValues(c.chainID).Observe(time.Since(start).Seconds())
+		}
 
 		if err == nil {
+			if c.metrics != nil {
+				c.metrics.Success.WithLabelValues(c.chainID).Inc()
+			}
 			return nil
 		}
 		lastErr = err
 	}
 
+	if c.metrics != nil {
+		c.metrics.Failure.WithLabelValues(c.chainID).Inc()
+	}
 	return fmt.Errorf("submit tx hash to relayer after %d attempts: %w", maxRelayRetries, lastErr)
 }
 
