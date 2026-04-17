@@ -172,7 +172,13 @@ func (f *TxFactory) BuildTxs(
 	}
 }
 
-func (f *TxFactory) SetIFTConfig(contract *ethift.TransferContract, recipients []string, clientID string, amount *big.Int, timeout time.Duration) {
+func (f *TxFactory) SetIFTConfig(
+	contract *ethift.TransferContract,
+	recipients []string,
+	clientID string,
+	amount *big.Int,
+	timeout time.Duration,
+) {
 	f.iftContract = contract
 	f.iftRecipients = recipients
 	f.iftClientID = clientID
@@ -589,6 +595,7 @@ func (f *TxFactory) createMsgIFTTransfer(
 	}
 
 	receiver := f.iftRecipients[rand.Intn(len(f.iftRecipients))]
+	//nolint:gosec // G115: overflow unlikely in practice
 	timeout := uint64(time.Now().Add(f.iftTimeout).Unix())
 
 	gasFeeCap := f.txOpts.GasFeeCap

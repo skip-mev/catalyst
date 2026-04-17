@@ -5,23 +5,29 @@ import (
 	"time"
 )
 
+const (
+	ChainTypeCosmos = "cosmos"
+	ChainTypeEVM    = "evm"
+	ChainTypeETH    = "eth"
+)
+
 type IFTConfig struct {
-	ClientID    string               `yaml:"client_id" json:"client_id"`
-	Amount      string               `yaml:"amount" json:"amount"`
-	Timeout     time.Duration        `yaml:"timeout" json:"timeout"`
+	ClientID    string               `yaml:"client_id"            json:"client_id"`
+	Amount      string               `yaml:"amount"               json:"amount"`
+	Timeout     time.Duration        `yaml:"timeout"              json:"timeout"`
 	Recipients  IFTRecipientsConfig  `yaml:"recipients,omitempty" json:"recipients,omitempty"`
-	Destination IFTDestinationConfig `yaml:"destination" json:"destination"`
-	Cosmos      *IFTCosmosConfig     `yaml:"cosmos,omitempty" json:"cosmos,omitempty"`
-	EVM         *IFTEVMConfig        `yaml:"evm,omitempty" json:"evm,omitempty"`
+	Destination IFTDestinationConfig `yaml:"destination"          json:"destination"`
+	Cosmos      *IFTCosmosConfig     `yaml:"cosmos,omitempty"     json:"cosmos,omitempty"`
+	EVM         *IFTEVMConfig        `yaml:"evm,omitempty"        json:"evm,omitempty"`
 }
 
 type IFTRecipientsConfig struct {
-	Count  int `yaml:"count,omitempty" json:"count,omitempty"`
+	Count  int `yaml:"count,omitempty"  json:"count,omitempty"`
 	Offset int `yaml:"offset,omitempty" json:"offset,omitempty"`
 }
 
 type IFTCosmosConfig struct {
-	Denom      string `yaml:"denom" json:"denom"`
+	Denom      string `yaml:"denom"        json:"denom"`
 	MsgTypeURL string `yaml:"msg_type_url" json:"msg_type_url"`
 }
 
@@ -30,9 +36,9 @@ type IFTEVMConfig struct {
 }
 
 type IFTDestinationConfig struct {
-	Kind   string                      `yaml:"kind" json:"kind"`
+	Kind   string                      `yaml:"kind"             json:"kind"`
 	Cosmos *IFTDestinationCosmosConfig `yaml:"cosmos,omitempty" json:"cosmos,omitempty"`
-	EVM    *IFTDestinationEVMConfig    `yaml:"evm,omitempty" json:"evm,omitempty"`
+	EVM    *IFTDestinationEVMConfig    `yaml:"evm,omitempty"    json:"evm,omitempty"`
 }
 
 type IFTDestinationCosmosConfig struct {
@@ -71,19 +77,27 @@ func (c *IFTConfig) Validate(spec LoadTestSpec) error {
 	}
 
 	switch spec.Kind {
-	case "cosmos":
+	case ChainTypeCosmos:
 		if err := c.validateCosmos(); err != nil {
 			return err
 		}
-		if c.Destination.Kind != "evm" && c.Destination.Kind != "cosmos" {
-			return fmt.Errorf("ift.destination.kind %q is incompatible with source kind %q", c.Destination.Kind, spec.Kind)
+		if c.Destination.Kind != ChainTypeEVM && c.Destination.Kind != ChainTypeCosmos {
+			return fmt.Errorf(
+				"ift.destination.kind %q is incompatible with source kind %q",
+				c.Destination.Kind,
+				spec.Kind,
+			)
 		}
-	case "eth":
+	case ChainTypeETH:
 		if err := c.validateEVM(); err != nil {
 			return err
 		}
-		if c.Destination.Kind != "cosmos" && c.Destination.Kind != "evm" {
-			return fmt.Errorf("ift.destination.kind %q is incompatible with source kind %q", c.Destination.Kind, spec.Kind)
+		if c.Destination.Kind != ChainTypeCosmos && c.Destination.Kind != ChainTypeEVM {
+			return fmt.Errorf(
+				"ift.destination.kind %q is incompatible with source kind %q",
+				c.Destination.Kind,
+				spec.Kind,
+			)
 		}
 	default:
 		return fmt.Errorf("unsupported source kind %q for ift mode", spec.Kind)
@@ -117,12 +131,12 @@ func (c *IFTConfig) validateEVM() error {
 
 func (c IFTDestinationConfig) Validate() error {
 	switch c.Kind {
-	case "evm":
+	case ChainTypeEVM:
 		if c.EVM == nil {
 			return fmt.Errorf("ift.destination.evm must be specified for evm destinations")
 		}
 		return nil
-	case "cosmos":
+	case ChainTypeCosmos:
 		if c.Cosmos == nil {
 			return fmt.Errorf("ift.destination.cosmos must be specified for cosmos destinations")
 		}

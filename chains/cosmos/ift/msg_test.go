@@ -15,15 +15,15 @@ func TestMsgIFTTransferPacksWithConfiguredTypeURL(t *testing.T) {
 	msg := &MsgIFTTransfer{
 		Signer:           "cosmos1deadbeefdeadbeefdeadbeefdeadbeef00",
 		Denom:            "stake",
-		ClientId:         "client-0",
+		ClientID:         "client-0",
 		Receiver:         "0x1234567890123456789012345678901234567890",
 		Amount:           "100",
 		TimeoutTimestamp: 123,
 	}
 
-	any, err := codectypes.NewAnyWithValue(msg)
+	anyMsg, err := codectypes.NewAnyWithValue(msg)
 	require.NoError(t, err)
-	require.Equal(t, "/"+typeURL, any.TypeUrl)
+	require.Equal(t, "/"+typeURL, anyMsg.TypeUrl)
 }
 
 func TestMsgIFTTransferPacksWithConfiguredTypeURLLeadingSlash(t *testing.T) {
@@ -34,13 +34,13 @@ func TestMsgIFTTransferPacksWithConfiguredTypeURLLeadingSlash(t *testing.T) {
 	msg := &MsgIFTTransfer{
 		Signer:           "cosmos1deadbeefdeadbeefdeadbeefdeadbeef00",
 		Denom:            "stake",
-		ClientId:         "client-0",
+		ClientID:         "client-0",
 		Receiver:         "0x1234567890123456789012345678901234567890",
 		Amount:           "100",
 		TimeoutTimestamp: 123,
 	}
 
-	any, err := codectypes.NewAnyWithValue(msg)
+	anyMsg, err := codectypes.NewAnyWithValue(msg)
 	require.NoError(t, err)
-	require.Equal(t, "/example.ift.v1.MsgIFTTransfer", any.TypeUrl)
+	require.Equal(t, "/example.ift.v1.MsgIFTTransfer", anyMsg.TypeUrl)
 }

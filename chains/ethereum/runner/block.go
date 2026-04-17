@@ -151,7 +151,11 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 			fromWallet := r.getWalletForTx(tx)
 			sendTransactionErr := fromWallet.SendTransaction(ctx, tx)
 			if sendTransactionErr != nil {
-				r.logger.Debug("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(sendTransactionErr))
+				r.logger.Debug(
+					"failed to send transaction",
+					zap.String("tx_hash", tx.Hash().String()),
+					zap.Error(sendTransactionErr),
+				)
 			}
 
 			msgType := r.messageTypeForTx(tx)

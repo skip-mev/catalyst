@@ -18,11 +18,11 @@ var (
 )
 
 type MsgIFTTransfer struct {
-	Signer           string `protobuf:"bytes,1,opt,name=signer,proto3" json:"signer,omitempty"`
-	Denom            string `protobuf:"bytes,2,opt,name=denom,proto3" json:"denom,omitempty"`
-	ClientId         string `protobuf:"bytes,3,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	Receiver         string `protobuf:"bytes,4,opt,name=receiver,proto3" json:"receiver,omitempty"`
-	Amount           string `protobuf:"bytes,5,opt,name=amount,proto3" json:"amount,omitempty"`
+	Signer           string `protobuf:"bytes,1,opt,name=signer,proto3"                                   json:"signer,omitempty"`
+	Denom            string `protobuf:"bytes,2,opt,name=denom,proto3"                                    json:"denom,omitempty"`
+	ClientID         string `protobuf:"bytes,3,opt,name=client_id,json=clientId,proto3"                  json:"client_id,omitempty"`
+	Receiver         string `protobuf:"bytes,4,opt,name=receiver,proto3"                                 json:"receiver,omitempty"`
+	Amount           string `protobuf:"bytes,5,opt,name=amount,proto3"                                   json:"amount,omitempty"`
 	TimeoutTimestamp uint64 `protobuf:"varint,6,opt,name=timeout_timestamp,json=timeoutTimestamp,proto3" json:"timeout_timestamp,omitempty"`
 }
 
@@ -66,7 +66,7 @@ func (m *MsgIFTTransfer) ValidateBasic() error {
 	if m.Denom == "" {
 		return fmt.Errorf("denom must be specified")
 	}
-	if m.ClientId == "" {
+	if m.ClientID == "" {
 		return fmt.Errorf("client_id must be specified")
 	}
 	if m.Receiver == "" {

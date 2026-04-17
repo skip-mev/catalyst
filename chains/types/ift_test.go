@@ -99,4 +99,3 @@ func TestIFTConfigValidate_EthRequiresEVMConfig(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ift.evm must be specified")
 }
-

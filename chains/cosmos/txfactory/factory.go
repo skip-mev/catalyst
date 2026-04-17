@@ -217,12 +217,13 @@ func (f *TxFactory) createMsgIFTTransfer(fromWallet *wallet.InteractingWallet) (
 	}
 
 	receiver := f.iftRecipients[rand.Intn(len(f.iftRecipients))]
+	//nolint:gosec // G115: overflow unlikely in practice
 	timeout := uint64(time.Now().Add(f.iftTimeout).Unix())
 
 	return &cosmosift.MsgIFTTransfer{
 		Signer:           fromWallet.FormattedAddress(),
 		Denom:            f.iftDenom,
-		ClientId:         f.iftClientID,
+		ClientID:         f.iftClientID,
 		Receiver:         receiver,
 		Amount:           f.iftAmount,
 		TimeoutTimestamp: timeout,

@@ -194,7 +194,11 @@ func (r *Runner) sendAndRecord(
 			fromWallet := r.getWalletForTx(tx)
 			sendTransactionErr := fromWallet.SendTransaction(ctx, tx)
 			if sendTransactionErr != nil {
-				r.logger.Info("failed to send transaction", zap.String("tx_hash", tx.Hash().String()), zap.Error(sendTransactionErr))
+				r.logger.Info(
+					"failed to send transaction",
+					zap.String("tx_hash", tx.Hash().String()),
+					zap.Error(sendTransactionErr),
+				)
 				r.promMetrics.BroadcastFailure.Add(1)
 			} else {
 				r.promMetrics.BroadcastSuccess.Add(1)

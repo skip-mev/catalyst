@@ -179,7 +179,13 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 		if err != nil {
 			return nil, fmt.Errorf("generate ift recipients: %w", err)
 		}
-		runner.txFactory.SetIFTConfig(recipients, spec.IFT.ClientID, spec.IFT.Amount, spec.IFT.Cosmos.Denom, spec.IFT.Timeout)
+		runner.txFactory.SetIFTConfig(
+			recipients,
+			spec.IFT.ClientID,
+			spec.IFT.Amount,
+			spec.IFT.Cosmos.Denom,
+			spec.IFT.Timeout,
+		)
 	}
 
 	if spec.Relay != nil {

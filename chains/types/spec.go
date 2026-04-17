@@ -9,9 +9,9 @@ import (
 )
 
 type RelayConfig struct {
-	URL      string        `yaml:"url" json:"url"`
+	URL      string        `yaml:"url"               json:"url"`
 	Timeout  time.Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-	MsgTypes []MsgType     `yaml:"msg_types" json:"msg_types"`
+	MsgTypes []MsgType     `yaml:"msg_types"         json:"msg_types"`
 }
 
 func (c *RelayConfig) ShouldRelay(msgType MsgType) bool {
