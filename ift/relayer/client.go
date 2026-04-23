@@ -54,10 +54,12 @@ func (c *GRPCClient) SubmitTxHash(ctx context.Context, txHash string) error {
 	var lastErr error
 	for attempt := range maxRelayRetries {
 		if attempt > 0 {
+			timer := time.NewTimer(relayRetryDelay)
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return ctx.Err()
-			case <-time.After(relayRetryDelay):
+			case <-timer.C:
 			}
 		}
 

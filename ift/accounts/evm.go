@@ -35,6 +35,7 @@ func (g *evmGenerator) GenerateRecipients(count, offset int) ([]string, error) {
 
 func generateEVMAddress(mnemonic string, index int) (string, error) {
 	passphrase := strconv.Itoa(index)
+	// matches the EVM wallet derivation convention in chains/ethereum/wallet/wallet.go.
 	if index == 0 {
 		passphrase = ""
 	}
