@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/skip-mev/catalyst/chains/cosmos/client"
+	cosmosift "github.com/skip-mev/catalyst/chains/cosmos/ift"
 	"github.com/skip-mev/catalyst/chains/cosmos/metrics"
 	"github.com/skip-mev/catalyst/chains/cosmos/txfactory"
 	inttypes "github.com/skip-mev/catalyst/chains/cosmos/types"
@@ -25,6 +26,8 @@ import (
 	logging "github.com/skip-mev/catalyst/chains/log"
 	"github.com/skip-mev/catalyst/chains/txdistribution"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	iftaccounts "github.com/skip-mev/catalyst/ift/accounts"
+	iftrelayer "github.com/skip-mev/catalyst/ift/relayer"
 )
 
 // MsgGasEstimation stores gas estimation for a specific message type
@@ -50,6 +53,7 @@ type Runner struct {
 	sentTxs            []inttypes.SentTx
 	sentTxsMu          sync.RWMutex
 	txFactory          *txfactory.TxFactory
+	relayer            iftrelayer.Client
 	accountNumbers     map[string]uint64
 	accountNumbersMu   sync.Mutex
 	walletNonces       map[string]uint64
@@ -63,6 +67,10 @@ type Runner struct {
 func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, error) {
 	logger := logging.FromContext(ctx)
 	chainCfg := spec.ChainCfg.(*inttypes.ChainConfig)
+
+	if spec.IFT != nil && spec.IFT.Cosmos != nil {
+		cosmosift.RegisterTypeURL(spec.IFT.Cosmos.MsgTypeURL)
+	}
 
 	if err := spec.Validate(); err != nil {
 		return nil, err
@@ -166,6 +174,28 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 	}
 	runner.txFactory = txfactory.NewTxFactory(chainCfg.GasDenom, wallets, distribution)
 
+	if spec.IFT != nil {
+		recipients, err := iftaccounts.GenerateRecipients(spec)
+		if err != nil {
+			return nil, fmt.Errorf("generate ift recipients: %w", err)
+		}
+		runner.txFactory.SetIFTConfig(
+			recipients,
+			spec.IFT.ClientID,
+			spec.IFT.Amount,
+			spec.IFT.Cosmos.Denom,
+			spec.IFT.Timeout,
+		)
+	}
+
+	if spec.Relay != nil {
+		relayerClient, err := iftrelayer.NewGRPCClient(*spec.Relay, spec.ChainID)
+		if err != nil {
+			return nil, fmt.Errorf("create relayer client: %w", err)
+		}
+		runner.relayer = relayerClient
+	}
+
 	if err := runner.initGasEstimation(ctx); err != nil {
 		return nil, err
 	}
@@ -204,21 +234,9 @@ func (r *Runner) calculateMsgGasEstimations(
 	gasEstimations := make(map[loadtesttypes.LoadTestMsg]uint64)
 
 	for _, msgSpec := range r.spec.Msgs {
-		var msgs []sdk.Msg
-		var err error
-
-		if msgSpec.Type == inttypes.MsgArr {
-			msgs, err = r.txFactory.CreateMsgs(msgSpec, fromWallet)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create messages for gas estimation: %w", err)
-			}
-
-		} else {
-			msg, err := r.txFactory.CreateMsg(msgSpec, fromWallet)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create message for gas estimation: %w", err)
-			}
-			msgs = []sdk.Msg{msg}
+		msgs, err := r.createMessagesForType(msgSpec, fromWallet)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create messages for gas estimation: %w", err)
 		}
 
 		acc, err := client.GetAccount(ctx, fromWallet.FormattedAddress())
@@ -311,6 +329,8 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 		subscriptionErr <- err
 	}()
 
+	var lastSendTime time.Time
+
 	go func() {
 		for {
 			select {
@@ -323,10 +343,16 @@ func (r *Runner) Run(ctx context.Context) (loadtesttypes.LoadTestResult, error) 
 				r.logger.Debug("processing block", zap.Int64("height", block.Height),
 					zap.Time("timestamp", block.Timestamp), zap.Int64("gas_limit", block.GasLimit))
 
+				if r.spec.SendInterval > 0 && time.Since(lastSendTime) < r.spec.SendInterval {
+					r.mu.Unlock()
+					continue
+				}
+
 				_, err := r.sendBlockTransactions(ctx)
 				if err != nil {
 					r.logger.Error("error sending block transactions", zap.Error(err))
 				}
+				lastSendTime = time.Now()
 
 				r.logger.Info("processed block", zap.Int64("height", block.Height))
 
@@ -490,23 +516,18 @@ func (r *Runner) createMessagesForType(
 	msgSpec loadtesttypes.LoadTestMsg,
 	fromWallet *wallet.InteractingWallet,
 ) ([]sdk.Msg, error) {
-	var msgs []sdk.Msg
-	var err error
-
 	if msgSpec.Type == inttypes.MsgArr {
 		if msgSpec.ContainedType == "" {
 			return nil, fmt.Errorf("msgSpec.ContainedType must not be empty")
 		}
-
-		msgs, err = r.txFactory.CreateMsgs(msgSpec, fromWallet)
-	} else {
-		msg, err := r.txFactory.CreateMsg(msgSpec, fromWallet)
-		if err == nil {
-			msgs = []sdk.Msg{msg}
-		}
+		return r.txFactory.CreateMsgs(msgSpec, fromWallet)
 	}
 
-	return msgs, err
+	msg, err := r.txFactory.CreateMsg(msgSpec, fromWallet)
+	if err != nil {
+		return nil, err
+	}
+	return []sdk.Msg{msg}, nil
 }
 
 // createAndSendTransaction creates and sends a transaction, handling the response
@@ -591,9 +612,9 @@ func (r *Runner) broadcastAndHandleResponse(
 		}
 
 		sentTx := inttypes.SentTx{
-			Err:         err,
-			NodeAddress: client.GetNodeAddress().RPC,
-			MsgType:     msgType,
+			SendTransactionErr: err,
+			NodeAddress:        client.GetNodeAddress().RPC,
+			MsgType:            msgType,
 		}
 		if res != nil {
 			sentTx.TxHash = res.TxHash
@@ -609,7 +630,15 @@ func (r *Runner) broadcastAndHandleResponse(
 		TxHash:      res.TxHash,
 		NodeAddress: client.GetNodeAddress().RPC,
 		MsgType:     msgType,
-		Err:         nil,
+	}
+
+	if err := r.relayTxHash(ctx, msgType, res.TxHash); err != nil {
+		sentTx.RelayErr = err
+		r.logger.Error("failed to relay tx",
+			zap.Error(err),
+			zap.String("tx_hash", res.TxHash),
+			zap.String("node", client.GetNodeAddress().RPC),
+			zap.String("msg_type", msgType.String()))
 	}
 
 	updateNonce(walletAddress)
@@ -619,6 +648,16 @@ func (r *Runner) broadcastAndHandleResponse(
 	txsSentMu.Unlock()
 
 	return sentTx, true
+}
+
+func (r *Runner) relayTxHash(ctx context.Context, msgType loadtesttypes.MsgType, txHash string) error {
+	if r.relayer == nil {
+		return nil
+	}
+	if !r.spec.Relay.ShouldRelay(msgType) {
+		return nil
+	}
+	return r.relayer.SubmitTxHash(ctx, txHash)
 }
 
 // handleNonceMismatch extracts the expected nonce from the error message and updates the wallet nonce

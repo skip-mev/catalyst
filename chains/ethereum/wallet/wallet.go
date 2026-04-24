@@ -275,24 +275,19 @@ func (w *InteractingWallet) CreateSignedDynamicFeeTx(ctx context.Context, to *co
 		return nil, err
 	}
 
-	// Get suggested gas prices if not provided
-	if gasFeeCap == nil || gasTipCap == nil {
+	if gasTipCap == nil {
+		tip, err := w.client.SuggestGasTipCap(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get suggested tip cap: %w", err)
+		}
+		gasTipCap = tip
+	}
+	if gasFeeCap == nil {
 		header, err := w.client.HeaderByNumber(ctx, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get latest header: %w", err)
 		}
-
-		if gasFeeCap == nil {
-			// gasFeeCap = baseFee * 2 + gasTipCap (reasonable default)
-			baseFee := header.BaseFee
-			if gasTipCap == nil {
-				gasTipCap = big.NewInt(2000000000) // 2 gwei default tip
-			}
-			gasFeeCap = new(big.Int).Add(new(big.Int).Mul(baseFee, big.NewInt(2)), gasTipCap)
-		}
-		if gasTipCap == nil {
-			gasTipCap = big.NewInt(2000000000) // 2 gwei default tip
-		}
+		gasFeeCap = new(big.Int).Add(new(big.Int).Mul(header.BaseFee, big.NewInt(2)), gasTipCap)
 	}
 
 	// Estimate gas if not provided

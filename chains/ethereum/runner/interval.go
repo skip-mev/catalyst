@@ -128,13 +128,19 @@ loop:
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: getTxType(tx)}
+					sentTx := inttypes.SentTx{Tx: tx, TxHash: tx.Hash(), MsgType: r.messageTypeForTx(tx)}
 					// send the tx from the wallet assigned to this transaction's sender
 					wallet := r.getWalletForTx(tx)
-					err = wallet.SendTransaction(ctx, tx)
-					if err != nil {
-						r.logger.Error("failed to send tx", zap.Error(err), zap.Int("index", i), zap.Int("load_index", loadIndex))
-						sentTx.Err = err
+					sendTransactionErr := wallet.SendTransaction(ctx, tx)
+					if sendTransactionErr != nil {
+						r.logger.Error("failed to send tx", zap.Error(sendTransactionErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
+						sentTx.SendTransactionErr = sendTransactionErr
+					}
+					if sendTransactionErr == nil {
+						sentTx.RelayErr = r.relayTxHash(ctx, sentTx.MsgType, tx.Hash())
+						if sentTx.RelayErr != nil {
+							r.logger.Error("failed to relay tx", zap.Error(sentTx.RelayErr), zap.Int("index", i), zap.Int("load_index", loadIndex))
+						}
 					}
 					collectionChannel <- &sentTx
 				}()

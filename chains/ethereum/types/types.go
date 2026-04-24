@@ -37,6 +37,7 @@ const (
 	MsgNativeTransferERC20 loadtesttypes.MsgType = "MsgNativeTransferERC20"
 
 	MsgNativeGasTransfer loadtesttypes.MsgType = "MsgNativeGasTransfer"
+	MsgIFTTransfer       loadtesttypes.MsgType = "MsgIFTTransfer"
 )
 
 var (
@@ -47,6 +48,7 @@ var (
 		MsgCallDataBlast,
 		MsgDeployERC20,
 		MsgTransferERC0,
+		MsgIFTTransfer,
 	}
 
 	// LoaderDependencies are the msg types that require the presence of the Loader contract.
@@ -56,12 +58,32 @@ var (
 )
 
 type SentTx struct {
-	TxHash      common.Hash
-	NodeAddress string
-	MsgType     loadtesttypes.MsgType
-	Err         error
-	Tx          *gethtypes.Transaction
-	Receipt     *gethtypes.Receipt
+	TxHash             common.Hash
+	NodeAddress        string
+	MsgType            loadtesttypes.MsgType
+	SendTransactionErr error
+	RelayErr           error
+	Tx                 *gethtypes.Transaction
+	Receipt            *gethtypes.Receipt
+}
+
+func (s SentTx) Failed() bool {
+	return s.SendTransactionErr != nil ||
+		(s.Receipt != nil && s.Receipt.Status != gethtypes.ReceiptStatusSuccessful)
+}
+
+func (s SentTx) Error() error {
+	if s.SendTransactionErr != nil {
+		return s.SendTransactionErr
+	}
+	if s.Receipt != nil && s.Receipt.Status != gethtypes.ReceiptStatusSuccessful {
+		return fmt.Errorf("tx execution failed: status=%d", s.Receipt.Status)
+	}
+	return nil
+}
+
+func (s SentTx) RelayFailed() bool {
+	return s.RelayErr != nil
 }
 
 type NodeAddress struct {

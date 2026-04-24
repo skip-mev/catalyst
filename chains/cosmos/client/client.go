@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
+	cosmosift "github.com/skip-mev/catalyst/chains/cosmos/ift"
 	"github.com/skip-mev/catalyst/chains/cosmos/types"
 	logging "github.com/skip-mev/catalyst/chains/log"
 )
@@ -188,6 +190,9 @@ func (c *Chain) GetGasLimit(ctx context.Context) (int64, error) {
 	}
 
 	maxGas := params.ConsensusParams.Block.MaxGas
+	if maxGas == -1 {
+		return math.MaxInt64, nil
+	}
 	if maxGas <= 0 {
 		return 0, fmt.Errorf("invalid max gas value: %d", maxGas)
 	}
@@ -281,6 +286,7 @@ func getInterfaceRegistry() codectypes.InterfaceRegistry {
 	std.RegisterInterfaces(registry)
 	authtypes.RegisterInterfaces(registry)
 	banktypes.RegisterInterfaces(registry)
+	cosmosift.RegisterInterfaces(registry)
 	return registry
 }
 

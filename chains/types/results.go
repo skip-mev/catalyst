@@ -23,6 +23,7 @@ type OverallStats struct {
 	SuccessfulTransactions int
 	// FailedTransactions are all txs that were included in a block, but failed execution.
 	FailedTransactions     int
+	RelayFailures          int
 	AvgGasPerTransaction   int64
 	AvgBlockGasUtilization float64
 	Runtime                time.Duration
@@ -45,6 +46,7 @@ type TransactionStats struct {
 	TotalIncluded int
 	Successful    int
 	Failed        int
+	RelayFailures int
 }
 
 // GasStats represents gas-related statistics

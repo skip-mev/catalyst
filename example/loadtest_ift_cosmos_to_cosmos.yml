@@ -1,0 +1,53 @@
+# Example IFT load test configuration for Cosmos -> Cosmos.
+name: "cosmos-to-cosmos-ift"
+description: "Submit Cosmos MsgIFTTransfer txs to Cosmos recipients and push resulting tx hashes to the relayer"
+kind: "cosmos"
+chain_id: "localcosmos-1"
+num_of_txs: 10
+num_of_blocks: 10
+send_interval: "1s"
+num_batches: 1
+base_mnemonic: "rotate stumble once topic possible message powder recall turkey legend depart brick"
+num_wallets: 100
+initial_wallets: 10
+tx_timeout: "30s"
+metrics_enabled: false
+prometheus_listen_addr: ":9090"
+
+chain_config:
+  gas_denom: "stake"
+  bech32_prefix: "cosmos"
+  nodes_addresses:
+    - grpc: "127.0.0.1:9090"
+      rpc: "http://127.0.0.1:26657"
+
+msgs:
+  - type: "MsgIFTTransfer"
+    weight: 1.0
+
+relay:
+  url: "127.0.0.1:8080"
+  timeout: "10s"
+  msg_types:
+    - "MsgIFTTransfer"
+
+ift:
+  client_id: "07-tendermint-0"
+  amount: "1000"
+  timeout: "5m"
+  recipients:
+    count: 100
+    offset: 0
+  destination:
+    kind: "cosmos"
+    cosmos:
+      bech32_prefix: "cosmos"
+  cosmos:
+    denom: "stake"
+    msg_type_url: "/skip.ift.v1.MsgIFTTransfer"
+
+cache_config:
+  read_wallets_from: ""
+  read_txs_from: ""
+  write_wallets_to: ""
+  write_txs_to: ""

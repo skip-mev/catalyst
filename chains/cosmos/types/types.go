@@ -12,17 +12,19 @@ import (
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	cosmosift "github.com/skip-mev/catalyst/chains/cosmos/ift"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
 const (
-	MsgSend      loadtesttypes.MsgType = "MsgSend"
-	MsgMultiSend loadtesttypes.MsgType = "MsgMultiSend"
-	MsgArr       loadtesttypes.MsgType = "MsgArr"
+	MsgSend        loadtesttypes.MsgType = "MsgSend"
+	MsgMultiSend   loadtesttypes.MsgType = "MsgMultiSend"
+	MsgArr         loadtesttypes.MsgType = "MsgArr"
+	MsgIFTTransfer loadtesttypes.MsgType = "MsgIFTTransfer"
 )
 
 var (
-	validMsgTypes       = []loadtesttypes.MsgType{MsgSend, MsgMultiSend, MsgArr}
+	validMsgTypes       = []loadtesttypes.MsgType{MsgSend, MsgMultiSend, MsgArr, MsgIFTTransfer}
 	validContainedTypes = []loadtesttypes.MsgType{MsgSend, MsgMultiSend}
 )
 
@@ -57,8 +59,8 @@ type NodeAddress struct {
 	RPC  string `json:"rpc"`
 }
 
-// BroadcastError represents errors during broadcasting transactions
-type BroadcastError struct {
+// SendTransactionError represents errors during broadcasting transactions
+type SendTransactionError struct {
 	BlockHeight int64                 // Block height where the error occurred (0 indicates tx did not make it to a block)
 	TxHash      string                // Hash of the transaction that failed
 	Error       string                // Error message
@@ -67,12 +69,30 @@ type BroadcastError struct {
 }
 
 type SentTx struct {
-	TxHash            string
-	NodeAddress       string
-	MsgType           loadtesttypes.MsgType
-	Err               error
-	TxResponse        *sdk.TxResponse
-	InitialTxResponse *sdk.TxResponse
+	TxHash             string
+	NodeAddress        string
+	MsgType            loadtesttypes.MsgType
+	SendTransactionErr error
+	RelayErr           error
+	TxResponse         *sdk.TxResponse
+}
+
+func (s SentTx) Failed() bool {
+	return s.SendTransactionErr != nil || (s.TxResponse != nil && s.TxResponse.Code != 0)
+}
+
+func (s SentTx) Error() error {
+	if s.SendTransactionErr != nil {
+		return s.SendTransactionErr
+	}
+	if s.TxResponse != nil && s.TxResponse.Code != 0 {
+		return fmt.Errorf("%s", s.TxResponse.RawLog)
+	}
+	return nil
+}
+
+func (s SentTx) RelayFailed() bool {
+	return s.RelayErr != nil
 }
 
 type ChainConfig struct {
@@ -118,6 +138,10 @@ func (s ChainConfig) Validate(mainCfg loadtesttypes.LoadTestSpec) error {
 			if msg.NumOfRecipients > mainCfg.NumWallets {
 				return fmt.Errorf("number of recipients must be less than or equal to number of wallets available")
 			}
+		case MsgIFTTransfer:
+			if mainCfg.IFT == nil {
+				return fmt.Errorf("ift config must be specified when using MsgIFTTransfer")
+			}
 		default:
 			if seenMsgTypes[msg.Type] {
 				return fmt.Errorf("duplicate message type: %s", msg.Type)
@@ -148,6 +172,7 @@ func init() {
 
 func Register() {
 	loadtesttypes.Register("cosmos", func() loadtesttypes.ChainConfig { return &ChainConfig{} })
+	cosmosift.RegisterTypeURL(cosmosift.DefaultMsgIFTTransferTypeURL)
 }
 
 func validateMsgType(msg loadtesttypes.LoadTestMsg) error {

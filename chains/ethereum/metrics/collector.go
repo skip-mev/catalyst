@@ -32,6 +32,13 @@ func ProcessResults(
 	wg := sync.WaitGroup{}
 	blockStats := make([]loadtesttypes.BlockStat, endBlock-startBlock+1)
 	receipts := make(map[uint64]gethtypes.Receipts)
+	msgTypeByHash := make(map[common.Hash]loadtesttypes.MsgType, len(sentTxs))
+	for _, sentTx := range sentTxs {
+		if sentTx == nil {
+			continue
+		}
+		msgTypeByHash[sentTx.TxHash] = sentTx.MsgType
+	}
 
 	fetchReceiptsConcurrently := config.EnvFromContext(ctx).ConcurrentReceipts
 
@@ -70,7 +77,7 @@ func ProcessResults(
 			if len(blockReceipts) > 0 {
 				receipts[blockReceipts[0].BlockNumber.Uint64()] = blockReceipts
 			}
-			blockStats[blockNum-startBlock] = buildBlockStats(block, blockReceipts)
+			blockStats[blockNum-startBlock] = buildBlockStats(block, blockReceipts, msgTypeByHash)
 
 			logger.Info(
 				"Block collected",
@@ -107,12 +114,7 @@ func ProcessResults(
 	avgGasPerTx := 0.0
 	for _, blockReceipts := range receipts {
 		for _, receipt := range blockReceipts {
-			var msgType loadtesttypes.MsgType
-			if receipt.ContractAddress.Cmp(common.Address{}) == 0 {
-				msgType = types.ContractCall
-			} else {
-				msgType = types.ContractCreate
-			}
+			msgType := classifyReceiptMsgType(receipt, msgTypeByHash)
 			stat := msgStats[msgType]
 
 			// update gas values
@@ -138,6 +140,8 @@ func ProcessResults(
 		}
 	}
 
+	totalRelayFailures := countRelayFailures(sentTxs, msgStats)
+
 	// calculate statistics for ALL txs by type. (totals)
 	// here we are using transactions from the blocks to update each msg type's statistics.
 	avgGasUtilization := 0.0
@@ -159,6 +163,7 @@ func ProcessResults(
 			TotalIncludedTransactions: totalIncluded,
 			SuccessfulTransactions:    totalSuccess,
 			FailedTransactions:        totalFailed,
+			RelayFailures:             totalRelayFailures,
 			AvgBlockGasUtilization:    avgGasUtilization,
 			AvgGasPerTransaction:      int64(avgGasPerTx),
 			Runtime:                   runtime,
@@ -175,16 +180,14 @@ func ProcessResults(
 	return result, nil
 }
 
-func buildBlockStats(block *gethtypes.Block, receipts gethtypes.Receipts) loadtesttypes.BlockStat {
+func buildBlockStats(
+	block *gethtypes.Block,
+	receipts gethtypes.Receipts,
+	msgTypeByHash map[common.Hash]loadtesttypes.MsgType,
+) loadtesttypes.BlockStat {
 	msgStats := make(map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats)
 	for _, r := range receipts {
-		// if the receipt didnt have a created contract address, its a contract call receipt.
-		var txType loadtesttypes.MsgType
-		if r.ContractAddress.Cmp(common.Address{}) == 0 {
-			txType = types.ContractCall
-		} else {
-			txType = types.ContractCreate
-		}
+		txType := classifyReceiptMsgType(r, msgTypeByHash)
 		stat := msgStats[txType]
 		if r.Status == gethtypes.ReceiptStatusSuccessful {
 			stat.SuccessfulTxs++
@@ -203,6 +206,19 @@ func buildBlockStats(block *gethtypes.Block, receipts gethtypes.Receipts) loadte
 		GasUtilization: float64(block.GasUsed()) / float64(block.GasLimit()),
 	}
 	return stats
+}
+
+func classifyReceiptMsgType(
+	receipt *gethtypes.Receipt,
+	msgTypeByHash map[common.Hash]loadtesttypes.MsgType,
+) loadtesttypes.MsgType {
+	if msgType, ok := msgTypeByHash[receipt.TxHash]; ok {
+		return msgType
+	}
+	if receipt.ContractAddress.Cmp(common.Address{}) == 0 {
+		return types.ContractCall
+	}
+	return types.ContractCreate
 }
 
 func getReceiptsForBlockTxs(
@@ -298,11 +314,24 @@ func trimBlocks(blocks []loadtesttypes.BlockStat) ([]loadtesttypes.BlockStat, er
 func calculateTotalSentByType(sentTxs []*types.SentTx) map[loadtesttypes.MsgType]uint64 {
 	totalSentByType := make(map[loadtesttypes.MsgType]uint64)
 	for _, tx := range sentTxs {
-		if tx.Tx.To() == nil { // no To == contract creation
-			totalSentByType[types.ContractCreate]++
-		} else { // has a To = calling that contract
-			totalSentByType[types.ContractCall]++
-		}
+		totalSentByType[tx.MsgType]++
 	}
 	return totalSentByType
+}
+
+func countRelayFailures(
+	sentTxs []*types.SentTx,
+	msgStats map[loadtesttypes.MsgType]loadtesttypes.MessageStats,
+) int {
+	total := 0
+	for _, sentTx := range sentTxs {
+		if sentTx == nil || !sentTx.RelayFailed() {
+			continue
+		}
+		stat := msgStats[sentTx.MsgType]
+		stat.Transactions.RelayFailures++
+		msgStats[sentTx.MsgType] = stat
+		total++
+	}
+	return total
 }

@@ -76,12 +76,12 @@ func (m *Collector) GroupSentTxs(
 					continue
 				}
 
-				if tx.Err == nil {
+				if tx.SendTransactionErr == nil {
 					randomClient := &clients[rand.Intn(len(clients))]
 					txResponse, err := wallet.GetTxResponse(ctx, *randomClient, tx.TxHash)
 					if err != nil {
 						m.logger.Error("tx not found", zap.Error(err), zap.String("tx_hash", tx.TxHash))
-						tx.Err = err
+						tx.SendTransactionErr = err
 						mu.Lock()
 						txNotFoundCount++
 						mu.Unlock()
@@ -89,10 +89,6 @@ func (m *Collector) GroupSentTxs(
 					}
 
 					tx.TxResponse = txResponse
-
-					if txResponse.Code != 0 {
-						tx.Err = fmt.Errorf("%s", txResponse.RawLog)
-					}
 
 					mu.Lock()
 					m.txsByBlock[tx.TxResponse.Height] = append(m.txsByBlock[tx.TxResponse.Height], *tx)
@@ -110,7 +106,7 @@ func (m *Collector) GroupSentTxs(
 	for i := range sentTxs {
 		tx := &sentTxs[i]
 
-		if tx.Err == nil {
+		if tx.SendTransactionErr == nil {
 			workChan <- workItem{index: i, tx: tx}
 		}
 	}
@@ -155,8 +151,8 @@ func (m *Collector) calculateGasStats(gasUsage []int64) loadtesttypes.GasStats {
 }
 
 // processMessageTypeStats processes statistics for each message type and returns overall totals
-func (m *Collector) processMessageTypeStats(result *loadtesttypes.LoadTestResult) (int, int, int, int64) {
-	var totalTxs, successfulTxs, failedTxs int
+func (m *Collector) processMessageTypeStats(result *loadtesttypes.LoadTestResult) (int, int, int, int, int64) {
+	var totalTxs, successfulTxs, failedTxs, relayFailures int
 	var totalGasUsed int64
 
 	result.ByMessage = make(map[loadtesttypes.MsgType]loadtesttypes.MessageStats, len(m.txsByMsgType))
@@ -164,14 +160,18 @@ func (m *Collector) processMessageTypeStats(result *loadtesttypes.LoadTestResult
 	for msgType, txs := range m.txsByMsgType {
 		successful := 0
 		failed := 0
+		relayFailed := 0
 		errorCounts := make(map[string]int)
 		for _, tx := range txs {
-			if tx.Err != nil {
+			if tx.Failed() {
 				failed++
-				errMsg := tx.Err.Error()
+				errMsg := tx.Error().Error()
 				errorCounts[errMsg]++
 			} else {
 				successful++
+			}
+			if tx.RelayFailed() {
+				relayFailed++
 			}
 		}
 
@@ -180,6 +180,7 @@ func (m *Collector) processMessageTypeStats(result *loadtesttypes.LoadTestResult
 				TotalIncluded: len(txs),
 				Successful:    successful,
 				Failed:        failed,
+				RelayFailures: relayFailed,
 			},
 			Gas: m.calculateGasStats(m.gasUsageByMsgType[msgType]),
 		}
@@ -188,10 +189,11 @@ func (m *Collector) processMessageTypeStats(result *loadtesttypes.LoadTestResult
 		totalTxs += stats.Transactions.TotalIncluded
 		successfulTxs += stats.Transactions.Successful
 		failedTxs += stats.Transactions.Failed
+		relayFailures += stats.Transactions.RelayFailures
 		totalGasUsed += stats.Gas.Total
 	}
 
-	return totalTxs, successfulTxs, failedTxs, totalGasUsed
+	return totalTxs, successfulTxs, failedTxs, relayFailures, totalGasUsed
 }
 
 // processNodeStats processes statistics for each node
@@ -212,14 +214,18 @@ func (m *Collector) processNodeStats(result *loadtesttypes.LoadTestResult) {
 
 		successful := 0
 		failed := 0
+		relayFailed := 0
 
 		for _, tx := range txs {
 			msgCounts[tx.MsgType]++
 
-			if tx.Err != nil {
+			if tx.Failed() {
 				failed++
 			} else {
 				successful++
+			}
+			if tx.RelayFailed() {
+				relayFailed++
 			}
 
 			if tx.TxResponse != nil && tx.TxResponse.GasUsed > 0 {
@@ -229,6 +235,7 @@ func (m *Collector) processNodeStats(result *loadtesttypes.LoadTestResult) {
 
 		stats.TransactionStats.Successful = successful
 		stats.TransactionStats.Failed = failed
+		stats.TransactionStats.RelayFailures = relayFailed
 		stats.GasStats = m.calculateGasStats(gasUsage)
 		result.ByNode[nodeAddr] = stats
 	}
@@ -269,7 +276,7 @@ func (m *Collector) processBlockStats(result *loadtesttypes.LoadTestResult, gasL
 			stats := msgStats[tx.MsgType]
 			stats.TransactionsSent++
 
-			if tx.Err != nil {
+			if tx.Failed() {
 				stats.FailedTxs++
 				if tx.TxResponse != nil && tx.TxResponse.GasUsed > 0 {
 					stats.GasUsed += tx.TxResponse.GasUsed
@@ -327,12 +334,13 @@ func (m *Collector) ProcessResults(gasLimit int64, numOfBlocksRequested int) loa
 		ByBlock:   make([]loadtesttypes.BlockStat, 0, len(m.txsByBlock)),
 	}
 
-	totalTxs, successfulTxs, failedTxs, totalGasUsed := m.processMessageTypeStats(&result)
+	totalTxs, successfulTxs, failedTxs, relayFailures, totalGasUsed := m.processMessageTypeStats(&result)
 
 	// Update overall stats
 	result.Overall.TotalTransactions = totalTxs
 	result.Overall.SuccessfulTransactions = successfulTxs
 	result.Overall.FailedTransactions = failedTxs
+	result.Overall.RelayFailures = relayFailures
 	totalTxsWithGasData := 0
 	for _, gasUsage := range m.gasUsageByMsgType {
 		totalTxsWithGasData += len(gasUsage)
@@ -398,6 +406,7 @@ func (m *Collector) PrintResults(result loadtesttypes.LoadTestResult) {
 	fmt.Printf("Total Transactions: %d\n", result.Overall.TotalTransactions)
 	fmt.Printf("Successful Transactions: %d\n", result.Overall.SuccessfulTransactions)
 	fmt.Printf("Failed Transactions: %d\n", result.Overall.FailedTransactions)
+	fmt.Printf("Relay Failures: %d\n", result.Overall.RelayFailures)
 	fmt.Printf("Transactions Not Found: %d\n", m.txNotFoundCount)
 	fmt.Printf("Average Gas Per Transaction: %d\n", result.Overall.AvgGasPerTransaction)
 	fmt.Printf("Average Block Gas Utilization: %.2f%%\n", result.Overall.AvgBlockGasUtilization*100)
@@ -421,6 +430,7 @@ func (m *Collector) PrintResults(result loadtesttypes.LoadTestResult) {
 		fmt.Printf("    Total: %d\n", stats.Transactions.TotalIncluded)
 		fmt.Printf("    Successful: %d\n", stats.Transactions.Successful)
 		fmt.Printf("    Failed: %d\n", stats.Transactions.Failed)
+		fmt.Printf("    Relay Failures: %d\n", stats.Transactions.RelayFailures)
 		fmt.Printf("  Gas Usage:\n")
 		fmt.Printf("    Average: %d\n", stats.Gas.Average)
 		fmt.Printf("    Min: %d\n", stats.Gas.Min)
@@ -435,6 +445,7 @@ func (m *Collector) PrintResults(result loadtesttypes.LoadTestResult) {
 		fmt.Printf("    Total: %d\n", stats.TransactionStats.TotalIncluded)
 		fmt.Printf("    Successful: %d\n", stats.TransactionStats.Successful)
 		fmt.Printf("    Failed: %d\n", stats.TransactionStats.Failed)
+		fmt.Printf("    Relay Failures: %d\n", stats.TransactionStats.RelayFailures)
 		fmt.Printf("  Message Distribution:\n")
 		for msgType, count := range stats.MessageCounts {
 			fmt.Printf("    %s: %d\n", msgType, count)
