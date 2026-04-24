@@ -4,29 +4,14 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
 
+	iftbindings "github.com/skip-mev/catalyst/chains/ethereum/contracts/load/ift"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
 )
-
-const transferABI = `[
-	{
-		"inputs": [
-			{"internalType": "string", "name": "clientId", "type": "string"},
-			{"internalType": "string", "name": "receiver", "type": "string"},
-			{"internalType": "uint256", "name": "amount", "type": "uint256"},
-			{"internalType": "uint64", "name": "timeoutTimestamp", "type": "uint64"}
-		],
-		"name": "iftTransfer",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	}
-]`
 
 type TransferContract struct {
 	address common.Address
@@ -38,14 +23,14 @@ func NewTransferContract(address string) (*TransferContract, error) {
 		return nil, fmt.Errorf("invalid IFT contract address %q", address)
 	}
 
-	parsedABI, err := abi.JSON(strings.NewReader(transferABI))
+	parsedABI, err := iftbindings.IftMetaData.GetAbi()
 	if err != nil {
 		return nil, fmt.Errorf("parse ift transfer abi: %w", err)
 	}
 
 	return &TransferContract{
 		address: common.HexToAddress(address),
-		abi:     parsedABI,
+		abi:     *parsedABI,
 	}, nil
 }
 
