@@ -100,7 +100,20 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 	logger.Info("deriving wallet keys", zap.Int("num_wallets", spec.NumWallets))
 	keyStart := time.Now()
 	privKeys := make([]types.PrivKey, 0, spec.NumWallets)
-	if spec.NumWallets > 0 {
+	if spec.Cache.ReadWalletsFrom != "" {
+		logger.Info(
+			"Reading cached private keys",
+			zap.String("file", spec.Cache.ReadWalletsFrom),
+			zap.Int("num_wallets", spec.NumWallets),
+		)
+
+		cachedPKs, err := wallet.ReadCachedPrivateKeys(spec.Cache.ReadWalletsFrom, spec.NumWallets)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read cached private keys: %w", err)
+		}
+
+		privKeys = cachedPKs
+	} else if spec.NumWallets > 0 {
 		for i := range spec.NumWallets {
 			derivedPrivKey, err := hd.Secp256k1.Derive()(
 				spec.BaseMnemonic,
@@ -112,12 +125,13 @@ func NewRunner(ctx context.Context, spec loadtesttypes.LoadTestSpec) (*Runner, e
 			}
 			privKeys = append(privKeys, &secp256k1.PrivKey{Key: derivedPrivKey})
 		}
+
+		logger.Info(
+			"derived wallet keys",
+			zap.Int("num_keys", len(privKeys)),
+			zap.Duration("duration", time.Since(keyStart)),
+		)
 	}
-	logger.Info(
-		"derived wallet keys",
-		zap.Int("num_keys", len(privKeys)),
-		zap.Duration("duration", time.Since(keyStart)),
-	)
 
 	if len(privKeys) == 0 {
 		return nil, fmt.Errorf("no private keys available: either provide base mnemonic or private keys")
