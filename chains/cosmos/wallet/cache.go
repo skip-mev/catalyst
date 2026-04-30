@@ -12,7 +12,7 @@ import (
 
 // ReadCachedPrivateKeys reads the cached private keys from the file and returns them as types.PrivKey
 // The file is expected to be in the same format as the Ethereum keys cache.
-// See ethereum/wallet/cache.go for more details.
+// See chains/ethereum/wallet/ReadWalletsFromCache() for more details.
 func ReadCachedPrivateKeys(filename string, num int) ([]types.PrivKey, error) {
 	bz, err := os.ReadFile(filename)
 	if err != nil {
@@ -28,6 +28,10 @@ func ReadCachedPrivateKeys(filename string, num int) ([]types.PrivKey, error) {
 	var cachedKeys []cachedKey
 	if err := json.Unmarshal(bz, &cachedKeys); err != nil {
 		return nil, fmt.Errorf("decoding cached wallets: %w", err)
+	}
+
+	if len(cachedKeys) < num {
+		return nil, fmt.Errorf("not enough cached keys (got %d, want %d)", len(cachedKeys), num)
 	}
 
 	if num > 0 && num < len(cachedKeys) {
