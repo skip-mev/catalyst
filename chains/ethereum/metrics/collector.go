@@ -29,7 +29,9 @@ func ProcessResults(
 	startBlock, endBlock uint64,
 	clients []*ethclient.Client,
 ) (*loadtesttypes.LoadTestResult, error) {
-	wg := sync.WaitGroup{}
+	var wg sync.WaitGroup
+	var receiptsMu sync.Mutex
+
 	blockStats := make([]loadtesttypes.BlockStat, endBlock-startBlock+1)
 	receipts := make(map[uint64]gethtypes.Receipts)
 	msgTypeByHash := make(map[common.Hash]loadtesttypes.MsgType, len(sentTxs))
@@ -75,8 +77,11 @@ func ProcessResults(
 			}
 
 			if len(blockReceipts) > 0 {
+				receiptsMu.Lock()
 				receipts[blockReceipts[0].BlockNumber.Uint64()] = blockReceipts
+				receiptsMu.Unlock()
 			}
+
 			blockStats[blockNum-startBlock] = buildBlockStats(block, blockReceipts, msgTypeByHash)
 
 			logger.Info(

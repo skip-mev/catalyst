@@ -107,6 +107,16 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 
 		waitForEmptyMempool(ctx, r.clients, r.logger, 1*time.Minute)
 
+		// The last subscribed header is the one that triggered submission.
+		// Inclusion lands in a later block; extend the window through the tip.
+		latest, err := r.wallets[0].GetClient().BlockNumber(ctx)
+		if err != nil {
+			return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get ending block number: %w", err)
+		}
+		if latest > endingBlock {
+			endingBlock = latest
+		}
+
 		collectorStartTime := time.Now()
 		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, r.clients)
 		if err != nil {
@@ -124,12 +134,17 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 	// Reset wallet allocation for each block/load to enable role rotation
 	r.txFactory.ResetWalletAllocation()
 
+	// Gas for a given message type is stable for the block. Estimate once, then copy it.
+	if err := r.txFactory.SetBaselines(ctx, r.spec.Msgs); err != nil {
+		return 0, fmt.Errorf("failed to set baseline txs: %w", err)
+	}
+
 	// first we build the tx load. this constructs all the ethereum txs based in the spec.
 	r.logger.Debug("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
 	txs := make([]*gethtypes.Transaction, 0, len(r.spec.Msgs))
 	for _, msgSpec := range r.spec.Msgs {
 		for i := 0; i < msgSpec.NumMsgs; i++ {
-			load, err := r.buildLoad(msgSpec, false)
+			load, err := r.buildLoad(msgSpec, true)
 			if err != nil {
 				return 0, fmt.Errorf("failed to build load: %w", err)
 			}

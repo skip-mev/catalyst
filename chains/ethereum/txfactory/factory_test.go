@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -14,7 +15,9 @@ import (
 	"go.uber.org/zap/zaptest"
 
 	loader "github.com/skip-mev/catalyst/chains/ethereum/contracts/load"
+	iftbindings "github.com/skip-mev/catalyst/chains/ethereum/contracts/load/ift"
 	"github.com/skip-mev/catalyst/chains/ethereum/contracts/load/target"
+	ethift "github.com/skip-mev/catalyst/chains/ethereum/ift"
 	ethtypes "github.com/skip-mev/catalyst/chains/ethereum/types"
 	ethwallet "github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	"github.com/skip-mev/catalyst/chains/txdistribution"
@@ -219,6 +222,48 @@ func TestCrossContractCall(t *testing.T) {
 	require.NoError(t, err)
 	// target stores values of loop_index * 2.
 	require.Equal(t, value.Int64(), int64(2))
+}
+
+func TestCreateMsgIFTTransfer_Gas(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	sim, wallet := setupTest(t)
+	ctx := context.Background()
+
+	auth := &bind.TransactOpts{
+		From:    wallet.Address(),
+		Signer:  wallet.SignerFnLegacy(),
+		Context: ctx,
+	}
+	addr, deployTx, _, err := iftbindings.DeployIft(auth, sim.Client())
+	require.NoError(t, err)
+	sim.Commit()
+	receipt, err := sim.Client().TransactionReceipt(ctx, deployTx.Hash())
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status)
+
+	contract, err := ethift.NewTransferContract(addr.Hex())
+	require.NoError(t, err)
+
+	distr := txdistribution.NewEven([]*ethwallet.InteractingWallet{wallet})
+	f := NewTxFactory(logger, ethtypes.TxOpts{}, distr)
+	f.SetIFTConfig(contract, []string{"cosmos1receiver"}, "client-0", big.NewInt(1), time.Hour, false)
+
+	nonce, err := wallet.GetNonce(ctx)
+	require.NoError(t, err)
+	tx, err := f.createMsgIFTTransfer(ctx, wallet, nonce, false)
+	require.NoError(t, err)
+	require.Positive(t, tx.Gas())
+	price := tx.GasPrice()
+	if feeCap := tx.GasFeeCap(); feeCap != nil && feeCap.Sign() > 0 {
+		price = feeCap
+	}
+	require.Positive(t, price.Sign())
+
+	require.NoError(t, wallet.SendTransaction(ctx, tx))
+	sim.Commit()
+	receipt, err = sim.Client().TransactionReceipt(ctx, tx.Hash())
+	require.NoError(t, err)
+	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status)
 }
 
 func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory, distr TxDistribution) {

@@ -66,11 +66,13 @@ func NewMetrics() *Metrics {
 		Name:      "broadcast_success",
 		Help:      "Number of successful tx broadcasts.",
 	})
-	prometheus.MustRegister(txSuccess)
-	prometheus.MustRegister(txFailure)
-	prometheus.MustRegister(txInclusion)
-	prometheus.MustRegister(broadcastFailure)
-	prometheus.MustRegister(broadcastSuccess)
+
+	register(txSuccess)
+	register(txFailure)
+	register(txInclusion)
+	register(broadcastFailure)
+	register(broadcastSuccess)
+
 	return &Metrics{
 		TxSuccess:        txSuccess,
 		TxFailure:        txFailure,
@@ -78,4 +80,17 @@ func NewMetrics() *Metrics {
 		BroadcastFailure: broadcastFailure,
 		BroadcastSuccess: broadcastSuccess,
 	}
+}
+
+// register adds c to the default registry. A second in-process runner hits the
+// same metric names; keep the first registration and let this runner count locally.
+func register(c prometheus.Collector) {
+	err := prometheus.Register(c)
+	if err == nil {
+		return
+	}
+	if _, ok := err.(prometheus.AlreadyRegisteredError); ok {
+		return
+	}
+	panic(err)
 }

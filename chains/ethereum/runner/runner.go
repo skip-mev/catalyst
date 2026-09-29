@@ -425,6 +425,14 @@ func initIFT(runner *Runner, spec loadtesttypes.LoadTestSpec) error {
 		return fmt.Errorf("parse ift.amount %q", spec.IFT.Amount)
 	}
 
-	runner.txFactory.SetIFTConfig(contract, recipients, spec.IFT.ClientID, amount, spec.IFT.Timeout)
+	runner.txFactory.SetIFTConfig(
+		contract,
+		recipients,
+		spec.IFT.ClientID,
+		amount,
+		spec.IFT.Timeout,
+		spec.IFT.ZeroGas,
+	)
+
 	return nil
 }

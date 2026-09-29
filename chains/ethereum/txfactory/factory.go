@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	loader "github.com/skip-mev/catalyst/chains/ethereum/contracts/load"
+	iftbindings "github.com/skip-mev/catalyst/chains/ethereum/contracts/load/ift"
 	"github.com/skip-mev/catalyst/chains/ethereum/contracts/load/target"
 	"github.com/skip-mev/catalyst/chains/ethereum/contracts/load/weth"
 	ethift "github.com/skip-mev/catalyst/chains/ethereum/ift"
@@ -53,6 +54,7 @@ type TxFactory struct {
 	iftClientID   string
 	iftAmount     *big.Int
 	iftTimeout    time.Duration
+	iftZeroGas    bool
 }
 
 func NewTxFactory(logger *zap.Logger, txOpts ethtypes.TxOpts, txDistribution TxDistribution) *TxFactory {
@@ -178,12 +180,14 @@ func (f *TxFactory) SetIFTConfig(
 	clientID string,
 	amount *big.Int,
 	timeout time.Duration,
+	zeroGas bool,
 ) {
 	f.iftContract = contract
 	f.iftRecipients = recipients
 	f.iftClientID = clientID
 	f.iftAmount = amount
 	f.iftTimeout = timeout
+	f.iftZeroGas = zeroGas
 }
 
 func (f *TxFactory) SetLoaderAddresses(addrs ...common.Address) {
@@ -598,6 +602,10 @@ func (f *TxFactory) createMsgIFTTransfer(
 	//nolint:gosec // G115: overflow unlikely in practice
 	timeout := uint64(time.Now().Add(f.iftTimeout).Unix())
 
+	if !f.iftZeroGas {
+		return f.createEstimatedIFTTransfer(ctx, fromWallet, receiver, timeout, nonce, useBaseline)
+	}
+
 	gasFeeCap := f.txOpts.GasFeeCap
 	gasTipCap := f.txOpts.GasTipCap
 	var gasLimit uint64
@@ -625,4 +633,48 @@ func (f *TxFactory) createMsgIFTTransfer(
 		gasTipCap,
 		gasLimit,
 	)
+}
+
+func (f *TxFactory) createEstimatedIFTTransfer(
+	ctx context.Context,
+	fromWallet *ethwallet.InteractingWallet,
+	receiver string,
+	timeout uint64,
+	nonce uint64,
+	useBaseline bool,
+) (*types.Transaction, error) {
+	transactor, err := iftbindings.NewIftTransactor(f.iftContract.Address(), fromWallet.GetClient())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ift contract instance at %s: %w", f.iftContract.Address().Hex(), err)
+	}
+
+	txOpts := &bind.TransactOpts{
+		From:      fromWallet.Address(),
+		Signer:    fromWallet.SignerFnLegacy(),
+		Nonce:     big.NewInt(int64(nonce)), //nolint:gosec // G115: overflow unlikely in practice
+		GasTipCap: f.txOpts.GasTipCap,
+		GasFeeCap: f.txOpts.GasFeeCap,
+		Context:   ctx,
+		NoSend:    true,
+	}
+	if useBaseline {
+		applyBaselinesToTxOpts(f.baseLines[ethtypes.MsgIFTTransfer][0], txOpts)
+	}
+
+	tx, err := transactor.IftTransfer(
+		txOpts,
+		f.iftClientID,
+		receiver,
+		new(big.Int).Set(f.iftAmount),
+		timeout,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed to build tx for %s at %s: %w",
+			ethtypes.MsgIFTTransfer.String(),
+			f.iftContract.Address().Hex(),
+			err,
+		)
+	}
+	return tx, nil
 }

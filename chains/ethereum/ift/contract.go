@@ -34,6 +34,10 @@ func NewTransferContract(address string) (*TransferContract, error) {
 	}, nil
 }
 
+func (c *TransferContract) Address() common.Address {
+	return c.address
+}
+
 func (c *TransferContract) BuildTransferTx(
 	ctx context.Context,
 	fromWallet *ethwallet.InteractingWallet,
