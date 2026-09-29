@@ -10,9 +10,9 @@ type ChainConfig interface {
 // Factory returns a fresh concrete ChainConfig for a given kind (e.g. "cosmos", "evm").
 type Factory func() ChainConfig
 
-var registry = map[string]Factory{}
+var registry = map[Kind]Factory{}
 
-func Register(kind string, fn Factory) {
+func Register(kind Kind, fn Factory) {
 	// if _, exists := registry[kind]; exists {
 	//	panic("duplicate ChainConfig kind: " + kind)
 	//}
@@ -20,7 +20,7 @@ func Register(kind string, fn Factory) {
 	registry[kind] = fn
 }
 
-func NewForKind(kind string) (ChainConfig, error) {
+func NewForKind(kind Kind) (ChainConfig, error) {
 	fn, ok := registry[kind]
 	if !ok {
 		return nil, fmt.Errorf("unknown chain_config kind %q", kind)

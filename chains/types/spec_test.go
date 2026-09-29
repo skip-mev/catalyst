@@ -17,7 +17,7 @@ func TestLoadTestSpec_Marshal_Unmarshal_Eth(t *testing.T) {
 	var spec loadtesttypes.LoadTestSpec
 	spec.Name = "worker"
 	spec.Description = "eth load test"
-	spec.Kind = "eth"
+	spec.Kind = loadtesttypes.KindEVM
 	spec.ChainID = "262144"
 	spec.NumOfBlocks = 200
 	spec.BaseMnemonic = "seed phrase goes here"
@@ -48,7 +48,7 @@ func TestEthereum(t *testing.T) {
 	yml := []byte(`
 name: worker
 description: eth load test
-kind: eth
+kind: evm
 chain_id: 2341
 num_of_blocks: 200
 base_mnemonic: "seed phrase goes here"
@@ -95,7 +95,7 @@ chain_config:
 	expectedSpec := loadtesttypes.LoadTestSpec{
 		Name:         "worker",
 		Description:  "cosmos load test",
-		Kind:         "cosmos",
+		Kind:         loadtesttypes.KindCosmos,
 		ChainID:      "cosmoshub-4",
 		NumOfBlocks:  200,
 		BaseMnemonic: "seed phrase goes here",

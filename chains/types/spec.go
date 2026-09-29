@@ -8,6 +8,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Kind selects the chain runner and the IFT endpoint encoding.
+type Kind string
+
+const (
+	KindCosmos Kind = "cosmos"
+	KindEVM    Kind = "evm"
+)
+
 type RelayConfig struct {
 	URL      string        `yaml:"url"               json:"url"`
 	Timeout  time.Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"`
@@ -24,7 +32,7 @@ func (c *RelayConfig) ShouldRelay(msgType MsgType) bool {
 type LoadTestSpec struct {
 	Name                 string        `yaml:"name"                   json:"name"`
 	Description          string        `yaml:"description"            json:"description"`
-	Kind                 string        `yaml:"kind"                   json:"kind"` // "cosmos" | "evm" (discriminator)
+	Kind                 Kind          `yaml:"kind"                   json:"kind"` // "cosmos" | "evm" (discriminator)
 	ChainID              string        `yaml:"chain_id"               json:"chain_id"`
 	NumOfTxs             int           `yaml:"num_of_txs,omitempty"   json:"num_of_txs,omitempty"`
 	NumOfBlocks          int           `yaml:"num_of_blocks"          json:"num_of_blocks"`
