@@ -162,7 +162,9 @@ loop:
 	<-collectionDone // wait for collection to finish
 
 	r.logger.Info("go routines have completed", zap.Int("total_txs", len(sentTxs)))
+	r.sentTxsMu.Lock()
 	r.sentTxs = sentTxs
+	r.sentTxsMu.Unlock()
 
 	r.logger.Info("Loadtest complete. Waiting for mempool to clear")
 

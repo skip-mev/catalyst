@@ -93,6 +93,18 @@ func (f *TxFactory) SetBaselines(ctx context.Context, msgs []loadtesttypes.LoadT
 	return nil
 }
 
+// baselineGasMarginNumerator / baselineGasMarginDenominator is the headroom added
+// when a sampled gas limit is copied onto later sends. A later send can cost more
+// than the sample, and an exact copy reverts those transactions.
+const (
+	baselineGasMarginNumerator   = 6
+	baselineGasMarginDenominator = 5
+)
+
+func baselineGasLimit(gas uint64) uint64 {
+	return gas * baselineGasMarginNumerator / baselineGasMarginDenominator
+}
+
 // applyBaselinesToTxOpts applies baseline transaction values to transact options, while respecting
 // the static gas values set by the user in the spec.
 func applyBaselinesToTxOpts(baselineTx *types.Transaction, txOpts *bind.TransactOpts) {
@@ -102,7 +114,7 @@ func applyBaselinesToTxOpts(baselineTx *types.Transaction, txOpts *bind.Transact
 	if txOpts.GasFeeCap == nil {
 		txOpts.GasFeeCap = baselineTx.GasFeeCap()
 	}
-	txOpts.GasLimit = baselineTx.Gas()
+	txOpts.GasLimit = baselineGasLimit(baselineTx.Gas())
 }
 
 // BuildTxs builds the transactions for the message.
@@ -611,7 +623,7 @@ func (f *TxFactory) createMsgIFTTransfer(
 	var gasLimit uint64
 	if useBaseline {
 		if baseline, ok := f.baseLines[ethtypes.MsgIFTTransfer]; ok && len(baseline) > 0 {
-			gasLimit = baseline[0].Gas()
+			gasLimit = baselineGasLimit(baseline[0].Gas())
 			if gasFeeCap == nil {
 				gasFeeCap = baseline[0].GasFeeCap()
 			}

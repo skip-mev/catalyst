@@ -199,6 +199,8 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 
 	wg.Wait()
 
+	r.sentTxsMu.Lock()
 	r.sentTxs = append(r.sentTxs, sentTxs...)
+	r.sentTxsMu.Unlock()
 	return len(sentTxs), nil
 }

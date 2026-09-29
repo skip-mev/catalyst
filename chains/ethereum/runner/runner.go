@@ -45,6 +45,7 @@ type Runner struct {
 	relayer   iftrelayer.Client
 
 	sentTxs         []*inttypes.SentTx
+	sentTxsMu       sync.RWMutex
 	blocksProcessed uint64
 	txTypes         sync.Map
 
@@ -435,6 +436,16 @@ func initIFT(runner *Runner, spec loadtesttypes.LoadTestSpec) error {
 	)
 
 	return nil
+}
+
+// SentTxs returns a copy of the transactions recorded so far.
+func (r *Runner) SentTxs() []*inttypes.SentTx {
+	r.sentTxsMu.RLock()
+	defer r.sentTxsMu.RUnlock()
+
+	out := make([]*inttypes.SentTx, len(r.sentTxs))
+	copy(out, r.sentTxs)
+	return out
 }
 
 // sentOnlyResult reports broadcasts and relay errors without reading chain receipts.
