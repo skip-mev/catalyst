@@ -436,3 +436,19 @@ func initIFT(runner *Runner, spec loadtesttypes.LoadTestSpec) error {
 
 	return nil
 }
+
+// sentOnlyResult reports broadcasts and relay errors without reading chain receipts.
+func sentOnlyResult(sent []*inttypes.SentTx) loadtesttypes.LoadTestResult {
+	relayFailures := 0
+	for _, tx := range sent {
+		if tx != nil && tx.RelayFailed() {
+			relayFailures++
+		}
+	}
+	return loadtesttypes.LoadTestResult{
+		Overall: loadtesttypes.OverallStats{
+			TotalTransactions: len(sent),
+			RelayFailures:     relayFailures,
+		},
+	}
+}

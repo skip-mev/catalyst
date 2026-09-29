@@ -107,6 +107,11 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 
 		waitForEmptyMempool(ctx, r.clients, r.logger, 1*time.Minute)
 
+		if r.spec.SkipReceiptCollection {
+			r.logger.Info("skipping receipt collection")
+			return sentOnlyResult(r.sentTxs), nil
+		}
+
 		// The last subscribed header is the one that triggered submission.
 		// Inclusion lands in a later block; extend the window through the tip.
 		latest, err := r.wallets[0].GetClient().BlockNumber(ctx)
