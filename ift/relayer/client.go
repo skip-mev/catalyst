@@ -71,8 +71,11 @@ func (c *GRPCClient) SubmitTxHash(ctx context.Context, txHash string) error {
 		callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 		start := time.Now()
 		_, err := c.client.Relay(callCtx, &relayerapi.RelayRequest{
-			TxHash:  txHash,
-			ChainId: c.chainID,
+			TxHash:        txHash,
+			SourceChainId: c.chainID,
+			Selection: &relayerapi.RelayRequest_AllPackets{
+				AllPackets: &relayerapi.AllPackets{},
+			},
 		})
 		cancel()
 		if c.metrics != nil {
