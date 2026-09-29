@@ -14,6 +14,8 @@ import (
 )
 
 func TestTrimBlocks(t *testing.T) {
+	const testMsgType loadtesttypes.MsgType = "test"
+
 	tests := []struct {
 		name        string
 		blocks      []loadtesttypes.BlockStat
@@ -32,7 +34,7 @@ func TestTrimBlocks(t *testing.T) {
 					BlockHeight: 2,
 					Timestamp:   time.Now().Add(-10 * time.Second),
 					MessageStats: map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats{
-						"test": {SuccessfulTxs: 1}, // has transactions
+						testMsgType: {SuccessfulTxs: 1}, // has transactions
 					},
 				},
 				{
@@ -51,7 +53,7 @@ func TestTrimBlocks(t *testing.T) {
 					BlockHeight: 2,
 					Timestamp:   time.Now().Add(-10 * time.Second),
 					MessageStats: map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats{
-						"test": {SuccessfulTxs: 1},
+						testMsgType: {SuccessfulTxs: 1},
 					},
 				},
 			},
@@ -64,7 +66,7 @@ func TestTrimBlocks(t *testing.T) {
 					BlockHeight: 1,
 					Timestamp:   time.Now().Add(-10 * time.Second),
 					MessageStats: map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats{
-						"test": {SuccessfulTxs: 1}, // has transactions
+						testMsgType: {SuccessfulTxs: 1}, // has transactions
 					},
 				},
 				{
@@ -78,7 +80,7 @@ func TestTrimBlocks(t *testing.T) {
 					BlockHeight: 1,
 					Timestamp:   time.Now().Add(-10 * time.Second),
 					MessageStats: map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats{
-						"test": {SuccessfulTxs: 1},
+						testMsgType: {SuccessfulTxs: 1},
 					},
 				},
 			},
@@ -96,14 +98,14 @@ func TestTrimBlocks(t *testing.T) {
 					BlockHeight: 2,
 					Timestamp:   time.Now().Add(-20 * time.Second),
 					MessageStats: map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats{
-						"test": {SuccessfulTxs: 1}, // has transactions
+						testMsgType: {SuccessfulTxs: 1}, // has transactions
 					},
 				},
 				{
 					BlockHeight: 3,
 					Timestamp:   time.Now().Add(-10 * time.Second),
 					MessageStats: map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats{
-						"test": {SuccessfulTxs: 2}, // has transactions
+						testMsgType: {SuccessfulTxs: 2}, // has transactions
 					},
 				},
 				{
@@ -122,14 +124,14 @@ func TestTrimBlocks(t *testing.T) {
 					BlockHeight: 2,
 					Timestamp:   time.Now().Add(-20 * time.Second),
 					MessageStats: map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats{
-						"test": {SuccessfulTxs: 1},
+						testMsgType: {SuccessfulTxs: 1},
 					},
 				},
 				{
 					BlockHeight: 3,
 					Timestamp:   time.Now().Add(-10 * time.Second),
 					MessageStats: map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats{
-						"test": {SuccessfulTxs: 2},
+						testMsgType: {SuccessfulTxs: 2},
 					},
 				},
 			},

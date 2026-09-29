@@ -292,7 +292,7 @@ func deployContract(t *testing.T, sim *simulated.Backend, f *TxFactory, distr Tx
 
 func setupTest(t *testing.T) (*simulated.Backend, *ethwallet.InteractingWallet) {
 	t.Helper()
-	genesisBalance := big.NewInt(12000000000000000)
+	genesisBalance := big.NewInt(1_000_000_000_000_000_000)
 	key, err := crypto.GenerateKey()
 	require.NoError(t, err)
 	addr := crypto.PubkeyToAddress(key.PublicKey)

@@ -103,7 +103,7 @@ chain_config:
 		TxTimeout:    30 * time.Second,
 		ChainCfg: &cosmostypes.ChainConfig{
 			GasDenom:       "uatom",
-			Bech32Prefix:   "cosmos",
+			Bech32Prefix:   testBech32Prefix,
 			UnorderedTxs:   true,
 			NodesAddresses: []cosmostypes.NodeAddress{},
 		},

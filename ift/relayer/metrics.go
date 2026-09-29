@@ -5,6 +5,7 @@ import "github.com/prometheus/client_golang/prometheus"
 const (
 	promNamespace = "catalyst"
 	promSubsystem = "relay"
+	chainIDLabel  = "chain_id"
 )
 
 type Metrics struct {
@@ -22,20 +23,20 @@ func NewMetrics() *Metrics {
 			Subsystem: promSubsystem,
 			Name:      "success_total",
 			Help:      "Tx hashes successfully submitted to the relayer (terminal, per submission).",
-		}, []string{"chain_id"}),
+		}, []string{chainIDLabel}),
 		Failure: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: promNamespace,
 			Subsystem: promSubsystem,
 			Name:      "failure_total",
 			Help:      "Tx hashes that failed to be submitted to the relayer after all retries.",
-		}, []string{"chain_id"}),
+		}, []string{chainIDLabel}),
 		Duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: promNamespace,
 			Subsystem: promSubsystem,
 			Name:      "duration_seconds",
 			Help:      "Duration of a single gRPC relay request (per-attempt, not including retry backoff).",
 			Buckets:   []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10},
-		}, []string{"chain_id"}),
+		}, []string{chainIDLabel}),
 	}
 	prometheus.MustRegister(m.Success, m.Failure, m.Duration)
 	return m
