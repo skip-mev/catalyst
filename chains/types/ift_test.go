@@ -10,9 +10,14 @@ import (
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
+const (
+	testClientID     = "client-0"
+	testBech32Prefix = "cosmos"
+)
+
 func TestIFTConfigValidate_CosmosToEVM(t *testing.T) {
 	spec := loadtesttypes.LoadTestSpec{
-		Kind:         "cosmos",
+		Kind:         loadtesttypes.KindCosmos,
 		ChainID:      "chain-a",
 		BaseMnemonic: "test test test test test test test test test test test junk",
 		NumWallets:   1,
@@ -20,7 +25,7 @@ func TestIFTConfigValidate_CosmosToEVM(t *testing.T) {
 			{Type: cosmostypes.MsgIFTTransfer, NumMsgs: 1},
 		},
 		IFT: &loadtesttypes.IFTConfig{
-			ClientID: "client-0",
+			ClientID: testClientID,
 			Amount:   "1",
 			Timeout:  time.Second,
 			Cosmos: &loadtesttypes.IFTCosmosConfig{
@@ -28,7 +33,7 @@ func TestIFTConfigValidate_CosmosToEVM(t *testing.T) {
 				MsgTypeURL: "/skip.ift.MsgIFTTransfer",
 			},
 			Destination: loadtesttypes.IFTDestinationConfig{
-				Kind: "evm",
+				Kind: loadtesttypes.KindEVM,
 				EVM:  &loadtesttypes.IFTDestinationEVMConfig{},
 			},
 		},
@@ -39,16 +44,16 @@ func TestIFTConfigValidate_CosmosToEVM(t *testing.T) {
 
 func TestIFTConfigValidate_EthToEVMRejected(t *testing.T) {
 	spec := loadtesttypes.LoadTestSpec{
-		Kind: "eth",
+		Kind: loadtesttypes.KindEVM,
 		IFT: &loadtesttypes.IFTConfig{
-			ClientID: "client-0",
+			ClientID: testClientID,
 			Amount:   "1",
 			Timeout:  time.Second,
 			EVM: &loadtesttypes.IFTEVMConfig{
 				ContractAddress: "0x1234",
 			},
 			Destination: loadtesttypes.IFTDestinationConfig{
-				Kind: "evm",
+				Kind: loadtesttypes.KindEVM,
 				EVM:  &loadtesttypes.IFTDestinationEVMConfig{},
 			},
 		},
@@ -59,18 +64,18 @@ func TestIFTConfigValidate_EthToEVMRejected(t *testing.T) {
 
 func TestIFTConfigValidate_EthToCosmos(t *testing.T) {
 	spec := loadtesttypes.LoadTestSpec{
-		Kind: "eth",
+		Kind: loadtesttypes.KindEVM,
 		IFT: &loadtesttypes.IFTConfig{
-			ClientID: "client-0",
+			ClientID: testClientID,
 			Amount:   "1",
 			Timeout:  time.Second,
 			EVM: &loadtesttypes.IFTEVMConfig{
 				ContractAddress: "0x1234",
 			},
 			Destination: loadtesttypes.IFTDestinationConfig{
-				Kind: "cosmos",
+				Kind: loadtesttypes.KindCosmos,
 				Cosmos: &loadtesttypes.IFTDestinationCosmosConfig{
-					Bech32Prefix: "cosmos",
+					Bech32Prefix: testBech32Prefix,
 				},
 			},
 		},
@@ -81,15 +86,15 @@ func TestIFTConfigValidate_EthToCosmos(t *testing.T) {
 
 func TestIFTConfigValidate_EthRequiresEVMConfig(t *testing.T) {
 	spec := loadtesttypes.LoadTestSpec{
-		Kind: "eth",
+		Kind: loadtesttypes.KindEVM,
 		IFT: &loadtesttypes.IFTConfig{
-			ClientID: "client-0",
+			ClientID: testClientID,
 			Amount:   "1",
 			Timeout:  time.Second,
 			Destination: loadtesttypes.IFTDestinationConfig{
-				Kind: "cosmos",
+				Kind: loadtesttypes.KindCosmos,
 				Cosmos: &loadtesttypes.IFTDestinationCosmosConfig{
-					Bech32Prefix: "cosmos",
+					Bech32Prefix: testBech32Prefix,
 				},
 			},
 		},

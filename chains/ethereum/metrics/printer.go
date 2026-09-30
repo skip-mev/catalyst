@@ -15,10 +15,17 @@ func PrintResults(result loadtesttypes.LoadTestResult) {
 
 	fmt.Println("\n🎯 Overall Statistics:")
 	fmt.Printf("Total Transactions: %d\n", result.Overall.TotalTransactions)
+	fmt.Printf("Broadcast Failures: %d\n", result.Overall.BroadcastFailures)
+	fmt.Printf("Relay Failures: %d\n", result.Overall.RelayFailures)
+	if result.ReceiptCollectionSkipped {
+		fmt.Println("Receipt-derived statistics: unavailable (receipt collection skipped)")
+		printSentOnlyMessageStats(result)
+		return
+	}
+
 	fmt.Printf("Total Included Txs: %d\n", result.Overall.TotalIncludedTransactions)
 	fmt.Printf("Successful Transactions: %d\n", result.Overall.SuccessfulTransactions)
 	fmt.Printf("Failed Transactions: %d\n", result.Overall.FailedTransactions)
-	fmt.Printf("Relay Failures: %d\n", result.Overall.RelayFailures)
 	fmt.Printf(
 		"Transactions Not Found: %d\n",
 		result.Overall.TotalTransactions-result.Overall.TotalIncludedTransactions,
@@ -37,6 +44,7 @@ func PrintResults(result loadtesttypes.LoadTestResult) {
 		fmt.Printf("    Total Included: %d\n", stats.Transactions.TotalIncluded)
 		fmt.Printf("    Execution Successful: %d\n", stats.Transactions.Successful)
 		fmt.Printf("    Execution Failed: %d\n", stats.Transactions.Failed)
+		fmt.Printf("    Broadcast Failures: %d\n", stats.Transactions.BroadcastFailures)
 		fmt.Printf("    Relay Failures: %d\n", stats.Transactions.RelayFailures)
 		fmt.Printf("  Gas Usage:\n")
 		fmt.Printf("    Average: %d\n", stats.Gas.Average)
@@ -67,5 +75,15 @@ func PrintResults(result loadtesttypes.LoadTestResult) {
 		fmt.Printf("Max Gas Utilization: %.2f%% (Block %d)\n", maxGasUtilization*100, maxGasBlock)
 	} else {
 		fmt.Println("⚠️  No blocks processed - unable to calculate block statistics")
+	}
+}
+
+func printSentOnlyMessageStats(result loadtesttypes.LoadTestResult) {
+	fmt.Println("\n📊 Message Type Statistics:")
+	for msgType, stats := range result.ByMessage {
+		fmt.Printf("\n%s:\n", msgType)
+		fmt.Printf("  Broadcast Successful: %d\n", stats.Transactions.TotalSent)
+		fmt.Printf("  Broadcast Failures: %d\n", stats.Transactions.BroadcastFailures)
+		fmt.Printf("  Relay Failures: %d\n", stats.Transactions.RelayFailures)
 	}
 }

@@ -1,7 +1,7 @@
 # Example load test configuration
-name: "eth_loadtest"
+name: "evm_loadtest"
 description: "testing"
-kind: "eth"
+kind: "evm"
 chain_id: "262144"
 send_interval: 1.5s
 num_batches: 15

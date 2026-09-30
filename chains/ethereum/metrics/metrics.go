@@ -18,19 +18,19 @@ type Metrics struct {
 }
 
 func NewMetrics() *Metrics {
-	txSuccess := prometheus.NewCounter(prometheus.CounterOpts{
+	txSuccess := register(prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: PromNamespace,
 		Subsystem: TxMetricsNamespace,
 		Name:      "tx_success",
 		Help:      "Number of successfully committed txs.",
-	})
-	txFailure := prometheus.NewCounter(prometheus.CounterOpts{
+	})).(prometheus.Counter)
+	txFailure := register(prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: PromNamespace,
 		Subsystem: TxMetricsNamespace,
 		Name:      "tx_failure",
 		Help:      "Number of tracked txs which timed out without getting included in a block.",
-	})
-	txInclusion := prometheus.NewHistogram(prometheus.HistogramOpts{
+	})).(prometheus.Counter)
+	txInclusion := register(prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: PromNamespace,
 		Subsystem: TxMetricsNamespace,
 		Name:      "tx_inclusion",
@@ -53,24 +53,20 @@ func NewMetrics() *Metrics {
 			120000,
 			300000,
 		},
-	})
-	broadcastFailure := prometheus.NewCounter(prometheus.CounterOpts{
+	})).(prometheus.Histogram)
+	broadcastFailure := register(prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: PromNamespace,
 		Subsystem: TxMetricsNamespace,
 		Name:      "broadcast_failure",
 		Help:      "Number of failed tx broadcasts.",
-	})
-	broadcastSuccess := prometheus.NewCounter(prometheus.CounterOpts{
+	})).(prometheus.Counter)
+	broadcastSuccess := register(prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: PromNamespace,
 		Subsystem: TxMetricsNamespace,
 		Name:      "broadcast_success",
 		Help:      "Number of successful tx broadcasts.",
-	})
-	prometheus.MustRegister(txSuccess)
-	prometheus.MustRegister(txFailure)
-	prometheus.MustRegister(txInclusion)
-	prometheus.MustRegister(broadcastFailure)
-	prometheus.MustRegister(broadcastSuccess)
+	})).(prometheus.Counter)
+
 	return &Metrics{
 		TxSuccess:        txSuccess,
 		TxFailure:        txFailure,
@@ -78,4 +74,20 @@ func NewMetrics() *Metrics {
 		BroadcastFailure: broadcastFailure,
 		BroadcastSuccess: broadcastSuccess,
 	}
+}
+
+// register adds c to the default registry. Two runners in one process are
+// expected (catalyst as a library; ibc e2e/load_relayer_test.go starts A→B and
+// B→A catalysts in parallel). On AlreadyRegisteredError, return the collector
+// already in the registry so every runner's increments are scraped. Do not
+// panic and do not keep an unregistered duplicate.
+func register(c prometheus.Collector) prometheus.Collector {
+	if err := prometheus.Register(c); err != nil {
+		are, ok := err.(prometheus.AlreadyRegisteredError)
+		if !ok {
+			panic(err)
+		}
+		return are.ExistingCollector
+	}
+	return c
 }
