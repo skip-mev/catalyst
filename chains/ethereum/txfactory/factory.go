@@ -54,7 +54,10 @@ type TxFactory struct {
 	iftClientID   string
 	iftAmount     *big.Int
 	iftTimeout    time.Duration
-	iftZeroGas    bool
+	// iftGasLimit is the once-per-block (or once-per-SetBaselines) inflated IFT gas limit.
+	// Computed by estimateIFTGas from a single sample; reused for every IFT tx that uses baselines.
+	// Zero means a gasless chain (estimateIFTGas(0) == 0); that is a valid limit, not an error.
+	iftGasLimit uint64
 }
 
 func NewTxFactory(logger *zap.Logger, txOpts ethtypes.TxOpts, txDistribution TxDistribution) *TxFactory {
@@ -72,6 +75,7 @@ func NewTxFactory(logger *zap.Logger, txOpts ethtypes.TxOpts, txDistribution TxD
 
 // SetBaselines sets the baseline transaction for each message type.
 // This is useful for transactions that do not want to use the client to get gas values.
+// For MsgIFTTransfer, also computes iftGasLimit once via estimateIFTGas from the sample.
 func (f *TxFactory) SetBaselines(ctx context.Context, msgs []loadtesttypes.LoadTestMsg) error {
 	f.logger.Info("Setting baselines for transactions...")
 	for _, msg := range msgs {
@@ -89,24 +93,31 @@ func (f *TxFactory) SetBaselines(ctx context.Context, msgs []loadtesttypes.LoadT
 			return fmt.Errorf("failed to build txs: %w", err)
 		}
 		f.baseLines[msg.Type] = txs
+		if msg.Type == ethtypes.MsgIFTTransfer {
+			if len(txs) == 0 {
+				return fmt.Errorf("failed to estimate ift gas: empty baseline")
+			}
+			f.iftGasLimit = estimateIFTGas(txs[0].Gas())
+		}
 	}
 	return nil
 }
 
-// baselineGasMarginNumerator / baselineGasMarginDenominator is the headroom added
-// when a sampled gas limit is copied onto later sends. A later send can cost more
-// than the sample, and an exact copy reverts those transactions.
+// iftGasMarginNumerator / iftGasMarginDenominator is 120% headroom for IFT gas.
+// A later IFT send can cost more than the once-per-block sample; non-IFT messages
+// keep the raw estimate and do not use this margin.
 const (
-	baselineGasMarginNumerator   = 6
-	baselineGasMarginDenominator = 5
+	iftGasMarginNumerator   = 6
+	iftGasMarginDenominator = 5
 )
 
-func baselineGasLimit(gas uint64) uint64 {
-	return gas * baselineGasMarginNumerator / baselineGasMarginDenominator
+// estimateIFTGas returns gas * 120% using integer math (6/5).
+func estimateIFTGas(gas uint64) uint64 {
+	return gas * iftGasMarginNumerator / iftGasMarginDenominator
 }
 
 // applyBaselinesToTxOpts applies baseline transaction values to transact options, while respecting
-// the static gas values set by the user in the spec.
+// the static gas values set by the user in the spec. GasLimit is the raw sample (no IFT margin).
 func applyBaselinesToTxOpts(baselineTx *types.Transaction, txOpts *bind.TransactOpts) {
 	if txOpts.GasTipCap == nil {
 		txOpts.GasTipCap = baselineTx.GasTipCap()
@@ -114,7 +125,7 @@ func applyBaselinesToTxOpts(baselineTx *types.Transaction, txOpts *bind.Transact
 	if txOpts.GasFeeCap == nil {
 		txOpts.GasFeeCap = baselineTx.GasFeeCap()
 	}
-	txOpts.GasLimit = baselineGasLimit(baselineTx.Gas())
+	txOpts.GasLimit = baselineTx.Gas()
 }
 
 // BuildTxs builds the transactions for the message.
@@ -192,14 +203,12 @@ func (f *TxFactory) SetIFTConfig(
 	clientID string,
 	amount *big.Int,
 	timeout time.Duration,
-	zeroGas bool,
 ) {
 	f.iftContract = contract
 	f.iftRecipients = recipients
 	f.iftClientID = clientID
 	f.iftAmount = amount
 	f.iftTimeout = timeout
-	f.iftZeroGas = zeroGas
 }
 
 func (f *TxFactory) SetLoaderAddresses(addrs ...common.Address) {
@@ -614,22 +623,21 @@ func (f *TxFactory) createMsgIFTTransfer(
 	//nolint:gosec // G115: overflow unlikely in practice
 	timeout := uint64(time.Now().Add(f.iftTimeout).Unix())
 
-	if !f.iftZeroGas {
-		return f.createEstimatedIFTTransfer(ctx, fromWallet, receiver, timeout, nonce, useBaseline)
+	if !useBaseline {
+		// Live / SetBaselines sampling: estimate via the network.
+		return f.createEstimatedIFTTransfer(ctx, fromWallet, receiver, timeout, nonce)
 	}
 
+	// Baseline path: reuse the once-per-block iftGasLimit.
+	// iftGasLimit == 0 is a valid gasless-chain limit (do not treat as "not prepared").
 	gasFeeCap := f.txOpts.GasFeeCap
 	gasTipCap := f.txOpts.GasTipCap
-	var gasLimit uint64
-	if useBaseline {
-		if baseline, ok := f.baseLines[ethtypes.MsgIFTTransfer]; ok && len(baseline) > 0 {
-			gasLimit = baselineGasLimit(baseline[0].Gas())
-			if gasFeeCap == nil {
-				gasFeeCap = baseline[0].GasFeeCap()
-			}
-			if gasTipCap == nil {
-				gasTipCap = baseline[0].GasTipCap()
-			}
+	if baseline, ok := f.baseLines[ethtypes.MsgIFTTransfer]; ok && len(baseline) > 0 {
+		if gasFeeCap == nil {
+			gasFeeCap = baseline[0].GasFeeCap()
+		}
+		if gasTipCap == nil {
+			gasTipCap = baseline[0].GasTipCap()
 		}
 	}
 
@@ -643,7 +651,7 @@ func (f *TxFactory) createMsgIFTTransfer(
 		nonce,
 		gasFeeCap,
 		gasTipCap,
-		gasLimit,
+		f.iftGasLimit,
 	)
 }
 
@@ -653,7 +661,6 @@ func (f *TxFactory) createEstimatedIFTTransfer(
 	receiver string,
 	timeout uint64,
 	nonce uint64,
-	useBaseline bool,
 ) (*types.Transaction, error) {
 	transactor, err := iftbindings.NewIftTransactor(f.iftContract.Address(), fromWallet.GetClient())
 	if err != nil {
@@ -668,9 +675,6 @@ func (f *TxFactory) createEstimatedIFTTransfer(
 		GasFeeCap: f.txOpts.GasFeeCap,
 		Context:   ctx,
 		NoSend:    true,
-	}
-	if useBaseline {
-		applyBaselinesToTxOpts(f.baseLines[ethtypes.MsgIFTTransfer][0], txOpts)
 	}
 
 	tx, err := transactor.IftTransfer(

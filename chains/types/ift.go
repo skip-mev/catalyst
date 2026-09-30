@@ -13,10 +13,6 @@ type IFTConfig struct {
 	Destination IFTDestinationConfig `yaml:"destination"          json:"destination"`
 	Cosmos      *IFTCosmosConfig     `yaml:"cosmos,omitempty"     json:"cosmos,omitempty"`
 	EVM         *IFTEVMConfig        `yaml:"evm,omitempty"        json:"evm,omitempty"`
-
-	// ZeroGas keeps the legacy IFT builder.
-	// False uses the same gas path as an EVM ERC-20 transfer.
-	ZeroGas bool `yaml:"zero_gas,omitempty" json:"zero_gas,omitempty"`
 }
 
 type IFTRecipientsConfig struct {

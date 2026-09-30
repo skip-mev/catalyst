@@ -139,17 +139,27 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 	// Reset wallet allocation for each block/load to enable role rotation
 	r.txFactory.ResetWalletAllocation()
 
-	// Gas for a given message type is stable for the block. Estimate once, then copy it.
-	if err := r.txFactory.SetBaselines(ctx, r.spec.Msgs); err != nil {
-		return 0, fmt.Errorf("failed to set baseline txs: %w", err)
+	// IFT gas is stable for the block: estimate once, inflate with estimateIFTGas, reuse.
+	// Non-IFT messages keep per-tx raw estimation (pre-baseline block-mode behavior).
+	iftMsgs := make([]loadtesttypes.LoadTestMsg, 0, 1)
+	for _, msg := range r.spec.Msgs {
+		if msg.Type == inttypes.MsgIFTTransfer {
+			iftMsgs = append(iftMsgs, msg)
+		}
+	}
+	if len(iftMsgs) > 0 {
+		if err := r.txFactory.SetBaselines(ctx, iftMsgs); err != nil {
+			return 0, fmt.Errorf("failed to estimate ift gas: %w", err)
+		}
 	}
 
 	// first we build the tx load. this constructs all the ethereum txs based in the spec.
 	r.logger.Debug("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
 	txs := make([]*gethtypes.Transaction, 0, len(r.spec.Msgs))
 	for _, msgSpec := range r.spec.Msgs {
+		useBaseline := msgSpec.Type == inttypes.MsgIFTTransfer
 		for i := 0; i < msgSpec.NumMsgs; i++ {
-			load, err := r.buildLoad(msgSpec, true)
+			load, err := r.buildLoad(msgSpec, useBaseline)
 			if err != nil {
 				return 0, fmt.Errorf("failed to build load: %w", err)
 			}

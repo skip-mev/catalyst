@@ -432,7 +432,6 @@ func initIFT(runner *Runner, spec loadtesttypes.LoadTestSpec) error {
 		spec.IFT.ClientID,
 		amount,
 		spec.IFT.Timeout,
-		spec.IFT.ZeroGas,
 	)
 
 	return nil

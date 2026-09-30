@@ -65,7 +65,7 @@ func (c *GRPCClient) SubmitTxHash(ctx context.Context, txHash string) error {
 
 		callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 		start := time.Now()
-		_, err := c.client.Relay(callCtx, connect.NewRequest(&relayerv2.RelayRequest{
+		res, err := c.client.Relay(callCtx, connect.NewRequest(&relayerv2.RelayRequest{
 			TxHash:        txHash,
 			SourceChainId: c.chainID,
 			Selection: &relayerv2.RelayRequest_AllPackets{
@@ -77,6 +77,12 @@ func (c *GRPCClient) SubmitTxHash(ctx context.Context, txHash string) error {
 			c.metrics.Duration.WithLabelValues(c.chainID).Observe(time.Since(start).Seconds())
 		}
 
+		// AllPackets RPC succeeds even when every packet is skipped as
+		// unconfigured (see ibc proto/cli/relayer.proto AllPackets). Treat a
+		// response with no SELECTED packets as a failed submission.
+		if err == nil {
+			err = requireSelectedPackets(res.Msg)
+		}
 		if err == nil {
 			if c.metrics != nil {
 				c.metrics.Success.WithLabelValues(c.chainID).Inc()
@@ -94,6 +100,22 @@ func (c *GRPCClient) SubmitTxHash(ctx context.Context, txHash string) error {
 
 func (c *GRPCClient) Close() error {
 	return nil
+}
+
+// requireSelectedPackets fails when the Relay RPC returned no error but did
+// not select any packet for delivery. AllPackets reports observed packets with
+// PACKET_SELECTION_UNCONFIGURED (and succeeds) when this relayer has no client
+// or route; an empty packets list is likewise not a successful submission.
+func requireSelectedPackets(resp *relayerv2.RelayResponse) error {
+	if resp == nil {
+		return fmt.Errorf("empty relay response")
+	}
+	for _, p := range resp.GetPackets() {
+		if p.GetSelection() == relayerv2.PacketSelection_PACKET_SELECTION_SELECTED {
+			return nil
+		}
+	}
+	return fmt.Errorf("relayer selected no packets for delivery (%d observed)", len(resp.GetPackets()))
 }
 
 func baseURL(raw string) string {

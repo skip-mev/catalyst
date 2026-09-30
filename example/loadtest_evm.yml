@@ -1,5 +1,5 @@
 # Example load test configuration
-name: "eth_loadtest"
+name: "evm_loadtest"
 description: "testing"
 kind: "evm"
 chain_id: "262144"
