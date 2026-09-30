@@ -6,11 +6,12 @@ import (
 
 // LoadTestResult represents the results of a load test
 type LoadTestResult struct {
-	Overall   OverallStats
-	ByMessage map[MsgType]MessageStats
-	ByNode    map[string]NodeStats
-	ByBlock   []BlockStat
-	Error     string `json:"error,omitempty"`
+	Overall                  OverallStats
+	ByMessage                map[MsgType]MessageStats
+	ByNode                   map[string]NodeStats
+	ByBlock                  []BlockStat
+	ReceiptCollectionSkipped bool
+	Error                    string `json:"error,omitempty"`
 }
 
 // OverallStats represents the overall statistics of the load test
@@ -23,6 +24,7 @@ type OverallStats struct {
 	SuccessfulTransactions int
 	// FailedTransactions are all txs that were included in a block, but failed execution.
 	FailedTransactions     int
+	BroadcastFailures      int
 	RelayFailures          int
 	AvgGasPerTransaction   int64
 	AvgBlockGasUtilization float64
@@ -42,11 +44,12 @@ type MessageStats struct {
 
 // TransactionStats represents transaction-related statistics
 type TransactionStats struct {
-	TotalSent     int
-	TotalIncluded int
-	Successful    int
-	Failed        int
-	RelayFailures int
+	TotalSent         int
+	TotalIncluded     int
+	Successful        int
+	Failed            int
+	BroadcastFailures int
+	RelayFailures     int
 }
 
 // GasStats represents gas-related statistics

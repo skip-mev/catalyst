@@ -3,6 +3,7 @@ package runner
 import (
 	"crypto/ecdsa"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -13,7 +14,63 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
+	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 )
+
+func TestTryIFTBaselineUsesNextWalletAfterFailure(t *testing.T) {
+	wallets := []*wallet.InteractingWallet{
+		new(wallet.InteractingWallet),
+		new(wallet.InteractingWallet),
+		new(wallet.InteractingWallet),
+	}
+	attempts := 0
+
+	err := tryIFTBaseline(wallets, func(candidate *wallet.InteractingWallet) error {
+		attempts++
+		if candidate != wallets[2] {
+			return errors.New("cannot estimate")
+		}
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 3, attempts)
+}
+
+func TestTryIFTBaselineReturnsErrorWhenAllWalletsFail(t *testing.T) {
+	wallets := []*wallet.InteractingWallet{
+		new(wallet.InteractingWallet),
+		new(wallet.InteractingWallet),
+	}
+
+	err := tryIFTBaseline(wallets, func(*wallet.InteractingWallet) error {
+		return errors.New("cannot estimate")
+	})
+
+	require.Error(t, err)
+}
+
+func TestSentOnlyResultSeparatesBroadcastFailures(t *testing.T) {
+	sent := []*inttypes.SentTx{
+		{MsgType: inttypes.ContractCall},
+		{MsgType: inttypes.ContractCall, SendTransactionErr: errors.New("rejected")},
+		{MsgType: inttypes.MsgIFTTransfer, RelayErr: errors.New("relay failed")},
+	}
+
+	result := sentOnlyResult(sent)
+
+	require.True(t, result.ReceiptCollectionSkipped)
+	require.Equal(t, 2, result.Overall.TotalTransactions)
+	require.Equal(t, 1, result.Overall.BroadcastFailures)
+	require.Equal(t, 1, result.Overall.RelayFailures)
+	require.Equal(t, 1, result.ByMessage[inttypes.ContractCall].Transactions.TotalSent)
+	require.Equal(t, 1, result.ByMessage[inttypes.ContractCall].Transactions.BroadcastFailures)
+	require.Equal(t, 1, result.ByMessage[inttypes.MsgIFTTransfer].Transactions.TotalSent)
+	require.Equal(t, 1, result.ByMessage[inttypes.MsgIFTTransfer].Transactions.RelayFailures)
+}
 
 func TestTxCaching(t *testing.T) {
 	f, err := os.CreateTemp(t.TempDir(), "tx_cache")

@@ -80,25 +80,37 @@ func (f *TxFactory) SetBaselines(ctx context.Context, msgs []loadtesttypes.LoadT
 	f.logger.Info("Setting baselines for transactions...")
 	for _, msg := range msgs {
 		wallet := f.txDistribution.GetWallet(0)
-		nonce, err := wallet.GetNonce(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get nonce of %s: %w", wallet.FormattedAddress(), err)
+		if err := f.SetBaseline(ctx, msg, wallet); err != nil {
+			return err
 		}
-		spec := loadtesttypes.LoadTestMsg{
-			Type:    msg.Type,
-			NumMsgs: 1,
+	}
+	return nil
+}
+
+// SetBaseline estimates and stores a baseline using the provided wallet.
+func (f *TxFactory) SetBaseline(
+	ctx context.Context,
+	msg loadtesttypes.LoadTestMsg,
+	wallet *ethwallet.InteractingWallet,
+) error {
+	nonce, err := wallet.GetNonce(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get nonce of %s: %w", wallet.FormattedAddress(), err)
+	}
+	spec := loadtesttypes.LoadTestMsg{
+		Type:    msg.Type,
+		NumMsgs: 1,
+	}
+	txs, err := f.BuildTxs(spec, wallet, nonce, false)
+	if err != nil {
+		return fmt.Errorf("failed to build txs: %w", err)
+	}
+	f.baseLines[msg.Type] = txs
+	if msg.Type == ethtypes.MsgIFTTransfer {
+		if len(txs) == 0 {
+			return fmt.Errorf("failed to estimate ift gas: empty baseline")
 		}
-		txs, err := f.BuildTxs(spec, wallet, nonce, false)
-		if err != nil {
-			return fmt.Errorf("failed to build txs: %w", err)
-		}
-		f.baseLines[msg.Type] = txs
-		if msg.Type == ethtypes.MsgIFTTransfer {
-			if len(txs) == 0 {
-				return fmt.Errorf("failed to estimate ift gas: empty baseline")
-			}
-			f.iftGasLimit = estimateIFTGas(txs[0].Gas())
-		}
+		f.iftGasLimit = estimateIFTGas(txs[0].Gas())
 	}
 	return nil
 }

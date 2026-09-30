@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
+	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
@@ -147,9 +149,15 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 			iftMsgs = append(iftMsgs, msg)
 		}
 	}
+	iftBaselineReady := len(iftMsgs) == 0
 	if len(iftMsgs) > 0 {
-		if err := r.txFactory.SetBaselines(ctx, iftMsgs); err != nil {
-			return 0, fmt.Errorf("failed to estimate ift gas: %w", err)
+		err := tryIFTBaseline(r.wallets, func(wallet *wallet.InteractingWallet) error {
+			return r.txFactory.SetBaseline(ctx, iftMsgs[0], wallet)
+		})
+		if err != nil {
+			r.logger.Error("skipping IFT load: failed to estimate gas with any wallet", zap.Error(err))
+		} else {
+			iftBaselineReady = true
 		}
 	}
 
@@ -157,6 +165,9 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 	r.logger.Debug("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
 	txs := make([]*gethtypes.Transaction, 0, len(r.spec.Msgs))
 	for _, msgSpec := range r.spec.Msgs {
+		if msgSpec.Type == inttypes.MsgIFTTransfer && !iftBaselineReady {
+			continue
+		}
 		useBaseline := msgSpec.Type == inttypes.MsgIFTTransfer
 		for i := 0; i < msgSpec.NumMsgs; i++ {
 			load, err := r.buildLoad(msgSpec, useBaseline)
@@ -213,4 +224,22 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 	r.sentTxs = append(r.sentTxs, sentTxs...)
 	r.sentTxsMu.Unlock()
 	return len(sentTxs), nil
+}
+
+func tryIFTBaseline(
+	wallets []*wallet.InteractingWallet,
+	setBaseline func(*wallet.InteractingWallet) error,
+) error {
+	if len(wallets) == 0 {
+		return errors.New("no wallets available")
+	}
+	errs := make([]error, 0, len(wallets))
+	for _, candidate := range wallets {
+		if err := setBaseline(candidate); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		return nil
+	}
+	return errors.Join(errs...)
 }

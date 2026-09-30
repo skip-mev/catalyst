@@ -449,16 +449,29 @@ func (r *Runner) SentTxs() []*inttypes.SentTx {
 
 // sentOnlyResult reports broadcasts and relay errors without reading chain receipts.
 func sentOnlyResult(sent []*inttypes.SentTx) loadtesttypes.LoadTestResult {
-	relayFailures := 0
+	result := loadtesttypes.LoadTestResult{
+		ByMessage:                make(map[loadtesttypes.MsgType]loadtesttypes.MessageStats),
+		ReceiptCollectionSkipped: true,
+	}
 	for _, tx := range sent {
-		if tx != nil && tx.RelayFailed() {
-			relayFailures++
+		if tx == nil {
+			continue
 		}
+
+		stats := result.ByMessage[tx.MsgType]
+		if tx.SendTransactionErr != nil {
+			result.Overall.BroadcastFailures++
+			stats.Transactions.BroadcastFailures++
+		} else {
+			result.Overall.TotalTransactions++
+			stats.Transactions.TotalSent++
+		}
+		if tx.RelayFailed() {
+			result.Overall.RelayFailures++
+			stats.Transactions.RelayFailures++
+		}
+		result.ByMessage[tx.MsgType] = stats
 	}
-	return loadtesttypes.LoadTestResult{
-		Overall: loadtesttypes.OverallStats{
-			TotalTransactions: len(sent),
-			RelayFailures:     relayFailures,
-		},
-	}
+
+	return result
 }

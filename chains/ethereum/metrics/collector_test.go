@@ -192,12 +192,29 @@ func TestCalculateTotalSentByTypeUsesRecordedMessageTypes(t *testing.T) {
 		{MsgType: ethtypes.MsgIFTTransfer},
 		{MsgType: ethtypes.MsgIFTTransfer},
 		{MsgType: ethtypes.ContractCall},
+		{MsgType: ethtypes.ContractCall, SendTransactionErr: errors.New("rejected")},
 	}
 
 	totalSent := calculateTotalSentByType(txs)
 
 	require.Equal(t, uint64(2), totalSent[ethtypes.MsgIFTTransfer])
 	require.Equal(t, uint64(1), totalSent[ethtypes.ContractCall])
+}
+
+func TestCountBroadcastFailures(t *testing.T) {
+	sentTxs := []*ethtypes.SentTx{
+		{MsgType: ethtypes.MsgIFTTransfer, SendTransactionErr: errors.New("rejected")},
+		{MsgType: ethtypes.MsgIFTTransfer},
+		nil,
+	}
+	msgStats := map[loadtesttypes.MsgType]loadtesttypes.MessageStats{
+		ethtypes.MsgIFTTransfer: {},
+	}
+
+	total := countBroadcastFailures(sentTxs, msgStats)
+
+	require.Equal(t, 1, total)
+	require.Equal(t, 1, msgStats[ethtypes.MsgIFTTransfer].Transactions.BroadcastFailures)
 }
 
 func TestCountRelayFailures(t *testing.T) {
@@ -235,15 +252,56 @@ func TestCountRelayFailuresIgnoresBroadcastOrReceiptFailures(t *testing.T) {
 	require.Equal(t, 0, msgStats[ethtypes.MsgIFTTransfer].Transactions.RelayFailures)
 }
 
-func TestClassifyReceiptMsgTypePrefersRecordedSentType(t *testing.T) {
-	txHash := common.HexToHash("0x1")
-	receipt := &gethtypes.Receipt{
-		TxHash: txHash,
+func TestBuildBlockStatsIgnoresUnrelatedReceipts(t *testing.T) {
+	sentHash := common.HexToHash("0x1")
+	unrelatedHash := common.HexToHash("0x2")
+	block := gethtypes.NewBlockWithHeader(&gethtypes.Header{
+		Number:   common.Big1,
+		Time:     100,
+		GasLimit: 100,
+		GasUsed:  30,
+	})
+	receipts := gethtypes.Receipts{
+		{TxHash: sentHash, Status: gethtypes.ReceiptStatusSuccessful, GasUsed: 10},
+		{TxHash: unrelatedHash, Status: gethtypes.ReceiptStatusFailed, GasUsed: 20},
 	}
 
-	msgType := classifyReceiptMsgType(receipt, map[common.Hash]loadtesttypes.MsgType{
-		txHash: ethtypes.MsgIFTTransfer,
+	stats := buildBlockStats(block, receipts, map[common.Hash]loadtesttypes.MsgType{
+		sentHash: ethtypes.MsgIFTTransfer,
 	})
 
-	require.Equal(t, ethtypes.MsgIFTTransfer, msgType)
+	require.Len(t, stats.MessageStats, 1)
+	require.Equal(t, 1, stats.MessageStats[ethtypes.MsgIFTTransfer].SuccessfulTxs)
+	require.Equal(t, 0, stats.MessageStats[ethtypes.MsgIFTTransfer].FailedTxs)
+	require.Equal(t, int64(10), stats.MessageStats[ethtypes.MsgIFTTransfer].GasUsed)
+}
+
+func TestSummarizeReceiptsIgnoresUnrelatedTransactions(t *testing.T) {
+	successHash := common.HexToHash("0x1")
+	failedHash := common.HexToHash("0x2")
+	unrelatedHash := common.HexToHash("0x3")
+	receipts := map[uint64]gethtypes.Receipts{
+		1: {
+			{TxHash: successHash, Status: gethtypes.ReceiptStatusSuccessful, GasUsed: 10},
+			{TxHash: unrelatedHash, Status: gethtypes.ReceiptStatusSuccessful, GasUsed: 100},
+		},
+		2: {
+			{TxHash: failedHash, Status: gethtypes.ReceiptStatusFailed, GasUsed: 30},
+		},
+	}
+	msgTypes := map[common.Hash]loadtesttypes.MsgType{
+		successHash: ethtypes.MsgIFTTransfer,
+		failedHash:  ethtypes.MsgIFTTransfer,
+	}
+	msgStats := map[loadtesttypes.MsgType]loadtesttypes.MessageStats{
+		ethtypes.MsgIFTTransfer: {Gas: loadtesttypes.GasStats{Min: 1<<63 - 1}},
+	}
+
+	included, successful, failed, averageGas := summarizeReceipts(receipts, msgTypes, msgStats)
+
+	require.Equal(t, 2, included)
+	require.Equal(t, 1, successful)
+	require.Equal(t, 1, failed)
+	require.Equal(t, float64(20), averageGas)
+	require.Equal(t, int64(40), msgStats[ethtypes.MsgIFTTransfer].Gas.Total)
 }
