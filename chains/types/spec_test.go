@@ -13,11 +13,11 @@ import (
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
-func TestLoadTestSpec_Marshal_Unmarshal_Eth(t *testing.T) {
+func TestLoadTestSpec_Marshal_Unmarshal_EVM(t *testing.T) {
 	var spec loadtesttypes.LoadTestSpec
 	spec.Name = "worker"
-	spec.Description = "eth load test"
-	spec.Kind = "eth"
+	spec.Description = "evm load test"
+	spec.Kind = loadtesttypes.KindEVM
 	spec.ChainID = "262144"
 	spec.NumOfBlocks = 200
 	spec.BaseMnemonic = "seed phrase goes here"
@@ -47,8 +47,8 @@ func TestLoadTestSpec_Marshal_Unmarshal_Eth(t *testing.T) {
 func TestEthereum(t *testing.T) {
 	yml := []byte(`
 name: worker
-description: eth load test
-kind: eth
+description: evm load test
+kind: evm
 chain_id: 2341
 num_of_blocks: 200
 base_mnemonic: "seed phrase goes here"
@@ -75,6 +75,23 @@ chain_config:
 	require.Equal(t, expectedTxOpts, cfg.TxOpts)
 }
 
+func TestLoadTestSpec_Unmarshal_KindEthFails(t *testing.T) {
+	// kind "eth" was renamed to "evm"; there is no alias. Configs that still
+	// say eth must fail as an unknown chain kind.
+	yml := []byte(`
+name: test
+kind: eth
+chain_id: 262144
+num_of_blocks: 1
+chain_config: {}
+`)
+
+	var spec loadtesttypes.LoadTestSpec
+	err := yaml.Unmarshal(yml, &spec)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `unknown chain_config kind "eth"`)
+}
+
 func TestLoadTestSpec_Unmarshal_Cosmos(t *testing.T) {
 	yml := []byte(`
 name: worker
@@ -95,7 +112,7 @@ chain_config:
 	expectedSpec := loadtesttypes.LoadTestSpec{
 		Name:         "worker",
 		Description:  "cosmos load test",
-		Kind:         "cosmos",
+		Kind:         loadtesttypes.KindCosmos,
 		ChainID:      "cosmoshub-4",
 		NumOfBlocks:  200,
 		BaseMnemonic: "seed phrase goes here",
@@ -103,7 +120,7 @@ chain_config:
 		TxTimeout:    30 * time.Second,
 		ChainCfg: &cosmostypes.ChainConfig{
 			GasDenom:       "uatom",
-			Bech32Prefix:   "cosmos",
+			Bech32Prefix:   testBech32Prefix,
 			UnorderedTxs:   true,
 			NodesAddresses: []cosmostypes.NodeAddress{},
 		},

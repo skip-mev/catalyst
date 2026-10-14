@@ -123,5 +123,5 @@ func (s ChainConfig) Validate(_ loadtesttypes.LoadTestSpec) error {
 func (ChainConfig) IsChainConfig() {}
 
 func Register() {
-	loadtesttypes.Register("eth", func() loadtesttypes.ChainConfig { return &ChainConfig{} })
+	loadtesttypes.Register(loadtesttypes.KindEVM, func() loadtesttypes.ChainConfig { return &ChainConfig{} })
 }

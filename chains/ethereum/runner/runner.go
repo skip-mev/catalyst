@@ -45,6 +45,7 @@ type Runner struct {
 	relayer   iftrelayer.Client
 
 	sentTxs         []*inttypes.SentTx
+	sentTxsMu       sync.RWMutex
 	blocksProcessed uint64
 	txTypes         sync.Map
 
@@ -425,6 +426,52 @@ func initIFT(runner *Runner, spec loadtesttypes.LoadTestSpec) error {
 		return fmt.Errorf("parse ift.amount %q", spec.IFT.Amount)
 	}
 
-	runner.txFactory.SetIFTConfig(contract, recipients, spec.IFT.ClientID, amount, spec.IFT.Timeout)
+	runner.txFactory.SetIFTConfig(
+		contract,
+		recipients,
+		spec.IFT.ClientID,
+		amount,
+		spec.IFT.Timeout,
+	)
+
 	return nil
+}
+
+// SentTxs returns a copy of the transactions recorded so far.
+func (r *Runner) SentTxs() []*inttypes.SentTx {
+	r.sentTxsMu.RLock()
+	defer r.sentTxsMu.RUnlock()
+
+	out := make([]*inttypes.SentTx, len(r.sentTxs))
+	copy(out, r.sentTxs)
+	return out
+}
+
+// sentOnlyResult reports broadcasts and relay errors without reading chain receipts.
+func sentOnlyResult(sent []*inttypes.SentTx) loadtesttypes.LoadTestResult {
+	result := loadtesttypes.LoadTestResult{
+		ByMessage:                make(map[loadtesttypes.MsgType]loadtesttypes.MessageStats),
+		ReceiptCollectionSkipped: true,
+	}
+	for _, tx := range sent {
+		if tx == nil {
+			continue
+		}
+
+		stats := result.ByMessage[tx.MsgType]
+		if tx.SendTransactionErr != nil {
+			result.Overall.BroadcastFailures++
+			stats.Transactions.BroadcastFailures++
+		} else {
+			result.Overall.TotalTransactions++
+			stats.Transactions.TotalSent++
+		}
+		if tx.RelayFailed() {
+			result.Overall.RelayFailures++
+			stats.Transactions.RelayFailures++
+		}
+		result.ByMessage[tx.MsgType] = stats
+	}
+
+	return result
 }

@@ -29,7 +29,9 @@ func ProcessResults(
 	startBlock, endBlock uint64,
 	clients []*ethclient.Client,
 ) (*loadtesttypes.LoadTestResult, error) {
-	wg := sync.WaitGroup{}
+	var wg sync.WaitGroup
+	var receiptsMu sync.Mutex
+
 	blockStats := make([]loadtesttypes.BlockStat, endBlock-startBlock+1)
 	receipts := make(map[uint64]gethtypes.Receipts)
 	msgTypeByHash := make(map[common.Hash]loadtesttypes.MsgType, len(sentTxs))
@@ -75,8 +77,11 @@ func ProcessResults(
 			}
 
 			if len(blockReceipts) > 0 {
+				receiptsMu.Lock()
 				receipts[blockReceipts[0].BlockNumber.Uint64()] = blockReceipts
+				receiptsMu.Unlock()
 			}
+
 			blockStats[blockNum-startBlock] = buildBlockStats(block, blockReceipts, msgTypeByHash)
 
 			logger.Info(
@@ -109,37 +114,13 @@ func ProcessResults(
 	}
 
 	// update msg stats and get global tally
-	totalIncluded, totalSuccess, totalFailed := 0, 0, 0
-	totalSent := len(sentTxs)
-	avgGasPerTx := 0.0
-	for _, blockReceipts := range receipts {
-		for _, receipt := range blockReceipts {
-			msgType := classifyReceiptMsgType(receipt, msgTypeByHash)
-			stat := msgStats[msgType]
-
-			// update gas values
-			stat.Gas.Max = max(stat.Gas.Max, int64(receipt.GasUsed)) //nolint:gosec // G115 likely not to happen
-			stat.Gas.Min = min(stat.Gas.Min, int64(receipt.GasUsed)) //nolint:gosec // G115 likely not to happen
-			stat.Gas.Total += int64(receipt.GasUsed)                 //nolint:gosec // G115 likely not to happen
-
-			// inclusion and statuses.
-			stat.Transactions.TotalIncluded++
-			totalIncluded++
-			if receipt.Status == gethtypes.ReceiptStatusSuccessful {
-				totalSuccess++
-				stat.Transactions.Successful++
-			} else {
-				totalFailed++
-				stat.Transactions.Failed++
-			}
-
-			// gas average
-			stat.Gas.Average = stat.Gas.Total / int64(stat.Transactions.TotalIncluded)
-			avgGasPerTx += (float64(receipt.GasUsed) - avgGasPerTx) / float64(totalIncluded)
-			msgStats[msgType] = stat
-		}
+	totalSent := 0
+	for _, count := range totalSentByType {
+		totalSent += int(count) //nolint:gosec // G115: overflow unlikely in practice
 	}
+	totalIncluded, totalSuccess, totalFailed, avgGasPerTx := summarizeReceipts(receipts, msgTypeByHash, msgStats)
 
+	totalBroadcastFailures := countBroadcastFailures(sentTxs, msgStats)
 	totalRelayFailures := countRelayFailures(sentTxs, msgStats)
 
 	// calculate statistics for ALL txs by type. (totals)
@@ -163,6 +144,7 @@ func ProcessResults(
 			TotalIncludedTransactions: totalIncluded,
 			SuccessfulTransactions:    totalSuccess,
 			FailedTransactions:        totalFailed,
+			BroadcastFailures:         totalBroadcastFailures,
 			RelayFailures:             totalRelayFailures,
 			AvgBlockGasUtilization:    avgGasUtilization,
 			AvgGasPerTransaction:      int64(avgGasPerTx),
@@ -180,6 +162,42 @@ func ProcessResults(
 	return result, nil
 }
 
+func summarizeReceipts(
+	receipts map[uint64]gethtypes.Receipts,
+	msgTypeByHash map[common.Hash]loadtesttypes.MsgType,
+	msgStats map[loadtesttypes.MsgType]loadtesttypes.MessageStats,
+) (int, int, int, float64) {
+	totalIncluded, totalSuccess, totalFailed := 0, 0, 0
+	avgGasPerTx := 0.0
+	for _, blockReceipts := range receipts {
+		for _, receipt := range blockReceipts {
+			msgType, ok := msgTypeByHash[receipt.TxHash]
+			if !ok {
+				continue
+			}
+			stat := msgStats[msgType]
+			stat.Gas.Max = max(stat.Gas.Max, int64(receipt.GasUsed)) //nolint:gosec // G115 likely not to happen
+			stat.Gas.Min = min(stat.Gas.Min, int64(receipt.GasUsed)) //nolint:gosec // G115 likely not to happen
+			stat.Gas.Total += int64(receipt.GasUsed)                 //nolint:gosec // G115 likely not to happen
+
+			stat.Transactions.TotalIncluded++
+			totalIncluded++
+			if receipt.Status == gethtypes.ReceiptStatusSuccessful {
+				totalSuccess++
+				stat.Transactions.Successful++
+			} else {
+				totalFailed++
+				stat.Transactions.Failed++
+			}
+
+			stat.Gas.Average = stat.Gas.Total / int64(stat.Transactions.TotalIncluded)
+			avgGasPerTx += (float64(receipt.GasUsed) - avgGasPerTx) / float64(totalIncluded)
+			msgStats[msgType] = stat
+		}
+	}
+	return totalIncluded, totalSuccess, totalFailed, avgGasPerTx
+}
+
 func buildBlockStats(
 	block *gethtypes.Block,
 	receipts gethtypes.Receipts,
@@ -187,7 +205,10 @@ func buildBlockStats(
 ) loadtesttypes.BlockStat {
 	msgStats := make(map[loadtesttypes.MsgType]loadtesttypes.MessageBlockStats)
 	for _, r := range receipts {
-		txType := classifyReceiptMsgType(r, msgTypeByHash)
+		txType, ok := msgTypeByHash[r.TxHash]
+		if !ok {
+			continue
+		}
 		stat := msgStats[txType]
 		if r.Status == gethtypes.ReceiptStatusSuccessful {
 			stat.SuccessfulTxs++
@@ -206,19 +227,6 @@ func buildBlockStats(
 		GasUtilization: float64(block.GasUsed()) / float64(block.GasLimit()),
 	}
 	return stats
-}
-
-func classifyReceiptMsgType(
-	receipt *gethtypes.Receipt,
-	msgTypeByHash map[common.Hash]loadtesttypes.MsgType,
-) loadtesttypes.MsgType {
-	if msgType, ok := msgTypeByHash[receipt.TxHash]; ok {
-		return msgType
-	}
-	if receipt.ContractAddress.Cmp(common.Address{}) == 0 {
-		return types.ContractCall
-	}
-	return types.ContractCreate
 }
 
 func getReceiptsForBlockTxs(
@@ -314,9 +322,29 @@ func trimBlocks(blocks []loadtesttypes.BlockStat) ([]loadtesttypes.BlockStat, er
 func calculateTotalSentByType(sentTxs []*types.SentTx) map[loadtesttypes.MsgType]uint64 {
 	totalSentByType := make(map[loadtesttypes.MsgType]uint64)
 	for _, tx := range sentTxs {
+		if tx == nil || tx.SendTransactionErr != nil {
+			continue
+		}
 		totalSentByType[tx.MsgType]++
 	}
 	return totalSentByType
+}
+
+func countBroadcastFailures(
+	sentTxs []*types.SentTx,
+	msgStats map[loadtesttypes.MsgType]loadtesttypes.MessageStats,
+) int {
+	total := 0
+	for _, sentTx := range sentTxs {
+		if sentTx == nil || sentTx.SendTransactionErr == nil {
+			continue
+		}
+		stat := msgStats[sentTx.MsgType]
+		stat.Transactions.BroadcastFailures++
+		msgStats[sentTx.MsgType] = stat
+		total++
+	}
+	return total
 }
 
 func countRelayFailures(

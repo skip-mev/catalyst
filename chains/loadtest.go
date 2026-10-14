@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	EthKind               = "eth"
-	CosmosKind            = "cosmos"
+	EVMKind               = loadtesttypes.KindEVM
+	CosmosKind            = loadtesttypes.KindCosmos
 	DefaultPrometheusAddr = ":27007"
 )
 
@@ -30,7 +30,7 @@ type Runner interface {
 // LoadTest represents a unified load test that can be executed for any chain kind
 type LoadTest struct {
 	runner       Runner
-	kind         string
+	kind         loadtesttypes.Kind
 	metricServer *http.Server
 }
 
@@ -44,7 +44,7 @@ func NewLoadTest(ctx context.Context, logger *zap.Logger, spec loadtesttypes.Loa
 	metricServer := startPrometheusServer(spec.PrometheusListenAddr, logger)
 
 	switch spec.Kind {
-	case EthKind:
+	case EVMKind:
 		ethRunner, runnerErr := ethrunner.NewRunner(ctx, logger, spec)
 		if runnerErr != nil {
 			return nil, fmt.Errorf("failed to create ethereum runner: %w", runnerErr)

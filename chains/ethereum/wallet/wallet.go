@@ -8,20 +8,18 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
-	ethhd "github.com/cosmos/evm/crypto/hd"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"go.uber.org/zap"
 
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
+	iftaccounts "github.com/skip-mev/catalyst/ift/accounts"
 )
 
 // InteractingWallet represents a wallet that can interact with the Ethereum chain
@@ -68,26 +66,12 @@ func NewWalletsFromSpec(
 		return nil, errors.New("BaseMnemonic is empty")
 	}
 
-	// EXACT path used by 'eth_secp256k1' default account in Ethermint-based chains.
-	const evmDerivationPath = "m/44'/60'/0'/0/0"
-
 	ws := make([]*InteractingWallet, spec.NumWallets)
 	logger.Info("building wallets", zap.Int("num_wallets", spec.NumWallets))
 	for i := range spec.NumWallets {
-		// First wallet uses "" instead of int for passphrase
-		// derive raw 32-byte private key from mnemonic at ETH path .../0
-		passPhrase := strconv.Itoa(i)
-		if i == 0 {
-			passPhrase = ""
-		}
-		derivedPrivKey, err := ethhd.EthSecp256k1.Derive()(m, passPhrase, evmDerivationPath)
+		pk, err := iftaccounts.DeriveEVMKey(m, i)
 		if err != nil {
-			return nil, fmt.Errorf("mnemonic[%d]: derive failed: %w", i, err)
-		}
-
-		pk, err := crypto.ToECDSA(derivedPrivKey)
-		if err != nil {
-			return nil, fmt.Errorf("mnemonic[%d]: invalid ECDSA key: %w", i, err)
+			return nil, fmt.Errorf("mnemonic[%d]: %w", i, err)
 		}
 
 		c := clients[i%len(clients)]

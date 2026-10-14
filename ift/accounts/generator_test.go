@@ -12,7 +12,7 @@ func TestGenerateRecipientsForEVM(t *testing.T) {
 		NumWallets:   2,
 		IFT: &loadtesttypes.IFTConfig{
 			Destination: loadtesttypes.IFTDestinationConfig{
-				Kind: "evm",
+				Kind: loadtesttypes.KindEVM,
 				EVM:  &loadtesttypes.IFTDestinationEVMConfig{},
 			},
 		},
@@ -34,7 +34,7 @@ func TestGenerateRecipientsForCosmos(t *testing.T) {
 		NumWallets:   2,
 		IFT: &loadtesttypes.IFTConfig{
 			Destination: loadtesttypes.IFTDestinationConfig{
-				Kind: "cosmos",
+				Kind: loadtesttypes.KindCosmos,
 				Cosmos: &loadtesttypes.IFTDestinationCosmosConfig{
 					Bech32Prefix: "cosmos",
 				},

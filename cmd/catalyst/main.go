@@ -55,7 +55,7 @@ func main() {
 	exitIfErr(err, "failed to parse config file")
 	exitIfErr(spec.Validate(), "failed to validate config file")
 
-	kind := strings.ToLower(strings.TrimSpace(spec.Kind))
+	kind := strings.ToLower(strings.TrimSpace(string(spec.Kind)))
 	if kind == "" {
 		exitIfErr(errFailed, "config is missing required field 'kind'")
 	}

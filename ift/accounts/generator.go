@@ -16,9 +16,9 @@ func NewGenerator(spec loadtesttypes.LoadTestSpec) (Generator, error) {
 	}
 
 	switch spec.IFT.Destination.Kind {
-	case "evm":
+	case loadtesttypes.KindEVM:
 		return newEVMGenerator(spec.BaseMnemonic), nil
-	case "cosmos":
+	case loadtesttypes.KindCosmos:
 		return newCosmosGenerator(spec.BaseMnemonic, spec.IFT.Destination.Cosmos.Bech32Prefix), nil
 	default:
 		return nil, fmt.Errorf("unsupported destination kind %q", spec.IFT.Destination.Kind)

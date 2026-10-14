@@ -3,13 +3,14 @@ package relayer
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"connectrpc.com/connect"
+	relayerv2 "github.com/cosmos/ibc/cli/api/v2/relayer"
 
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
-	relayerapi "github.com/skip-mev/catalyst/ift/relayer/pb/relayerapi"
 )
 
 const (
@@ -22,8 +23,7 @@ type Client interface {
 }
 
 type GRPCClient struct {
-	conn    *grpc.ClientConn
-	client  relayerapi.RelayerApiServiceClient
+	client  relayerv2.RelayerApiServiceClient
 	chainID string
 	timeout time.Duration
 	metrics *Metrics
@@ -35,17 +35,12 @@ func NewGRPCClient(cfg loadtesttypes.RelayConfig, chainID string, metrics *Metri
 		timeout = 10 * time.Second
 	}
 
-	conn, err := grpc.NewClient(
-		cfg.URL,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create relayer grpc client: %w", err)
-	}
-
 	return &GRPCClient{
-		conn:    conn,
-		client:  relayerapi.NewRelayerApiServiceClient(conn),
+		client: relayerv2.NewRelayerApiServiceClient(
+			newH2CClient(),
+			baseURL(cfg.URL),
+			connect.WithGRPC(),
+		),
 		chainID: chainID,
 		timeout: timeout,
 		metrics: metrics,
@@ -70,15 +65,24 @@ func (c *GRPCClient) SubmitTxHash(ctx context.Context, txHash string) error {
 
 		callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 		start := time.Now()
-		_, err := c.client.Relay(callCtx, &relayerapi.RelayRequest{
-			TxHash:  txHash,
-			ChainId: c.chainID,
-		})
+		res, err := c.client.Relay(callCtx, connect.NewRequest(&relayerv2.RelayRequest{
+			TxHash:        txHash,
+			SourceChainId: c.chainID,
+			Selection: &relayerv2.RelayRequest_AllPackets{
+				AllPackets: &relayerv2.AllPackets{},
+			},
+		}))
 		cancel()
 		if c.metrics != nil {
 			c.metrics.Duration.WithLabelValues(c.chainID).Observe(time.Since(start).Seconds())
 		}
 
+		// AllPackets RPC succeeds even when every packet is skipped as
+		// unconfigured (see ibc proto/cli/relayer.proto AllPackets). Treat a
+		// response with no SELECTED packets as a failed submission.
+		if err == nil {
+			err = requireSelectedPackets(res.Msg)
+		}
 		if err == nil {
 			if c.metrics != nil {
 				c.metrics.Success.WithLabelValues(c.chainID).Inc()
@@ -95,9 +99,40 @@ func (c *GRPCClient) SubmitTxHash(ctx context.Context, txHash string) error {
 }
 
 func (c *GRPCClient) Close() error {
-	if c.conn == nil {
-		return nil
-	}
+	return nil
+}
 
-	return c.conn.Close()
+// requireSelectedPackets fails when the Relay RPC returned no error but did
+// not select any packet for delivery. AllPackets reports observed packets with
+// PACKET_SELECTION_UNCONFIGURED (and succeeds) when this relayer has no client
+// or route; an empty packets list is likewise not a successful submission.
+func requireSelectedPackets(resp *relayerv2.RelayResponse) error {
+	if resp == nil {
+		return fmt.Errorf("empty relay response")
+	}
+	for _, p := range resp.GetPackets() {
+		if p.GetSelection() == relayerv2.PacketSelection_PACKET_SELECTION_SELECTED {
+			return nil
+		}
+	}
+	return fmt.Errorf("relayer selected no packets for delivery (%d observed)", len(resp.GetPackets()))
+}
+
+func baseURL(raw string) string {
+	if strings.Contains(raw, "://") {
+		return strings.TrimRight(raw, "/")
+	}
+	return "http://" + raw
+}
+
+// h2c matches the IBC CLI client: the relayer serves gRPC on plaintext HTTP/2.
+func newH2CClient() *http.Client {
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetHTTP2(true)
+	protocols.SetUnencryptedHTTP2(true)
+
+	return &http.Client{
+		Transport: &http.Transport{Protocols: protocols},
+	}
 }

@@ -162,11 +162,17 @@ loop:
 	<-collectionDone // wait for collection to finish
 
 	r.logger.Info("go routines have completed", zap.Int("total_txs", len(sentTxs)))
+	r.sentTxsMu.Lock()
 	r.sentTxs = sentTxs
+	r.sentTxsMu.Unlock()
 
 	r.logger.Info("Loadtest complete. Waiting for mempool to clear")
 
 	waitForEmptyMempool(ctx, r.clients, r.logger, 1*time.Minute)
+	if r.spec.SkipReceiptCollection {
+		r.logger.Info("skipping receipt collection")
+		return sentOnlyResult(sentTxs), nil
+	}
 	// sleep here for a sec because, even though the mempool may be empty, we could still be in process of executing those txs.
 	time.Sleep(5 * time.Second)
 	blockNum, err = r.wallets[0].GetClient().BlockNumber(ctx)

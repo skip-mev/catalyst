@@ -34,6 +34,10 @@ func NewTransferContract(address string) (*TransferContract, error) {
 	}, nil
 }
 
+func (c *TransferContract) Address() common.Address {
+	return c.address
+}
+
 func (c *TransferContract) BuildTransferTx(
 	ctx context.Context,
 	fromWallet *ethwallet.InteractingWallet,
@@ -49,6 +53,33 @@ func (c *TransferContract) BuildTransferTx(
 	calldata, err := c.abi.Pack("iftTransfer", clientID, receiver, amount, timeoutTimestamp)
 	if err != nil {
 		return nil, fmt.Errorf("pack iftTransfer calldata: %w", err)
+	}
+
+	// gasLimit == 0 is an explicit gasless-chain limit. CreateSignedDynamicFeeTx treats 0 as
+	// "estimate", so build and sign directly to preserve the zero limit.
+	if gasLimit == 0 {
+		chainID, err := fromWallet.GetClient().ChainID(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get chain id: %w", err)
+		}
+		if gasTipCap == nil || gasFeeCap == nil {
+			return nil, fmt.Errorf("gas tip/fee caps required for gasless ift transfer")
+		}
+		tx := gethtypes.NewTx(&gethtypes.DynamicFeeTx{
+			ChainID:   chainID,
+			Nonce:     nonce,
+			GasTipCap: gasTipCap,
+			GasFeeCap: gasFeeCap,
+			Gas:       0,
+			To:        &c.address,
+			Value:     big.NewInt(0),
+			Data:      calldata,
+		})
+		signedTx, err := fromWallet.Signer.SignDynamicFeeTx(tx)
+		if err != nil {
+			return nil, fmt.Errorf("sign gasless ift transfer: %w", err)
+		}
+		return signedTx, nil
 	}
 
 	return fromWallet.CreateSignedDynamicFeeTx(

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/skip-mev/catalyst/chains/ethereum/metrics"
 	inttypes "github.com/skip-mev/catalyst/chains/ethereum/types"
+	"github.com/skip-mev/catalyst/chains/ethereum/wallet"
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
 
@@ -107,6 +109,21 @@ func (r *Runner) runOnBlocks(ctx context.Context) (loadtesttypes.LoadTestResult,
 
 		waitForEmptyMempool(ctx, r.clients, r.logger, 1*time.Minute)
 
+		if r.spec.SkipReceiptCollection {
+			r.logger.Info("skipping receipt collection")
+			return sentOnlyResult(r.sentTxs), nil
+		}
+
+		// The last subscribed header is the one that triggered submission.
+		// Inclusion lands in a later block; extend the window through the tip.
+		latest, err := r.wallets[0].GetClient().BlockNumber(ctx)
+		if err != nil {
+			return loadtesttypes.LoadTestResult{}, fmt.Errorf("failed to get ending block number: %w", err)
+		}
+		if latest > endingBlock {
+			endingBlock = latest
+		}
+
 		collectorStartTime := time.Now()
 		collectorResults, err := metrics.ProcessResults(ctx, r.logger, r.sentTxs, startingBlock, endingBlock, r.clients)
 		if err != nil {
@@ -124,12 +141,36 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 	// Reset wallet allocation for each block/load to enable role rotation
 	r.txFactory.ResetWalletAllocation()
 
+	// IFT gas is stable for the block: estimate once, inflate with estimateIFTGas, reuse.
+	// Non-IFT messages keep per-tx raw estimation (pre-baseline block-mode behavior).
+	iftMsgs := make([]loadtesttypes.LoadTestMsg, 0, 1)
+	for _, msg := range r.spec.Msgs {
+		if msg.Type == inttypes.MsgIFTTransfer {
+			iftMsgs = append(iftMsgs, msg)
+		}
+	}
+	iftBaselineReady := len(iftMsgs) == 0
+	if len(iftMsgs) > 0 {
+		err := tryIFTBaseline(r.wallets, func(wallet *wallet.InteractingWallet) error {
+			return r.txFactory.SetBaseline(ctx, iftMsgs[0], wallet)
+		})
+		if err != nil {
+			r.logger.Error("skipping IFT load: failed to estimate gas with any wallet", zap.Error(err))
+		} else {
+			iftBaselineReady = true
+		}
+	}
+
 	// first we build the tx load. this constructs all the ethereum txs based in the spec.
 	r.logger.Debug("building loads", zap.Int("num_msg_specs", len(r.spec.Msgs)))
 	txs := make([]*gethtypes.Transaction, 0, len(r.spec.Msgs))
 	for _, msgSpec := range r.spec.Msgs {
+		if msgSpec.Type == inttypes.MsgIFTTransfer && !iftBaselineReady {
+			continue
+		}
+		useBaseline := msgSpec.Type == inttypes.MsgIFTTransfer
 		for i := 0; i < msgSpec.NumMsgs; i++ {
-			load, err := r.buildLoad(msgSpec, false)
+			load, err := r.buildLoad(msgSpec, useBaseline)
 			if err != nil {
 				return 0, fmt.Errorf("failed to build load: %w", err)
 			}
@@ -179,6 +220,26 @@ func (r *Runner) submitLoad(ctx context.Context) (int, error) {
 
 	wg.Wait()
 
+	r.sentTxsMu.Lock()
 	r.sentTxs = append(r.sentTxs, sentTxs...)
+	r.sentTxsMu.Unlock()
 	return len(sentTxs), nil
+}
+
+func tryIFTBaseline(
+	wallets []*wallet.InteractingWallet,
+	setBaseline func(*wallet.InteractingWallet) error,
+) error {
+	if len(wallets) == 0 {
+		return errors.New("no wallets available")
+	}
+	errs := make([]error, 0, len(wallets))
+	for _, candidate := range wallets {
+		if err := setBaseline(candidate); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		return nil
+	}
+	return errors.Join(errs...)
 }

@@ -5,12 +5,6 @@ import (
 	"time"
 )
 
-const (
-	ChainTypeCosmos = "cosmos"
-	ChainTypeEVM    = "evm"
-	ChainTypeETH    = "eth"
-)
-
 type IFTConfig struct {
 	ClientID    string               `yaml:"client_id"            json:"client_id"`
 	Amount      string               `yaml:"amount"               json:"amount"`
@@ -36,7 +30,7 @@ type IFTEVMConfig struct {
 }
 
 type IFTDestinationConfig struct {
-	Kind   string                      `yaml:"kind"             json:"kind"`
+	Kind   Kind                        `yaml:"kind"             json:"kind"`
 	Cosmos *IFTDestinationCosmosConfig `yaml:"cosmos,omitempty" json:"cosmos,omitempty"`
 	EVM    *IFTDestinationEVMConfig    `yaml:"evm,omitempty"    json:"evm,omitempty"`
 }
@@ -77,22 +71,22 @@ func (c *IFTConfig) Validate(spec LoadTestSpec) error {
 	}
 
 	switch spec.Kind {
-	case ChainTypeCosmos:
+	case KindCosmos:
 		if err := c.validateCosmos(); err != nil {
 			return err
 		}
-		if c.Destination.Kind != ChainTypeEVM && c.Destination.Kind != ChainTypeCosmos {
+		if c.Destination.Kind != KindEVM && c.Destination.Kind != KindCosmos {
 			return fmt.Errorf(
 				"ift.destination.kind %q is incompatible with source kind %q",
 				c.Destination.Kind,
 				spec.Kind,
 			)
 		}
-	case ChainTypeETH:
+	case KindEVM:
 		if err := c.validateEVM(); err != nil {
 			return err
 		}
-		if c.Destination.Kind != ChainTypeCosmos && c.Destination.Kind != ChainTypeEVM {
+		if c.Destination.Kind != KindCosmos && c.Destination.Kind != KindEVM {
 			return fmt.Errorf(
 				"ift.destination.kind %q is incompatible with source kind %q",
 				c.Destination.Kind,
@@ -121,7 +115,7 @@ func (c *IFTConfig) validateCosmos() error {
 
 func (c *IFTConfig) validateEVM() error {
 	if c.EVM == nil {
-		return fmt.Errorf("ift.evm must be specified for eth runners")
+		return fmt.Errorf("ift.evm must be specified for evm runners")
 	}
 	if c.EVM.ContractAddress == "" {
 		return fmt.Errorf("ift.evm.contract_address must be specified")
@@ -131,12 +125,12 @@ func (c *IFTConfig) validateEVM() error {
 
 func (c IFTDestinationConfig) Validate() error {
 	switch c.Kind {
-	case ChainTypeEVM:
+	case KindEVM:
 		if c.EVM == nil {
 			return fmt.Errorf("ift.destination.evm must be specified for evm destinations")
 		}
 		return nil
-	case ChainTypeCosmos:
+	case KindCosmos:
 		if c.Cosmos == nil {
 			return fmt.Errorf("ift.destination.cosmos must be specified for cosmos destinations")
 		}

@@ -171,7 +171,7 @@ func init() {
 }
 
 func Register() {
-	loadtesttypes.Register("cosmos", func() loadtesttypes.ChainConfig { return &ChainConfig{} })
+	loadtesttypes.Register(loadtesttypes.KindCosmos, func() loadtesttypes.ChainConfig { return &ChainConfig{} })
 	cosmosift.RegisterTypeURL(cosmosift.DefaultMsgIFTTransferTypeURL)
 }
 
