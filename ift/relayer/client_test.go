@@ -3,7 +3,7 @@ package relayer
 import (
 	"testing"
 
-	relayerv2 "github.com/cosmos/ibc/cli/api/v2/relayer"
+	relayerv2 "github.com/lfdt-ibc/ibc/cli/api/v2/relayer"
 	"github.com/stretchr/testify/require"
 )
 

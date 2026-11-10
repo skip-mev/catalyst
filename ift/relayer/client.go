@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	relayerv2 "github.com/cosmos/ibc/cli/api/v2/relayer"
+	relayerv2 "github.com/lfdt-ibc/ibc/cli/api/v2/relayer"
 
 	loadtesttypes "github.com/skip-mev/catalyst/chains/types"
 )
