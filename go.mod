@@ -392,4 +392,4 @@ require (
 // sockets.DialPipe, and that client still calls it.
 replace github.com/docker/go-connections => github.com/docker/go-connections v0.6.0
 
-replace github.com/lfdt-ibc/ibc/cli => github.com/dianab-cl/ibc-lfdt/cli v0.0.0-20261109182129-8562bb7cc302
+replace github.com/lfdt-ibc/ibc/cli => github.com/lfdt-ibc/ibc/cli v0.2.0-rc.1.0.20261110132656-59b25e7024a5
