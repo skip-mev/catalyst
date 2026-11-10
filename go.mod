@@ -11,7 +11,7 @@ require (
 	github.com/cosmos/evm v0.7.3
 	github.com/cosmos/gogoproto v1.7.2
 	github.com/ethereum/go-ethereum v1.17.10
-	github.com/lfdt-ibc/ibc/cli v0.0.0-00010101000000-000000000000
+	github.com/lfdt-ibc/ibc/cli v0.2.0-rc.1.0.20261110132656-59b25e7024a5
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.25.0
 	github.com/skip-mev/ironbird v0.0.0-20251024154444-c72f64c42974
@@ -391,5 +391,3 @@ require (
 // version GitHub-hosted runners accept. go-connections v0.7.0 removed
 // sockets.DialPipe, and that client still calls it.
 replace github.com/docker/go-connections => github.com/docker/go-connections v0.6.0
-
-replace github.com/lfdt-ibc/ibc/cli => github.com/dianab-cl/ibc-lfdt/cli v0.0.0-20261109182129-8562bb7cc302
